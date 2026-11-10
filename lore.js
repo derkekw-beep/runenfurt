@@ -170,7 +170,7 @@ export function explain(id, lvl = 1) {
     else if (c.strikes) out.push(`${c.strikes} Blitze treffen im Umkreis von ${d(c.radius)} Feldern die ${c.strikes} Gegner mit dem meisten Leben, je ${n(c.dmg * m)} Schaden (Türme: ${n(c.dmg * m * TOWER_SPELL_FACTOR)}). Kleinere Gegner daneben bleiben verschont.`);
     else if (c.dmg) out.push(`${n(c.dmg * m)} Schaden an allem im Umkreis von ${d(c.radius)} Feldern – Boden und Luft. Türme nehmen nur ein Viertel (${n(c.dmg * m * TOWER_SPELL_FACTOR)}).`);
     if (c.rollSpawn) out.push(`Am Ende der Bahn klettert ${some(c.rollSpawn.unit, c.rollSpawn.count)} heraus (${n(UNITS[c.rollSpawn.unit].hp * m)} Leben, ${n(UNITS[c.rollSpawn.unit].dmg * m)} Schaden) und kämpft für dich weiter.`);
-    if (c.slow && c.dmg) out.push(`Getroffene Truppen laufen und schlagen danach ${d(c.slow)} s lang 35 % langsamer.`);
+    if (c.slow && c.dmg) out.push(`Getroffene Truppen laufen und schlagen danach ${d(c.slow)} s lang 30 % langsamer.`);
     if (c.clone) out.push(`Jede deiner Truppen im Umkreis von ${d(c.radius)} Feldern bekommt ein Abbild: gleicher Schaden, gleiche Fähigkeiten, aber nur ein einziger Lebenspunkt und kein Schild – der erste Treffer löscht es aus. Helden und Gebäude werden nicht verdoppelt.`);
     if (c.amp) out.push(`${c.dur} s lang nehmen gegnerische Truppen und Gebäude im Umkreis von ${d(c.radius)} Feldern ${Math.round((c.amp - 1) * 100)} % mehr Schaden – aus jeder Quelle.`);
     if (c.curse) out.push(`Fällt eine gegnerische Truppe, während sie im Kreis steht, wächst an ihrer Stelle ein ${NAME[c.curse][0]} (${n(UNITS[c.curse].hp * m)} Leben, ${n(UNITS[c.curse].dmg * m)} Schaden), der für dich kämpft.`);
@@ -181,10 +181,10 @@ export function explain(id, lvl = 1) {
     if (c.freeze) out.push(`Alles im Kreis – Truppen, Gebäude und auch Türme – ist ${d(c.freeze)} s lang eingefroren und tut nichts.`);
     if (c.root) out.push(`Bodentruppen im Kreis sind ${d(c.root)} s festgehalten: Sie kommen nicht vom Fleck, schlagen aber weiter zu, wenn etwas in Reichweite ist. Flieger entkommen.`);
     if (c.heal) out.push(`Im Umkreis von ${d(c.radius)} Feldern heilt die Quelle deine Truppen ${c.dur} s lang alle ${d(c.tick)} s um ${n(c.heal * m)} – zusammen bis zu ${n(c.heal * m * c.dur / c.tick)}. Gebäude und Türme heilt sie nicht.`);
-    if (c.dot && c.ground) out.push(`${c.dur} s lang bebt der Boden im Umkreis von ${d(c.radius)} Feldern: jede Sekunde ${n(c.dot * m)} Schaden an Bodentruppen, ${n(c.dot * m * c.buildF)} an Gebäuden und ${n(c.dot * m * c.towerF)} an Türmen. Bodentruppen im Kreis sind dabei 35 % langsamer; Flieger bleiben unberührt.`);
+    if (c.dot && c.ground) out.push(`${c.dur} s lang bebt der Boden im Umkreis von ${d(c.radius)} Feldern: jede Sekunde ${n(c.dot * m)} Schaden an Bodentruppen, ${n(c.dot * m * c.buildF)} an Gebäuden und ${n(c.dot * m * c.towerF)} an Türmen. Bodentruppen im Kreis sind dabei 30 % langsamer; Flieger bleiben unberührt.`);
     else if (c.dot) out.push(`${c.dur} s lang alle ${d(c.tick)} s ${n(c.dot * m)} Schaden an allem im Umkreis von ${d(c.radius)} Feldern, zusammen bis zu ${n(c.dot * m * c.dur / c.tick)}. Wer den Kreis verlässt, nimmt keinen weiteren Schaden.`);
     if (c.pull) out.push('Solange der Wind weht, zieht er alle gegnerischen Truppen im Kreis zur Mitte – leichte schnell, schwere langsam. So holst du Angreifer vom Turm weg oder schiebst sie für einen Flächentreffer zusammen.');
-    if (c.haste) out.push(`Eigene Truppen im Umkreis von ${d(c.radius)} Feldern laufen und schlagen ${c.haste} s lang 35 % schneller. Gebäude und Türme nicht.`);
+    if (c.haste) out.push(`Eigene Truppen im Umkreis von ${d(c.radius)} Feldern laufen und schlagen ${c.haste} s lang 30 % schneller. Gebäude und Türme nicht.`);
     if (c.summon && c.ownSide) out.push(`Danach steigt am Zielpunkt ${some(c.summon.unit, c.summon.count)} aus (${n(UNITS[c.summon.unit].hp * m)} Leben${UNITS[c.summon.unit].shield ? `, Schild ${n(UNITS[c.summon.unit].shield * m)}` : ''}, ${n(UNITS[c.summon.unit].dmg * m)} Schaden) und verteidigt mit.`);
     else if (c.summon) out.push(`Am Zielpunkt landen ${c.summon.count} ${NAME[c.summon.unit][1]} (je ${n(UNITS[c.summon.unit].hp * m)} Leben, ${n(UNITS[c.summon.unit].dmg * m)} Schaden) – auch auf der gegnerischen Seite, direkt am Turm.`);
     out.push('Mit jeder Kartenstufe wächst die Wirkung um 10 %.');
@@ -234,7 +234,7 @@ export function explain(id, lvl = 1) {
     if (u.load) out.push(`Vor dem ersten Schuss lädt ${sie} ${d(u.load)} s.${u.resetOnStun ? ' Jede Betäubung setzt die Ladung zurück – ein Funkenschlag im richtigen Moment kostet sie den ganzen Schuss.' : ''}`);
     if (u.towerDmg) out.push(`An Türmen richtet sie nur ein Viertel an (${n(u.dmg * m * u.towerDmg)} je Schlag).`);
     if (u.knock) out.push(`Leichte Truppen werden ${d(u.knock)} Feld zurückgestoßen; ihr Anlauf oder Angriff beginnt neu.`);
-    if (u.slow) out.push(`Getroffene laufen und schlagen ${d(u.slow)} s lang 35 % langsamer.`);
+    if (u.slow) out.push(`Getroffene laufen und schlagen ${d(u.slow)} s lang 30 % langsamer.`);
     if (u.stunHit) out.push(`Jeder Treffer betäubt ${d(u.stunHit)} s: Angriffe brechen ab, Anläufe und Ladungen beginnen von vorn (Türme ausgenommen).`);
     if (u.charge) out.push(`Ansturm: Läuft sie ${d(u.charge.after)} s ohne Unterbrechung, verdoppelt sie ihr Tempo, und der erste Stoß trifft mit ${n(u.dmg * m * u.charge.dmg)} Schaden. Betäuben oder Festhalten bricht den Anlauf ab.`);
     if (u.leap) out.push(`Sprung: Steht ein Bodenziel ${d(u.leap.min)} bis ${u.leap.max} Felder entfernt, springt sie es an und trifft mit doppelter Wucht (${n(u.dmg * m * u.leap.dmg)}).${u.dashGuard ? ' Im Sprung ist sie unverwundbar und lässt sich nicht betäuben.' : ''}`);
@@ -250,13 +250,13 @@ export function explain(id, lvl = 1) {
   if (u.deployDmg) out.push(`${build ? 'Beim Ausbrechen' : 'Landung: Beim Aufsetzen'} ${n(u.deployDmg.dmg * m)} Schaden an allen Bodentruppen im Umkreis von ${d(u.deployDmg.r)} Feldern.`);
   if (u.spawn) out.push(`Alle ${d(u.spawn.every)} s ${u.spawn.count > 1 ? `kommen ${u.spawn.count} ${NAME[u.spawn.unit][1]}` : `kommt ${some(u.spawn.unit, 1)}`} hervor (${n(UNITS[u.spawn.unit].hp * m)} Leben, ${n(UNITS[u.spawn.unit].dmg * m)} Schaden) – zum ersten Mal ${d(u.spawn.first)} s nach dem Aufstellen.`);
   if (u.kraft) out.push(`Alle ${d(u.kraft.every)} s liefert er eine Kraft – über seine ganze Lebensdauer ${Math.floor(u.life / u.kraft.every)}. Das lohnt sich erst, wenn er lange genug steht.`);
-  if (u.deathDmg) out.push(`Beim Tod: ${n(u.deathDmg.dmg * m)} Schaden im Umkreis von ${d(u.deathDmg.r)} Feldern${u.deathDmg.delay ? ` – nach ${u.deathDmg.delay} s Lunte, in denen Gegner noch weglaufen können; trifft auch Flieger` : ' an allem am Boden'}${u.deathDmg.slow ? `, dazu ${d(u.deathDmg.slow)} s lang 35 % langsamer` : ''}.`);
+  if (u.deathDmg) out.push(`Beim Tod: ${n(u.deathDmg.dmg * m)} Schaden im Umkreis von ${d(u.deathDmg.r)} Feldern${u.deathDmg.delay ? ` – nach ${u.deathDmg.delay} s Lunte, in denen Gegner noch weglaufen können; trifft auch Flieger` : ' an allem am Boden'}${u.deathDmg.slow ? `, dazu ${d(u.deathDmg.slow)} s lang 30 % langsamer` : ''}.`);
   if (u.deathSpawn) { const k = u.deathSpawn, t = UNITS[k.unit];
     if (t.hatch) out.push(`Beim Tod bleibt ein Ei mit ${n(t.hp * m)} Leben zurück. Bleibt es ${d(t.hatch.after)} s heil, schlüpft daraus wieder ein ${NAME[t.hatch.unit][0]} mit vollem Leben – so oft, bis ein Ei zerstört wird.`);
     else if (t.targets === 'buildings') out.push(`Beim Tod zerbricht ${sie} in ${k.count} ${NAME[k.unit][1]} (je ${n(t.hp * m)} Leben), die weiter zu den Gebäuden laufen.`);
     else out.push(`${u.kamikaze ? 'Am Ziel – und auch wenn sie vorher fällt –' : build ? (u.life ? 'Wird es zerstört oder läuft seine Zeit ab,' : 'Wird es zerstört,') : 'Beim Tod'} ${k.count > 1 ? `erscheinen ${k.count} ${NAME[k.unit][1]}` : `erscheint ${some(k.unit, 1)}`} (${k.count > 1 ? 'je ' : ''}${n(t.hp * m)} Leben, ${n(t.dmg * m)} Schaden).`); }
   if (u.bounty) out.push(`Der Haken: Jedes Stück, das fällt, schenkt dem Gegner Kraft – insgesamt ${d(bounty(u))}, wenn alle Teile zerschlagen werden. Gegen wenig Schaden ein Geschenk an dich, gegen viel Schaden eines an ihn.`);
-  if (u.deathZone) { const z = CARDS[u.deathZone]; out.push(`Beim Tod bleibt eine ${z.name} zurück: Deine Truppen im Umkreis von ${d(z.radius)} Feldern laufen und schlagen ${z.haste} s lang 35 % schneller.`); }
+  if (u.deathZone) { const z = CARDS[u.deathZone]; out.push(`Beim Tod bleibt eine ${z.name} zurück: Deine Truppen im Umkreis von ${d(z.radius)} Feldern laufen und schlagen ${z.haste} s lang 30 % schneller.`); }
   if (c.hero) out.push(`Held: Er steht nur einmal auf dem Feld; seine Karte kehrt erst in den Stapel zurück, wenn er gefallen ist. Fähigkeit „${c.ability.name}“ (Knopf im Kampf, ${c.ability.cost} Kraft, alle ${c.ability.cd} s): ${c.ability.desc}`);
   if (RUNES[id]) out.push(`Runenform ab Kartenstufe ${RUNE_LEVEL}: Jede ${RUNES[id].cycles + 1}. Ausspielung erscheint in der stärkeren Form – ${RUNES[id].desc}`);
   out.push('Mit jeder Kartenstufe wachsen Leben und Schaden um 10 %.');

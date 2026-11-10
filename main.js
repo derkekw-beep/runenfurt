@@ -363,7 +363,7 @@ function statRows(id, lvl) {
     if (c.mirror) { rows.push(['Wiederholt', 'deine letzte Karte', '']); rows.push(['Kosten', 'ihre Kraft + 1', '']); rows.push(['Stufe der Wiederholung', String(lvl + 1), lvl < P.MAX_LEVEL ? '+1' : '']); rows.push(['Nicht möglich', 'Helden', '']); return rows; }
     if (c.dot) { scaled('Schaden je Sekunde', c.dot / c.tick); if (c.buildF) scaled('Gebäudeschaden je Sek.', c.dot / c.tick * c.buildF); if (!c.pull) scaled('Turmschaden je Sek.', c.dot / c.tick * (c.towerF || TOWER_SPELL_FACTOR)); rows.push(['Dauer', `${c.dur} s`, '']); }
     if (c.ground) rows.push(['Trifft', 'nur am Boden', '']);
-    if (c.slow) rows.push(['Bremst', `${c.dot ? 'solange es bebt' : `${dec(c.slow)} s`} · −35 %`, '']);
+    if (c.slow) rows.push(['Bremst', `${c.dot ? 'solange es bebt' : `${dec(c.slow)} s`} · −30 %`, '']);
     if (c.amp) rows.push(['Gegner nehmen', `+${Math.round((c.amp - 1) * 100)} % Schaden`, '']);
     if (c.curse) rows.push(['Gefallene werden', SPAWN_NAME[c.curse][1], '']);
     if (c.clone) { rows.push(['Verdoppelt', 'eigene Truppen im Kreis', '']); rows.push(['Abbild', '1 Leben, voller Schaden', '']); }
@@ -374,7 +374,7 @@ function statRows(id, lvl) {
     if (c.root) rows.push(['Hält fest', `${dec(c.root)} s`, '']);
     if (c.freeze) rows.push(['Friert ein', `${dec(c.freeze)} s · auch Türme`, '']);
     if (c.stun) rows.push(['Betäubt', `${dec(c.stun)} s`, '']);
-    if (c.haste) rows.push(['Treibt an', `${c.haste} s · +35 %`, '']);
+    if (c.haste) rows.push(['Treibt an', `${c.haste} s · +30 %`, '']);
     if (c.summon) { const sn = SPAWN_NAME[c.summon.unit]; rows.push(['Bringt', `${c.summon.count} ${sn[c.summon.count > 1 ? 1 : 0]}`, '']); scaled(`${sn[0]}: Schaden`, UNITS[c.summon.unit].dmg); scaled(`${sn[0]}: Leben`, UNITS[c.summon.unit].hp); }
     if (c.roll) { rows.push(['Rollt', `${c.roll.len} Felder weit`, '']); rows.push(['Breite', `${dec(c.roll.w)} Felder`, '']); }
     if (c.knock) rows.push(['Rückstoß', `${dec(c.knock)} Felder`, '']);
@@ -418,7 +418,7 @@ function statRows(id, lvl) {
   if (u.stunHit) rows.push(['Betäubt', `${dec(u.stunHit)} s je Treffer`, '']);
   if (u.kamikaze) rows.push(['Besonderheit', 'zerplatzt beim Angriff', '']);
   if (u.stealth) rows.push(['Besonderheit', 'unsichtbar bis zum Angriff', '']);
-  if (u.slow) rows.push(['Bremst', `${dec(u.slow)} s · −35 %`, '']);
+  if (u.slow) rows.push(['Bremst', `${dec(u.slow)} s · −30 %`, '']);
   if (u.charge) rows.push(['Ansturm', 'doppeltes Tempo, doppelter Stoß', '']);
   if (u.leap) rows.push(['Sprung', `${dec(u.leap.min)}–${u.leap.max} Felder · doppelter Schaden`, '']);
   if (u.deployDmg) scaled('Schaden bei Landung', u.deployDmg.dmg);
@@ -453,7 +453,7 @@ function showCard(id) {
   seg.addEventListener('click', e => { const v = e.target.dataset.view; if (!v) return; sfx('click'); cardView = v; for (const b of seg.children) b.classList.toggle('on', b.dataset.view === v); for (const [k, pn] of Object.entries(panes)) pn.hidden = k !== v; });
   d.append(seg);
   panes.werte.append(el('div', 'statlist', statRows(id, lvl).map(([k, v, plus]) => `<div>${k}<b>${v}${plus && own ? `<em>${plus}</em>` : ''}</b></div>`).join('')));
-  if (c.hero) panes.werte.append(el('div', 'extra heroBox', `<b>Fähigkeit: ${c.ability.name}</b><small>${c.ability.cost} Kraft · alle ${c.ability.cd} s</small><p>${c.ability.desc}</p>`));
+  if (c.hero) panes.werte.append(el('div', 'extra heroBox', `<b>Fähigkeit: ${c.ability.name}</b><small>${c.ability.cost} Kraft · ${c.ability.once ? 'einmal je Einsatz' : `alle ${c.ability.cd} s`}</small><p>${c.ability.desc}</p>`));
   if (RUNES[id]) {
     const R = RUNES[id], has = own && own.lvl >= RUNE_LEVEL;
     panes.werte.append(el('div', `extra runeBox${has ? ' on' : ''}`, `<b>Runenform</b><small>${has ? 'freigeschaltet' : `ab Stufe ${RUNE_LEVEL}`} · jede ${R.cycles + 1}. Karte</small><p>${R.desc}</p>`));
@@ -1042,7 +1042,7 @@ $('#abilities').addEventListener('pointerdown', e => {
   e.preventDefault(); e.stopPropagation(); unlock();
   if (sim.useAbility(B.g, 0, b.dataset.id)) { B.count.abilities++; return; }
   const st = sim.abilities(B.g, 0).find(a => a.cardId === b.dataset.id);
-  toast(!st ? 'Held ist gefallen' : st.cd > 0 ? 'Fähigkeit lädt noch' : B.g.sides[0].kraft < st.ability.cost ? 'Zu wenig Kraft' : st.ent.deployT > 0 ? 'Held ist noch nicht bereit' : 'Kein Gegner in Reichweite');
+  toast(!st ? 'Held ist gefallen' : st.used ? 'Fähigkeit ist verbraucht' : st.cd > 0 ? 'Fähigkeit lädt noch' : B.g.sides[0].kraft < st.ability.cost ? 'Zu wenig Kraft' : st.ent.deployT > 0 ? 'Held ist noch nicht bereit' : 'Kein Gegner in Reichweite');
   sfx('error');
 });
 $('#hand').addEventListener('pointerdown', e => {

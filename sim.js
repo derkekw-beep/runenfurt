@@ -217,7 +217,7 @@ export function abilities(g, side) {
   for (const e of g.ents) {
     if (e.side !== side || !e.cardId || e.hp <= 0) continue;
     const a = CARDS[e.cardId].ability;
-    out.push({ cardId: e.cardId, ent: e, ability: a, cd: Math.max(0, e.abilityCd), ready: e.deployT <= 0 && e.abilityCd <= 0 && e.stunT <= 0 && S.kraft >= a.cost });
+    out.push({ cardId: e.cardId, ent: e, ability: a, cd: Math.max(0, e.abilityCd), ready: e.deployT <= 0 && e.abilityCd <= 0 && e.stunT <= 0 && S.kraft >= a.cost && !(a.once && e.abilityUsed), used: !!(a.once && e.abilityUsed) });
   }
   return out;
 }
@@ -229,7 +229,7 @@ export function useAbility(g, side, cardId) {
   const inReach = (e, x, y) => e.side !== side && e.hp > 0 && !e.hidden && Math.hypot(e.x - x, e.y - y) - e.r <= a.radius;
   if (a.id === 'sturmlauf' && !g.ents.some(e => inReach(e, h.x, h.y))) return false; // niemand da, den er anspringen könnte
   S.kraft -= a.cost; S.spent += a.cost;
-  h.abilityCd = a.cd; h.anim = 0.3;
+  h.abilityCd = a.cd; h.anim = 0.3; h.abilityUsed = true;
   const hits = [];
   if (a.id === 'schlachtruf') {
     for (const e of g.ents) if (e.side === side && e.kind === 'unit' && e.hp > 0 && Math.hypot(e.x - h.x, e.y - h.y) <= a.radius) { e.hasteT = a.dur; hits.push({ x: e.x, y: e.y }); }
@@ -348,6 +348,7 @@ function processDeaths(g) {
         areaDamage(g, e.side, e.x, e.y, dd.r, dmg, false, 1, dd.slow || 0);
       }
     }
+    if (d.kraft && d.kraft.death) { const S = g.sides[e.side]; S.kraft = Math.min(MAX_KRAFT, S.kraft + d.kraft.death); emit(g, { t: 'kraft', side: e.side, x: e.x, y: e.y }); }
     if (d.deathZone) castZone(g, d.deathZone, e.side, e.x, e.y, e.lvl, 0.05);
     if (d.deathSpawn) {
       const n = d.deathSpawn.count, air = UNITS[d.deathSpawn.unit].air;
@@ -490,6 +491,7 @@ function strike(g, u, t) {
   const d = u.d;
   u.anim = 0.3;
   let dmg = u.dmg, knock = 0;
+  if (d.farBonus && dist(u, t) >= d.farBonus.min) dmg = Math.round(dmg * d.farBonus.f);   // Fernschuss: mehr Schaden ab diesem Abstand
   if (u.charging) { dmg *= (d.charge || d.leap).dmg; u.charging = false; emit(g, { t: 'impact', x: t.x, y: t.y }); }
   u.runT = 0;
   if (d.stealth) u.revealT = d.stealth;
@@ -545,7 +547,7 @@ function strike(g, u, t) {
   }
   if (d.healHit) {
     const amt = Math.round(d.healHit.amt * cardMult(u.lvl));
-    for (const e of g.ents) if (e.side === u.side && e.kind === 'unit' && e.hp > 0 && e.hp < e.maxHp && dist(u, e) <= d.healHit.r) { e.hp = Math.min(e.maxHp, e.hp + amt); emit(g, { t: 'heal', x: e.x, y: e.y }); }
+    for (const e of g.ents) if (e !== u && !e.d.healHit && e.side === u.side && e.kind === 'unit' && e.hp > 0 && e.hp < e.maxHp && dist(u, e) <= d.healHit.r) { e.hp = Math.min(e.maxHp, e.hp + amt); emit(g, { t: 'heal', x: e.x, y: e.y }); }
   }
   if (d.frenzy) u.stacks = Math.min(d.frenzy.max, u.stacks + 1);
 }
@@ -600,8 +602,10 @@ function updateEnt(g, u, dt) {
   if (u.deployT > 0) {
     u.deployT -= dt;
     if (u.deployT <= 0 && d.deployDmg) { // Landung mit Erdstoß
-      emit(g, { t: 'impact', x: u.x, y: u.y, r: d.deployDmg.r });
-      areaDamage(g, u.side, u.x, u.y, d.deployDmg.r, Math.round(d.deployDmg.dmg * cardMult(u.lvl)), false, 1, 0, d.deployDmg.knock ? { knock: d.deployDmg.knock } : null);
+      const dd = d.deployDmg;   // air: trifft auch Flieger, stun/slow: Dauer in Sekunden, tower: Anteil an Türmen (sonst voll)
+      emit(g, { t: 'impact', x: u.x, y: u.y, r: dd.r });
+      if (dd.stun) for (const e of g.ents) if (e.side !== u.side && e.kind !== 'tower' && e.hp > 0 && (dd.air || !e.air) && Math.hypot(e.x - u.x, e.y - u.y) <= dd.r + e.r * 0.6) stun(e, dd.stun);
+      areaDamage(g, u.side, u.x, u.y, dd.r, Math.round(dd.dmg * cardMult(u.lvl)), !!dd.air, dd.tower ?? 1, dd.slow || 0, dd.knock ? { knock: dd.knock } : null);
     }
     return;
   }
@@ -687,7 +691,7 @@ function updateEnt(g, u, dt) {
   }
   if (d.spawn) {
     u.spawnT -= dt;
-    if (u.spawnT <= 0) {
+    if (u.spawnT <= 0 && (!d.spawn.near || g.ents.some(e => e.side !== u.side && e.hp > 0 && !e.hidden && Math.hypot(e.x - u.x, e.y - u.y) - e.r <= d.spawn.near))) {   // near: nur wenn ein Gegner so nah ist
       u.spawnT = d.spawn.every;
       const f = u.side === 0 ? -1 : 1, n = d.spawn.count || 1;
       for (let i = 0; i < n; i++) spawn(g, d.spawn.unit, u.side, clamp(u.x + (i - (n - 1) / 2) * 0.6 + (rnd(g) - 0.5) * 0.3, 0.4, W - 0.4), clamp(u.y + f * (u.r + 0.4), 0.4, H - 0.4), { deployT: 0.3 }, u.lvl);
@@ -713,7 +717,7 @@ function updateEnt(g, u, dt) {
   if (d.ramp && u.rampId !== t.id) { u.rampId = t.id; u.rampT = 0; }
   const dd = reachDist(u, t);
   if (dd <= u.range + (u.inRange ? 0.2 : 0)) {
-    if (!u.inRange) { u.inRange = true; u.cd = u.charging ? 0 : Math.max(u.cd, u.kind === 'unit' ? 0.4 : d.burrow ? 0.5 : 0.25); }
+    if (!u.inRange) { u.inRange = true; u.cd = u.charging ? 0 : Math.max(u.cd, d.first ?? (u.kind === 'unit' ? 0.4 : d.burrow ? 0.5 : 0.25)); }   // first: Zeit bis zum ersten Schlag
     if (t.x !== u.x) u.face = t.x > u.x ? 1 : -1;
     if (d.ramp) u.rampT += dt;
     if (u.cd <= 0 && (!d.ammo || u.ammo > 0)) {
@@ -823,13 +827,13 @@ function updateZones(g, dt) {
       if (c.strikes) { // Blitze auf die zähesten Gegner im Kreis
         const top = g.ents.filter(e => e.side !== z.side && e.hp > 0 && inZone(z, e)).sort((p, q) => q.hp - p.hp || p.id - q.id).slice(0, c.strikes);
         emit(g, { t: 'bolts', x: z.x, y: z.y, hits: top.map(e => ({ x: e.x, y: e.y, air: e.air })) });
-        for (const e of top) { if (e.kind !== 'tower') stun(e, c.stun); damage(g, e, e.kind === 'tower' ? dmg * TOWER_SPELL_FACTOR : dmg, z.side); }
+        for (const e of top) { if (e.kind !== 'tower') stun(e, c.stun); damage(g, e, e.kind === 'tower' ? dmg * (c.towerF ?? TOWER_SPELL_FACTOR) : dmg, z.side); }
       } else if (c.roll) {
-        g.projs.push({ line: true, x: z.x, y: z.y, ox: z.x, oy: z.y, vx: 0, vy: z.side === 0 ? -1 : 1, left: c.roll.len, w: c.roll.w, speed: c.roll.speed, dmg, knock: c.knock || 0, side: z.side, hitsAir: false, from: z.spell, hit: new Set(), towerFactor: TOWER_SPELL_FACTOR,
+        g.projs.push({ line: true, x: z.x, y: z.y, ox: z.x, oy: z.y, vx: 0, vy: z.side === 0 ? -1 : 1, left: c.roll.len, w: c.roll.w, speed: c.roll.speed, dmg, knock: c.knock || 0, side: z.side, hitsAir: false, from: z.spell, hit: new Set(), towerFactor: c.towerF ?? TOWER_SPELL_FACTOR,
           spawnEnd: c.rollSpawn ? { unit: c.rollSpawn.unit, count: c.rollSpawn.count, lvl: z.lvl } : null });
       } else {
         if (c.stun) for (const e of g.ents) if (e.side !== z.side && e.kind !== 'tower' && e.hp > 0 && inZone(z, e)) stun(e, c.stun);
-        if (dmg) areaDamage(g, z.side, z.x, z.y, z.r, dmg, true, TOWER_SPELL_FACTOR, c.slow || 0, c.knock ? { knock: c.knock, kx: 0, ky: z.side === 0 ? -1 : 1 } : null);
+        if (dmg) areaDamage(g, z.side, z.x, z.y, z.r, dmg, true, c.towerF ?? TOWER_SPELL_FACTOR, c.slow || 0, c.knock ? { knock: c.knock, kx: 0, ky: z.side === 0 ? -1 : 1 } : null);
       }
       if (c.clone) for (const e of [...g.ents]) { // Trugbild: jede eigene Truppe im Kreis bekommt ein Abbild
         if (e.side !== z.side || e.kind !== 'unit' || e.hp <= 0 || e.hero || e.clone || !e.speed || !inZone(z, e)) continue;
@@ -870,7 +874,7 @@ function updateZones(g, dt) {
         const hit = g.ents.filter(e => e.side !== z.side && e.hp > 0 && !e.buried && inZone(z, e));
         const per = Math.round(c.pulses.dmg[hit.length <= 1 ? 0 : hit.length <= 4 ? 1 : 2] * z.mult);
         emit(g, { t: 'pulse', x: z.x, y: z.y, r: z.r, n: hit.length });
-        for (const e of hit) damage(g, e, e.kind === 'tower' ? per * TOWER_SPELL_FACTOR : per, z.side);
+        for (const e of hit) damage(g, e, e.kind === 'tower' ? per * (c.towerF ?? TOWER_SPELL_FACTOR) : per, z.side);
       }
     }
     if (c.heal || c.dot) {
