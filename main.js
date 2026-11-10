@@ -3,10 +3,11 @@ import { CARDS, CARD_IDS, TOWER_IDS, UNITS, RUNES, RUNE_LEVEL, avgCost, TOWER_SP
 import * as sim from './sim.js';
 import { createAi, aiUpdate, LEVELS } from './ai.js';
 import * as P from './progress.js';
-import { createRenderer, drawCardArt, drawIcon } from './render.js';
+import { createRenderer, drawCardArt } from './render.js';
 import { createRenderer3D } from './render3d.js';
 import { sfx, unlock, setSound, setVolume } from './audio.js';
 import { STORY, explain } from './lore.js';
+import { createStage } from './menu.js';
 
 const $ = s => document.querySelector(s);
 const KEY = 'runenfurt-v1';
@@ -42,10 +43,13 @@ try {
 }
 if (renderer.ready) await renderer.ready; // neue Bildfolgen und 3D-Teile (engine/assets) – höchstens wenige Sekunden
 const field = $('#arena');
+const stage = createStage($('#stageCv')); // Figuren des Decks im Hauptmenü
 
 function applySettings() {
   setSound(profile.sound); setVolume(profile.set.volume);
   renderer.setOptions(profile.set);
+  stage.setQuality(profile.set.quality);
+  document.body.classList.toggle('calm', profile.set.quality === 'niedrig'); // Grafik „Niedrig“: keine Dauer-Animationen im Menü
   document.body.classList.toggle('lefty', profile.set.lefty);
   $('#fps').hidden = !profile.set.fps;
 }
@@ -62,7 +66,8 @@ function art(id) {
 }
 function cardEl(id, opt = {}) {
   const c = CARDS[id];
-  const e = el(opt.tag || 'button', c.hero ? 'card hero' : 'card');
+  const rar = P.rarity(id);
+  const e = el(opt.tag || 'button', `card r-${rar}${c.hero ? ' hero' : ''}`);
   const cv = document.createElement('canvas'); cv.width = 200; cv.height = 264;
   cv.getContext('2d').drawImage(art(id), 0, 0);
   e.append(cv);
@@ -74,13 +79,19 @@ function cardEl(id, opt = {}) {
     const m = el('span', 'meter'); const i = el('i'); i.style.width = `${Math.min(100, opt.meter * 100)}%`; m.append(i); e.append(m);
     if (opt.meter >= 1) e.classList.add('up');
   }
-  if (opt.rune) e.append(el('span', 'runeMark', ''));
+  // Seltenheit: Rahmenfarbe und ein Stein oben in der Mitte (selten: Raute, episch: Doppelraute, legendär: Stern); Helden tragen ein Banner
+  if (rar === 'held') e.append(el('span', 'heroMark', 'Held')); else if (rar !== 'gewoehnlich') e.append(el('span', `rar ${rar}`, ''));
+  // Runenform: Zeichen unten links – blass mit Scherbenstand, solange sie noch nicht erweckt ist
+  const rune = opt.rune === undefined ? (opt.locked == null && profile.cards[id] ? P.runeInfo(profile, id) : RUNES[id] ? { have: 0, need: P.RUNE_SHARDS, done: false } : null) : opt.rune;
+  if (rune) e.append(el('span', rune.done ? 'runeMark' : 'runeMark off', rune.done ? '' : `<i>${rune.have}/${rune.need}</i>`));
+  if (opt.ability) e.append(el('span', 'abil', `<b>${opt.ability.cost}</b>${opt.ability.name}`)); // Held in der Hand: Fähigkeit und ihre Kosten
   if (opt.wish) e.append(el('span', 'wishMark', '★'));
   if (opt.pips) { // Zyklen bis zur Runenform
     const row = el('span', 'pips');
     for (let i = 0; i < opt.pips.of; i++) row.append(el('i', i < opt.pips.n ? 'on' : ''));
     e.append(row);
-    if (opt.pips.n >= opt.pips.of) e.classList.add('rune');
+    if (opt.pips.n >= opt.pips.of) { e.classList.add('rune'); e.append(el('span', 'runeNow', 'Runenform')); }
+    else row.title = `noch ${opt.pips.of - opt.pips.n}`;
   }
   e.dataset.id = id;
   return e;
@@ -88,17 +99,30 @@ function cardEl(id, opt = {}) {
 
 // ---- Bildschirme und Reiter --------------------------------------------------------------------
 const TABS = { home: $('#tabHome'), cards: $('#tabCards'), shop: $('#tabShop'), road: $('#tabRoad'), more: $('#tabMore') };
+const TAB_ORDER = ['shop', 'cards', 'home', 'road', 'more']; // Reihenfolge der unteren Leiste: bestimmt die Richtung des Übergangs
 let screen = 'menu', tab = 'home';
 function show(name) {
   const battle = name === 'battle';
   screen = battle ? 'battle' : 'menu';
   $('#battle').hidden = !battle; $('#menu').hidden = battle;
-  if (battle) return;
-  dayCheck();
+  if (battle) { stageSync(); return; }
+  dayCheck(); chestTick();
+  const from = tab;
   if (TABS[name]) tab = name;
   for (const [k, s] of Object.entries(TABS)) s.hidden = k !== tab;
-  for (const b of $('#nav').children) b.classList.toggle('on', b.dataset.tab === tab);
+  for (const b of $('#nav').children) if (b.dataset.tab) b.classList.toggle('on', b.dataset.tab === tab);
+  $('#nav').style.setProperty('--i', TAB_ORDER.indexOf(tab));
+  if (from !== tab) { // der neue Reiter gleitet aus der Richtung herein, in der er in der Leiste liegt
+    const t = TABS[tab]; t.classList.remove('inL', 'inR'); void t.offsetWidth;
+    t.classList.add(TAB_ORDER.indexOf(tab) > TAB_ORDER.indexOf(from) ? 'inR' : 'inL');
+  }
   render();
+  stageSync();
+}
+// Die Bühne im Hauptmenü läuft nur, wenn man sie sieht: Reiter „Kampf“, kein Kampf, keine Einblendung, Seite im Vordergrund
+function stageSync() {
+  const on = screen === 'menu' && tab === 'home' && overlay.hidden && fxLayer.hidden && !document.hidden;
+  if (on) { stage.setDeck(profile.deck, profile.arena); stage.start(); } else stage.stop();
 }
 function render() {
   renderTop();
@@ -110,7 +134,10 @@ function render() {
 }
 $('#nav').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; sfx('click'); swap = null; roadSeen = false; show(b.dataset.tab); });
 
-const overlay = $('#overlay'), sheet = $('#sheet');
+const overlay = $('#overlay'), sheet = $('#sheet'), fxLayer = $('#fx');
+new MutationObserver(() => stageSync()).observe(overlay, { attributes: true, attributeFilter: ['hidden'] });
+new MutationObserver(() => stageSync()).observe(fxLayer, { attributes: true, attributeFilter: ['hidden'] });
+window.addEventListener('resize', () => stage.resize());
 function openSheet(node, center) { sheet.replaceChildren(node); overlay.classList.toggle('center', !!center); overlay.hidden = false; sheet.scrollTop = 0; }
 function closeSheet() { overlay.hidden = true; sheet.replaceChildren(); for (const c of overlay.querySelectorAll('.confetti')) c.remove(); }
 let sheetDismiss = null; // Tippen neben das Blatt schließt es, wenn erlaubt
@@ -136,18 +163,23 @@ function renderTop() {
   $('#xpFill').style.width = pl.need ? `${100 * pl.xp / pl.need}%` : '100%';
   $('#goldNum').textContent = fmt(profile.gold);
   $('#gemNum').textContent = fmt(profile.gems);
-  const dots = { shop: !profile.shop.gift, cards: canUpgradeAny(), home: P.questsOpen(profile) > 0 || profile.crownBox >= P.CROWN_BOX, road: P.roadOpen(profile).length > 0, more: false };
-  for (const b of $('#nav').children) b.lastElementChild.hidden = !dots[b.dataset.tab];
+  const now = Date.now();
+  const dots = { shop: !profile.shop.gift, cards: canUpgradeAny(), home: P.questsOpen(profile) > 0 || profile.crownBox >= P.CROWN_BOX || P.chestsReady(profile, now) > 0 || P.freeInfo(profile, now).n > 0, road: P.roadOpen(profile).length > 0, more: false };
+  for (const b of $('#nav').children) if (b.dataset.tab) b.lastElementChild.hidden = !dots[b.dataset.tab];
 }
 
 // Beute zeigen: Gold, Runensplitter, Karten
+const RAR_ORDER = { gewoehnlich: 0, selten: 1, episch: 2, legendaer: 3, held: 4 };
+const byRarity = (a, b) => RAR_ORDER[P.rarity(a.id)] - RAR_ORDER[P.rarity(b.id)];
 function lootBox(title, loot) {
   const box = el('div', 'chest'); box.append(el('b', 't', title));
   const row = el('div', 'loot');
   if (loot.gold) row.append(el('div', 'item goldItem', `<span class="ico coin"></span>+${fmt(loot.gold)}`));
   if (loot.gems) row.append(el('div', 'item goldItem', `<span class="ico gem"></span>+${loot.gems}`));
   if (loot.jokers) row.append(el('div', 'item goldItem', `<span class="ico joker"></span>+${loot.jokers}`));
-  for (const s of loot.cards || []) { const it = el('div', 'item'); it.append(cardEl(s.id, { tag: 'div' }), document.createTextNode(`× ${s.n}`)); row.append(it); }
+  if (loot.wild) row.append(el('div', 'item goldItem', `<span class="ico wild"></span>+${loot.wild}`));
+  for (const s of [...(loot.cards || [])].sort(byRarity)) { const it = el('div', 'item'); it.append(cardEl(s.id, { tag: 'div' }), document.createTextNode(`× ${s.n}`)); row.append(it); }
+  for (const s of loot.shards || []) { const it = el('div', 'item shardItem'); it.append(cardEl(s.id, { tag: 'div' }), el('span', '', `<span class="ico shard"></span>+${s.n}`)); row.append(it); }
   [...row.children].forEach((it, i) => it.style.setProperty('--i', i)); // Stück für Stück einblenden
   box.append(row);
   return box;
@@ -167,9 +199,11 @@ function lootSheet(title, loot, note, kind) {
 function openChest(kind, title, loot, done) {
   const items = [];
   if (loot.gold) items.push({ t: 'gold', n: loot.gold });
-  for (const s of loot.cards || []) items.push({ t: 'card', id: s.id, n: s.n });
   if (loot.jokers) items.push({ t: 'joker', n: loot.jokers });
+  for (const s of [...(loot.cards || [])].sort(byRarity)) items.push({ t: 'card', id: s.id, n: s.n }); // das Seltenste kommt zum Schluss
   if (loot.gems) items.push({ t: 'gem', n: loot.gems });
+  for (const s of loot.shards || []) items.push({ t: 'shard', id: s.id, n: s.n });
+  if (loot.wild) items.push({ t: 'wild', n: loot.wild });
   const box = el('div', `chestfx ${kind}`, `<button class="skip">Überspringen</button><div class="ctitle">${title}</div><div class="cstage"><div class="rays"></div><div class="reveal"></div><div class="chestbox"><i class="glowin"></i><i class="lid"></i><i class="body"></i><i class="lock"></i><b class="ccount">${items.length}</b></div></div><div class="cinfo"></div><div class="uphint">Tippen zum Öffnen</div>`);
   const reveal = box.querySelector('.reveal'), info = box.querySelector('.cinfo'), count = box.querySelector('.ccount'), hint = box.querySelector('.uphint');
   fxLayer.replaceChildren(box); fxLayer.hidden = false;
@@ -181,12 +215,23 @@ function openChest(kind, title, loot, done) {
     if (i < 0) { box.classList.add('open'); sfx('chest'); hint.textContent = 'Tippen für das nächste Stück'; }
     i++;
     if (i >= items.length) { close(); return; }
-    const it = items[i], node = el('div', `ritem ${it.t}`);
+    const it = items[i], rar = it.id ? P.rarity(it.id) : '', node = el('div', `ritem ${it.t}${it.t === 'card' ? ` r-${rar}` : ''}`);
+    box.dataset.rar = it.t === 'card' ? rar : it.t === 'shard' || it.t === 'wild' ? 'rune' : ''; // Strahlen in der Farbe der Seltenheit
     if (it.t === 'card') {
       node.append(cardEl(it.id, { tag: 'div', lvl: profile.cards[it.id].lvl }));
-      const wish = profile.wish === it.id;
-      info.innerHTML = `<b>${CARDS[it.id].name}</b><span>× ${it.n}</span>${wish ? '<em class="wish">★ Wunschkarte</em>' : ''}${P.upgradeInfo(profile, it.id).can ? '<em class="can">Bereit zum Aufwerten</em>' : ''}`;
-      sfx(wish ? 'rune' : 'flip');
+      const wish = profile.wish === it.id, fine = RAR_ORDER[rar] >= 2;
+      if (fine) for (let k = 0; k < 14; k++) { const sp = el('i', 'rspark'), a = (k / 14) * 6.283; sp.style.setProperty('--x', `${Math.cos(a) * 120}px`); sp.style.setProperty('--y', `${Math.sin(a) * 150}px`); node.append(sp); } // Episches und Selteneres mit Funkenkranz
+      info.innerHTML = `<small class="rword ${rar}">${P.RARITY_NAME[rar]}</small><b>${CARDS[it.id].name}</b><span>× ${it.n}</span>${wish ? '<em class="wish">★ Wunschkarte</em>' : ''}${P.upgradeInfo(profile, it.id).can ? '<em class="can">Bereit zum Aufwerten</em>' : ''}`;
+      sfx(wish || fine ? 'rune' : 'flip');
+    } else if (it.t === 'shard') {
+      node.append(cardEl(it.id, { tag: 'div' }));
+      const r = P.runeInfo(profile, it.id);
+      info.innerHTML = `<small class="rword rune">Runenscherbe</small><b>${CARDS[it.id].name}</b><span>+ ${it.n} · ${r.have} / ${r.need}</span>${r.done ? '<em class="can">Runenform erweckt!</em>' : ''}`;
+      sfx('rune');
+    } else if (it.t === 'wild') {
+      node.innerHTML = '<span class="ico wild"></span>';
+      info.innerHTML = `<small class="rword rune">passt auf jede Karte</small><b>Wanderscherbe</b><span>+ ${it.n}</span>`;
+      sfx('rune');
     } else {
       node.innerHTML = `<span class="ico ${it.t === 'gold' ? 'coin' : it.t}"></span>`;
       info.innerHTML = `<b>${it.t === 'gold' ? 'Gold' : it.t === 'gem' ? 'Runensplitter' : 'Joker'}</b><span>+ ${fmt(it.n)}</span>`;
@@ -204,9 +249,49 @@ function openChest(kind, title, loot, done) {
 }
 
 // ---- Reiter „Kampf“ ----------------------------------------------------------------------------
+const clock = ms => { const s = Math.max(0, Math.ceil(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? `${h} Std. ${String(m).padStart(2, '0')}` : `${m}:${String(s % 60).padStart(2, '0')}`; };
+const mins = ms => { const m = Math.round(ms / 60000); return m >= 60 ? `${dec(Math.round(m / 6) / 10)} Std.` : `${m} Min.`; };
+const chestTick = () => { if (P.tickChests(profile, Date.now())) save(); };
+// Was in einer Truhe steckt, in einem Satz
+function chestText(kind, arena = profile.arena) {
+  const i = P.chestInfo(kind, arena);
+  return `${i.cards} Karten · rund ${fmt(i.gold)} Gold · ${i.jokers} Joker${i.gems ? ` · ${i.gems} Runensplitter` : ''}`;
+}
+// Truhenplätze: fertig (antippen öffnet), läuft (Restzeit), wartet, frei (zeigt blass, was der nächste Sieg bringt)
+let slotKey = '';
+function renderChests(force) {
+  const now = Date.now(), slots = P.chestSlots(profile, now), key = slots.map(c => (c ? c.kind + c.state : '-')).join() + profile.cyc;
+  const row = $('#chestRow');
+  if (force || key !== slotKey || row.children.length !== slots.length) {
+    slotKey = key;
+    let free = 0;
+    row.replaceChildren(...slots.map((c, i) => {
+      if (!c) { const kind = P.cycleKind(profile.cyc + free), first = !free++; const b = el('button', 'slot vacant', `<span class="chestIco ${kind}"></span><b>${first ? 'Nächster Sieg' : 'Frei'}</b><small>${first ? P.CHESTS[kind].name : 'Truhenplatz'}</small>`); b.dataset.i = i; return b; }
+      const b = el('button', `slot ${c.state}`, `<span class="chestIco ${c.kind}"></span><b></b><small>${c.name}</small><i class="prog"><i></i></i>`);
+      b.dataset.i = i; return b;
+    }));
+  }
+  slots.forEach((c, i) => {
+    if (!c) return;
+    const b = row.children[i], txt = c.state === 'ready' ? 'Öffnen' : c.state === 'run' ? clock(c.left) : mins(c.total);
+    if (b.children[1].textContent !== txt) b.children[1].textContent = txt;
+    b.lastElementChild.firstElementChild.style.width = `${c.state === 'wait' ? 0 : 100 * (1 - c.left / c.total)}%`;
+  });
+  const fr = P.freeInfo(profile, now);
+  $('#freeInfo').textContent = fr.n ? (fr.n > 1 ? `${fr.n} bereit` : 'bereit') : `in ${clock(fr.next)}`;
+  $('#freeDot').hidden = !fr.n; $('#freeBtn').classList.toggle('go', fr.n > 0);
+}
 function renderHome() {
   const a = P.ARENAS[profile.arena], next = P.ARENAS[profile.arena + 1];
-  $('#who').textContent = `${profile.name} · Deck ${profile.slot + 1} · Ø ${dec(avgCost(profile.deck).toFixed(1))} Kraft`;
+  $('#who').textContent = profile.name;
+  $('#deckName').textContent = `Deck ${profile.slot + 1}`;
+  $('#deckInfo').textContent = `Ø ${dec(avgCost(profile.deck).toFixed(1))} Kraft`;
+  renderChests(true);
+  const freeSlot = profile.chests.includes(null);
+  $('#playInfo').textContent = freeSlot ? `Sieg bringt: ${P.CHESTS[P.cycleKind(profile.cyc)].name}` : 'Alle Truhenplätze belegt';
+  $('#crownFill').style.width = `${Math.min(100, 100 * profile.crownBox / P.CROWN_BOX)}%`;
+  $('#crownBtn').classList.toggle('go', profile.crownBox >= P.CROWN_BOX);
+  $('#questBtn').classList.toggle('go', P.questsOpen(profile) > 0);
   $('#arenaNo').textContent = `Arena ${profile.arena + 1}`;
   $('#arenaName').textContent = a.name;
   $('#trophyNum').textContent = fmt(profile.trophies);
@@ -214,9 +299,9 @@ function renderHome() {
   $('#arenaHint').textContent = next ? `Noch ${next.at - profile.trophies} Trophäen bis ${next.name}${next.unlock.length ? ' – dort warten neue Karten' : ''}` : 'Höchste Arena erreicht';
   for (const b of $('#levelSeg').children) b.classList.toggle('on', b.dataset.level === profile.level);
   const open = P.questsOpen(profile), left = profile.quests.filter(q => !q.claimed).length;
-  $('#questInfo').textContent = open ? `${open} abholbereit` : left ? `${left} offen` : 'alle erledigt';
+  $('#questInfo').textContent = open ? `${open} bereit` : left ? `${left} offen` : 'erledigt';
   $('#questDot').hidden = !open;
-  $('#crownInfo').textContent = profile.crownBox >= P.CROWN_BOX ? 'bereit zum Öffnen' : `${profile.crownBox} / ${P.CROWN_BOX} Kronen`;
+  $('#crownInfo').textContent = profile.crownBox >= P.CROWN_BOX ? 'bereit' : `${profile.crownBox} / ${P.CROWN_BOX}`;
   $('#crownDot').hidden = profile.crownBox < P.CROWN_BOX;
   $('#modeDot').hidden = !(P.modeBonusOpen(profile) || P.bossNext(profile) >= 0);
   const n = profile.wins + profile.losses + profile.draws;
@@ -233,8 +318,69 @@ $('#crownBtn').addEventListener('click', () => {
   sfx('click');
   const loot = P.claimCrownBox(profile);
   if (loot) { save(); lootSheet('Kronentruhe', loot, '', 'kronen'); return; }
-  simpleSheet('Kronentruhe', el('p', 'center', `Jede Krone aus einem Kampf zählt – auch bei einer Niederlage. Bei ${P.CROWN_BOX} Kronen öffnet sich eine große Truhe mit Gold, Karten und Runensplittern.<br><br><b>${profile.crownBox} / ${P.CROWN_BOX} Kronen</b>`));
+  simpleSheet('Kronentruhe', el('div', 'chestCard', `<span class="chestIco kronen"></span><p class="center">Jede Krone aus einem Kampf zählt – auch bei einer Niederlage. Bei ${P.CROWN_BOX} Kronen öffnet sich die Kronentruhe.</p><p class="center small">${chestText('kronen')} · 5 Runensplitter</p><div class="meterBig"><i style="width:${100 * profile.crownBox / P.CROWN_BOX}%"></i><span>${profile.crownBox} / ${P.CROWN_BOX} Kronen</span></div>`));
 });
+$('#deckBtn').addEventListener('click', () => { sfx('click'); show('cards'); });
+$('#stageCv').addEventListener('pointerdown', e => { if (stage.poke(e.clientX, e.clientY)) sfx('click'); });
+// Freie Truhe: alle vier Stunden eine, höchstens zwei warten
+$('#freeBtn').addEventListener('click', () => {
+  sfx('click');
+  const now = Date.now(), loot = P.claimFree(profile, now);
+  if (loot) { save(); lootSheet('Freie Truhe', loot, '', 'frei'); return; }
+  simpleSheet('Freie Truhe', el('div', 'chestCard', `<span class="chestIco frei"></span><p class="center">Alle vier Stunden gibt es eine kleine Truhe geschenkt. Höchstens ${P.FREE_MAX} warten auf dich.</p><p class="center small">${chestText('frei')}</p><div class="notice">Die nächste kommt in ${clock(P.freeInfo(profile, now).next)}</div>`));
+});
+// Truhenplätze: fertige Truhe öffnen, sonst zeigen, was drin ist und wie lange sie noch braucht
+$('#chestRow').addEventListener('click', e => {
+  const b = e.target.closest('.slot'); if (!b) return;
+  sfx('click');
+  const i = Number(b.dataset.i), now = Date.now();
+  chestTick();
+  const c = P.chestSlots(profile, now)[i];
+  if (!c) { showCycle(); return; }
+  if (c.state === 'ready') { const loot = P.openSlot(profile, i, now); if (loot) { save(); lootSheet(c.name, loot, '', c.kind); } return; }
+  showSlot(i);
+});
+function showSlot(i) {
+  const now = Date.now(), c = P.chestSlots(profile, now)[i];
+  if (!c) return;
+  const cost = P.skipCost(profile, i, now), running = P.chestSlots(profile, now).find(x => x && x.state === 'run');
+  const d = el('div', 'chestCard', `<h3>${c.name}</h3><span class="chestIco ${c.kind}"></span><p class="center small">aus Arena ${c.arena + 1} · ${P.ARENAS[c.arena].name}</p><p class="center">${chestText(c.kind, c.arena)}</p>`);
+  d.append(el('div', 'notice', c.state === 'run' ? `Öffnet sich in <b class="left">${clock(c.left)}</b>` : `Wartet – braucht ${mins(c.total)}${running ? `, zuerst ist die ${running.name} dran` : ''}`));
+  d.append(el('p', 'center small', 'Truhen öffnen sich nacheinander von selbst – auch wenn das Spiel zu ist.'));
+  const row = el('div', 'btns'), skip = el('button', 'btn primary', `Sofort öffnen <span class="ico gem"></span>${cost}`);
+  skip.disabled = profile.gems < cost;
+  skip.addEventListener('click', () => {
+    const t = Date.now();
+    if (!P.skipChest(profile, i, t)) { sfx('error'); return; }
+    const loot = P.openSlot(profile, i, t);
+    save(); sfx('buy'); closeSheet(); sheetDismiss = null;
+    if (loot) lootSheet(c.name, loot, '', c.kind); else render();
+  });
+  row.append(closeBtn(), skip); d.append(row);
+  sheetDismiss = () => { closeSheet(); sheetDismiss = null; };
+  openSheet(d, true);
+}
+// Truhenfolge: was die nächsten Siege bringen
+function showCycle() {
+  const d = el('div', 'chestCard');
+  d.append(el('p', 'center', 'Jeder Sieg legt eine Truhe auf einen freien Truhenplatz. Welche es ist, steht fest – so sieht deine Reihe aus:'));
+  const row = el('div', 'cycle');
+  P.nextChests(profile, 8).forEach((kind, k) => row.append(el('div', k ? '' : 'next', `<span class="chestIco ${kind}"></span><small>${k ? `${k + 1}.` : 'als Nächstes'}</small>`)));
+  d.append(row);
+  const list = el('div', 'kinds');
+  for (const kind of ['sieg', 'eisen', 'riesen', 'runen']) list.append(el('div', '', `<span class="chestIco ${kind}"></span><span><b>${P.CHESTS[kind].name} <em>${mins(P.chestTime(kind))}</em></b><small>${chestText(kind)}</small></span>`));
+  d.append(list, el('p', 'center small', 'Sind alle vier Plätze belegt, bringt ein Sieg nur Trophäen und die Siegprämie.'));
+  simpleSheet('Truhenfolge', d);
+}
+// Uhren im Hauptmenü: einmal je Sekunde, nur solange der Reiter „Kampf“ zu sehen ist
+setInterval(() => {
+  if (screen !== 'menu' || tab !== 'home' || document.hidden) return;
+  const ready = P.chestsReady(profile, Date.now());
+  chestTick(); renderChests(false);
+  if (P.chestsReady(profile, Date.now()) !== ready) renderTop();
+  const left = sheet.querySelector('.chestCard .left'); // offenes Truhenblatt läuft mit
+  if (left) { const run = P.chestSlots(profile, Date.now()).find(x => x && x.state === 'run'); if (run) left.textContent = clock(run.left); }
+}, 1000);
 
 function showQuests() {
   const body = el('div', 'quests');
@@ -247,6 +393,8 @@ function showQuests() {
     b.addEventListener('click', () => { if (P.claimQuest(profile, i)) { save(); sfx('coin'); showQuests(); render(); } });
     row.append(b); body.append(row);
   });
+  const all = profile.questBonus === profile.day;
+  body.append(el('div', `qbonus${all ? ' claimed' : ''}`, `<div class="qt"><b>Alle drei erledigt</b><small>${all ? 'Wanderscherbe erhalten' : 'bringt eine Wanderscherbe für eine Runenform deiner Wahl'}</small></div><span class="ico wild big"></span>`));
   body.append(el('p', 'center small', `Neue Aufgaben in ${untilMidnight()}`));
   simpleSheet('Tagesaufgaben', body);
 }
@@ -260,7 +408,7 @@ function showHelp(then) {
 <li><b>Zeit:</b> 3 Minuten. Steht es dann gleich, gewinnt in der Verlängerung der nächste zerstörte Turm.</li>
 <li><b>Türme:</b> Sie schießen erst, wenn ein Gegner die Brücke hinter sich gelassen hat.</li>
 <li><b>Helden:</b> Steht ein Held auf dem Feld, erscheint ein goldener Knopf für seine Fähigkeit – sie kostet Kraft.</li>
-<li><b>Runenform:</b> Ab Kartenstufe 3 erscheint manche Karte jedes zweite oder dritte Mal in einer stärkeren Form (violette Rauten auf der Karte).</li>
+<li><b>Runenform:</b> Manche Karten lassen sich mit sechs Runenscherben erwecken. Danach erscheinen sie jedes zweite oder dritte Mal in einer stärkeren Form (violette Rauten auf der Karte).</li>
 <li><b>Fortschritt:</b> Siege bringen Trophäen und eine Truhe. Der Trophäenweg, Tagesaufgaben und die Kronentruhe bringen Gold, Karten und Runensplitter; im Laden gibt es täglich neue Angebote.</li>
 </ul>`);
   const b = el('button', 'btn primary', then ? 'Los geht’s' : 'Alles klar');
@@ -274,7 +422,8 @@ function showHelp(then) {
 // ---- Reiter „Karten“ ---------------------------------------------------------------------------
 let swap = null; // Karte aus der Sammlung, die gerade ins Deck getauscht wird
 let cardView = 'werte'; // zuletzt gewählte Ansicht im Kartenblatt (Werte, Erklärung, Geschichte)
-let filter = 'alle';
+let filter = 'alle', sort = 'arena';
+const SORTS = { arena: ['Arena', null], selten: ['Seltenheit', (a, b) => RAR_ORDER[P.rarity(b)] - RAR_ORDER[P.rarity(a)]], kraft: ['Kraft', (a, b) => CARDS[a].cost - CARDS[b].cost], stufe: ['Stufe', (a, b) => (profile.cards[b] ? profile.cards[b].lvl : 0) - (profile.cards[a] ? profile.cards[a].lvl : 0)] };
 const FILTERS = { alle: ['Alle', () => true], troop: ['Truppen', c => c.type === 'troop' && !c.hero], hero: ['Helden', c => !!c.hero], spell: ['Zauber', c => c.type === 'spell'], building: ['Gebäude', c => c.type === 'building'] };
 function renderDeck() {
   const ups = P.upgradable(profile);
@@ -296,7 +445,7 @@ function renderDeck() {
   if (swap) hint.textContent = `Tippe die Deck-Karte an, die ${CARDS[swap].name} ersetzen soll.`;
   const meter = id => { const c = profile.cards[id], u = P.upgradeInfo(profile, id); return u.max ? 0 : Math.max(0.001, c.n / u.copies); };
   const dg = $('#deckGrid'); dg.replaceChildren();
-  for (const id of profile.deck) { const e = cardEl(id, { lvl: profile.cards[id].lvl, meter: meter(id), rune: P.hasRune(profile, id), wish: profile.wish === id }); if (swap) e.classList.add('pick'); dg.append(e); }
+  for (const id of profile.deck) { const e = cardEl(id, { lvl: profile.cards[id].lvl, meter: meter(id), wish: profile.wish === id }); if (swap) e.classList.add('pick'); dg.append(e); }
   // Türme: die gewählte Art gilt für beide Außentürme; der Hauptturm steigt mit der Spielerstufe
   $('#towerInfo').textContent = `Hauptturm: Stufe ${P.playerLevel(profile.xp).lvl}`;
   $('#towerGrid').replaceChildren(...TOWER_IDS.map(id => {
@@ -307,9 +456,11 @@ function renderDeck() {
   }));
   const chips = $('#filterChips');
   chips.replaceChildren(...Object.entries(FILTERS).map(([k, [label]]) => { const b = el('button', k === filter ? 'on' : '', label); b.dataset.f = k; return b; }));
+  $('#sortChips').replaceChildren(el('small', '', 'Sortieren'), ...Object.entries(SORTS).map(([k, [label]]) => { const b = el('button', k === sort ? 'on' : '', label); b.dataset.s = k; return b; }));
   const cg = $('#collGrid'); cg.replaceChildren();
   const all = P.ARENAS.flatMap(a => a.unlock).filter(id => CARDS[id].type !== 'tower' && !profile.deck.includes(id) && FILTERS[filter][1](CARDS[id]));
-  for (const id of all) cg.append(profile.cards[id] ? cardEl(id, { lvl: profile.cards[id].lvl, meter: meter(id), rune: P.hasRune(profile, id), wish: profile.wish === id }) : cardEl(id, { locked: P.unlockArena(id) }));
+  if (SORTS[sort][1]) { const own = all.filter(id => profile.cards[id]).sort(SORTS[sort][1]), rest = all.filter(id => !profile.cards[id]).sort(SORTS[sort][1]); all.splice(0, all.length, ...own, ...rest); } // eigene Karten zuerst
+  for (const id of all) cg.append(profile.cards[id] ? cardEl(id, { lvl: profile.cards[id].lvl, meter: meter(id), wish: profile.wish === id }) : cardEl(id, { locked: P.unlockArena(id) }));
   if (!all.length) cg.append(el('p', 'empty', 'Keine weiteren Karten in dieser Auswahl.'));
   $('#collCount').textContent = `${Object.keys(profile.cards).filter(id => CARDS[id].type !== 'tower').length} von ${CARD_IDS.length} Karten`;
 }
@@ -325,6 +476,7 @@ $('#jokerBtn').addEventListener('click', () => {
 });
 $('#slotSeg').addEventListener('click', e => { const s = e.target.dataset.slot; if (s == null) return; sfx('click'); swap = null; P.setSlot(profile, Number(s)); save(); renderDeck(); });
 $('#filterChips').addEventListener('click', e => { const f = e.target.dataset.f; if (!f) return; sfx('click'); filter = f; renderDeck(); });
+$('#sortChips').addEventListener('click', e => { const k = e.target.dataset.s; if (!k) return; sfx('click'); sort = k; renderDeck(); });
 $('#deckGrid').addEventListener('click', e => {
   const c = e.target.closest('.card'); if (!c) return;
   sfx('click');
@@ -340,7 +492,7 @@ $('#deckGrid').addEventListener('click', e => {
 $('#towerGrid').addEventListener('click', e => { const c = e.target.closest('.card'); if (!c) return; sfx('click'); swap = null; showCard(c.dataset.id); });
 $('#collGrid').addEventListener('click', e => { const c = e.target.closest('.card'); if (!c) return; sfx('click'); swap = null; showCard(c.dataset.id); });
 
-const SPEED_NAME = v => (v <= 0.8 ? 'Langsam' : v <= 1.1 ? 'Mittel' : v <= 1.6 ? 'Schnell' : 'Sehr schnell');
+const SPEED_NAME = v => (v <= 1.0 ? 'Langsam' : v <= 1.4 ? 'Mittel' : v <= 2.0 ? 'Schnell' : 'Sehr schnell'); // 0,9 · 1,2 · 1,8 · 2,4 Felder je Sekunde
 const SPAWN_NAME = new Proxy({ wicht: ['Wicht', 'Wichte'] }, { get: (t, k) => t[k] || UNIT_NAMES[k] || [k, k] }); // Kurzformen für die Wertetabelle
 function statRows(id, lvl) {
   const c = CARDS[id], m = sim.cardMult(lvl), up = lvl < P.MAX_LEVEL ? sim.cardMult(lvl + 1) : 0;
@@ -445,18 +597,39 @@ function showCard(id) {
   const top = el('div', 'detail');
   top.append(cardEl(id, { tag: 'div', lvl: own ? own.lvl : 0 }));
   const lvl = own ? own.lvl : 1;
-  top.append(el('div', '', `<h4>${c.name}</h4><div class="role">${c.type === 'tower' ? c.role : c.mirror ? `${c.role} · kostet 1 Kraft mehr als die wiederholte Karte` : `${c.role} · ${c.cost} Kraft`}</div><p>${c.desc}</p>`));
+  const rar = P.rarity(id);
+  top.append(el('div', '', `<h4>${c.name}</h4><div class="rword ${rar}">${P.RARITY_NAME[rar]}</div><div class="role">${c.type === 'tower' ? c.role : c.mirror ? `${c.role} · kostet 1 Kraft mehr als die wiederholte Karte` : `${c.role} · ${c.cost} Kraft`}</div><p>${c.desc}</p>`));
   d.append(top);
   // Drei Ansichten: Werte, genaue Erklärung, Geschichte
   const seg = el('div', 'seg small infoSeg'), panes = { werte: el('div', 'pane'), wirkung: el('div', 'pane how'), story: el('div', 'pane story') };
   for (const [k, label] of [['werte', 'Werte'], ['wirkung', 'Erklärung'], ['story', 'Geschichte']]) { const b = el('button', k === cardView ? 'on' : '', label); b.dataset.view = k; seg.append(b); panes[k].hidden = k !== cardView; }
   seg.addEventListener('click', e => { const v = e.target.dataset.view; if (!v) return; sfx('click'); cardView = v; for (const b of seg.children) b.classList.toggle('on', b.dataset.view === v); for (const [k, pn] of Object.entries(panes)) pn.hidden = k !== v; });
   d.append(seg);
-  panes.werte.append(el('div', 'statlist', statRows(id, lvl).map(([k, v, plus]) => `<div>${k}<b>${v}${plus && own ? `<em>${plus}</em>` : ''}</b></div>`).join('')));
+  // Werte: bei einer eigenen Karte unter der Höchststufe steht in jeder Zeile, die wächst, „alt → neu“ mit dem Zuwachs
+  const rows = statRows(id, lvl), nextRows = own && lvl < P.MAX_LEVEL ? statRows(id, lvl + 1) : null;
+  if (nextRows) panes.werte.append(el('div', 'lvlLine', `<span>Stufe ${lvl}</span><i>→</i><b>Stufe ${lvl + 1}</b><small>Vorschau der Aufwertung</small>`));
+  panes.werte.append(el('div', 'statlist', rows.map(([k, v, plus], i) => {
+    const nv = nextRows && nextRows[i] && nextRows[i][0] === k ? nextRows[i][1] : v;
+    return nv !== v ? `<div class="chg"><span>${k}</span><b><s>${v}</s><i>→</i><u>${nv}</u>${plus ? `<em>${plus}</em>` : ''}</b></div>` : `<div>${k}<b>${v}</b></div>`;
+  }).join('')));
   if (c.hero) panes.werte.append(el('div', 'extra heroBox', `<b>Fähigkeit: ${c.ability.name}</b><small>${c.ability.cost} Kraft · ${c.ability.once ? 'einmal je Einsatz' : `alle ${c.ability.cd} s`}</small><p>${c.ability.desc}</p>`));
   if (RUNES[id]) {
-    const R = RUNES[id], has = own && own.lvl >= RUNE_LEVEL;
-    panes.werte.append(el('div', `extra runeBox${has ? ' on' : ''}`, `<b>Runenform</b><small>${has ? 'freigeschaltet' : `ab Stufe ${RUNE_LEVEL}`} · jede ${R.cycles + 1}. Karte</small><p>${R.desc}</p>`));
+    const R = RUNES[id], ri = own ? P.runeInfo(profile, id) : { have: 0, need: P.RUNE_SHARDS, done: false };
+    const rb = el('div', `extra runeBox${ri.done ? ' on' : ''}`, `<b><span class="runeMark${ri.done ? '' : ' off'}"></span>Runenform</b><small>${ri.done ? 'erweckt' : 'noch nicht erweckt'} · jede ${R.cycles + 1}. Karte erscheint in dieser Form</small><p>${R.desc}</p>`);
+    if (!ri.done) {
+      rb.append(el('div', 'shards', `<div class="shardRow">${Array.from({ length: ri.need }, (_, k) => `<i class="${k < ri.have ? 'on' : ''}"></i>`).join('')}</div><span>${ri.have} / ${ri.need} Runenscherben</span>`));
+      if (own) {
+        const wb = el('button', 'btn wildBtn', `<span class="ico wild"></span>Wanderscherbe einsetzen <em>${profile.wild}</em>`);
+        wb.disabled = profile.wild < 1;
+        wb.addEventListener('click', () => {
+          if (!P.useWild(profile, id)) { sfx('error'); return; }
+          save(); sfx('rune'); render();
+          if (P.hasRune(profile, id)) playRune(id, () => showCard(id)); else showCard(id);
+        });
+        rb.append(wb, el('small', 'src', `Scherben: Riesen- und Runentruhe (sicher), andere Truhen mit Glück, Modus des Tages, Stufe ${RUNE_LEVEL} der Karte. Wanderscherben: alle drei Tagesaufgaben, Trophäenweg, Bosse, Laden.`));
+      }
+    }
+    panes.werte.append(rb);
   }
   panes.wirkung.append(el('ul', '', explain(id, lvl).map(t => `<li>${esc(t)}</li>`).join('')), el('small', '', `Zahlen für Stufe ${lvl}.`));
   panes.story.append(el('p', '', esc(STORY[id] || '')));
@@ -481,6 +654,7 @@ function showCard(id) {
       if (lack.length) d.append(el('p', 'center small lack', `Es fehlen noch ${lack.join(' und ')}.`));
       const tools = el('div', 'tools');
       const jb = el('button', 'btn', `<span class="ico joker"></span>${j.use ? `${j.use} Joker einsetzen` : 'Joker einsetzen'}`);
+      if (j.each > 1 && j.missing) d.append(el('p', 'center small', `${P.RARITY_NAME[rar]}e Karte: ${j.each} Joker ersetzen eine Kopie.`));
       jb.disabled = !j.use;
       jb.addEventListener('click', () => { if (P.useJokers(profile, id)) { save(); sfx('buy'); render(); showCard(id); } });
       const wb = el('button', `btn${profile.wish === id ? ' wished' : ''}`, `<span class="ico star"></span>${profile.wish === id ? 'Wunschkarte ✓' : 'Als Wunschkarte'}`);
@@ -508,7 +682,6 @@ function showCard(id) {
 }
 
 // Aufwerten mit Animation: Karten fliegen ein, die Karte blitzt auf, die Werte zählen hoch.
-const fxLayer = $('#fx');
 const parseNum = s => (/^[\d.]+$/.test(s) ? Number(String(s).replace(/\./g, '')) : NaN);
 function doUpgrade(id, reopen) {
   const own = profile.cards[id];
@@ -520,11 +693,13 @@ function doUpgrade(id, reopen) {
   const after = statRows(id, r.lvl);
   const changes = before.map((a, i) => [a[0], a[1], after[i] ? after[i][1] : a[1]]).filter(c => c[1] !== c[2]).slice(0, 4);
   const notes = [];
-  if (r.lvl === RUNE_LEVEL && RUNES[id]) notes.push(['rune', 'Runenform freigeschaltet!']);
+  if (r.shards) notes.push(P.hasRune(profile, id) ? ['rune', 'Runenform erweckt!'] : ['shard', `+${r.shards} Runenscherben · ${P.runeInfo(profile, id).have} / ${P.RUNE_SHARDS}`]);
   if (r.levelUp) notes.push(['lvl', `Spielerstufe ${P.playerLevel(profile.xp).lvl} – stärkere Türme, +5 Runensplitter`]);
   playUpgrade(id, from, r.lvl, changes, notes, () => { render(); if (reopen) showCard(id); });
 }
-function playUpgrade(id, from, to, changes, notes, done) {
+// Runenform erweckt: dieselbe Bühne in Violett
+function playRune(id, done) { playUpgrade(id, profile.cards[id].lvl, profile.cards[id].lvl, [], [['rune', `Jede ${RUNES[id].cycles + 1}. Karte erscheint jetzt in Runenform`], ['text', RUNES[id].desc]], done, '<b class="runeTitle">Runenform erweckt!</b>'); }
+function playUpgrade(id, from, to, changes, notes, done, title) {
   const rune = notes.some(n => n[0] === 'rune');
   const box = el('div', `upfx${rune ? ' rune' : ''}`), stage = el('div', 'stage');
   const card = cardEl(id, { tag: 'div', lvl: from });
@@ -540,9 +715,9 @@ function playUpgrade(id, from, to, changes, notes, done) {
     stage.append(s);
   }
   const list = el('div', 'uplist');
-  changes.forEach(([k, a, b], i) => { const row = el('div', 'uprow', `<span>${k}</span><b data-a="${esc(a)}" data-b="${esc(b)}">${a}</b>`); row.style.animationDelay = `${0.9 + i * 0.16}s`; list.append(row); });
+  changes.forEach(([k, a, b], i) => { const na = parseNum(a), nb = parseNum(b), plus = Number.isFinite(na) && Number.isFinite(nb) ? `<em>+${fmt(nb - na)}</em>` : ''; const row = el('div', 'uprow', `<span>${k}</span><span class="vals"><s>${a}</s><i>→</i><b data-a="${esc(a)}" data-b="${esc(b)}">${a}</b>${plus}</span>`); row.style.animationDelay = `${0.9 + i * 0.16}s`; list.append(row); });
   notes.forEach(([kind, text], i) => { const n = el('div', `upnote ${kind}`, text); n.style.animationDelay = `${1.05 + (changes.length + i) * 0.16}s`; list.append(n); });
-  box.append(stage, el('div', 'uptitle', `<small>${CARDS[id].name}</small><b>Stufe <span class="old">${from}</span><span class="arrow">→</span><span class="new">${to}</span></b>`), list, el('div', 'uphint', 'Tippen zum Fortfahren'));
+  box.append(stage, el('div', 'uptitle', `<small>${CARDS[id].name}</small>${title || `<b>Stufe <span class="old">${from}</span><span class="arrow">→</span><span class="new">${to}</span></b>`}`), list, el('div', 'uphint', 'Tippen zum Fortfahren'));
   fxLayer.replaceChildren(box); fxLayer.hidden = false;
   sfx('charge');
   let closed = false;
@@ -597,8 +772,9 @@ function renderShop() {
 
   head('Truhen', 'gegen Runensplitter');
   const chests = el('div', 'offers two');
-  for (const [kind, c] of Object.entries(P.CHESTS)) {
-    const b = el('button', 'offer chestOffer', `<span class="chestIco ${kind}"></span><b>${c.name}</b><small>${kind === 'holz' ? 'Gold und vier Kartenstapel' : 'Viel Gold und fünf große Kartenstapel'}</small><em class="${profile.gems < c.gems ? 'poor' : ''}"><span class="ico gem"></span>${c.gems}</em>`);
+  for (const kind of P.SHOP_CHESTS) {
+    const c = P.CHESTS[kind], info = P.chestInfo(kind, profile.arena);
+    const b = el('button', 'offer chestOffer', `<span class="chestIco ${kind}"></span><b>${c.name}</b><small>${info.cards} Karten<br>rund ${fmt(info.gold)} Gold</small><em class="${profile.gems < c.gems ? 'poor' : ''}"><span class="ico gem"></span>${c.gems}</em>`);
     b.addEventListener('click', () => {
       if (profile.gems < c.gems) { sfx('error'); flash(b); return; }
       const loot = P.buyChest(profile, kind);
@@ -608,6 +784,11 @@ function renderShop() {
   }
   body.append(chests);
 
+  head('Runenformen', `${profile.wild} Wanderscherben`);
+  const wild = el('button', `offer wide${profile.shop.wild ? ' sold' : ''}`, `<span class="ico wild big"></span><span><b>Wanderscherbe</b><small>${profile.shop.wild ? 'Heute schon gekauft' : 'Passt auf jede Karte mit Runenform · eine am Tag'}</small></span><em class="${profile.gems < P.WILD_PRICE && !profile.shop.wild ? 'poor' : ''}">${profile.shop.wild ? '✓' : `<span class="ico gem"></span>${P.WILD_PRICE}`}</em>`);
+  wild.id = 'wildOffer';
+  wild.addEventListener('click', () => { if (profile.shop.wild) return; if (P.buyWild(profile)) { save(); sfx('buy'); render(); } else { sfx('error'); flash(wild); } });
+  body.append(wild);
   head('Gold', '');
   const gold = el('button', 'offer wide', `<span class="ico coin big"></span><span><b>${P.GOLD_PACK.gold} Gold</b><small>Für Aufwertungen und Angebote</small></span><em class="${profile.gems < P.GOLD_PACK.gems ? 'poor' : ''}"><span class="ico gem"></span>${P.GOLD_PACK.gems}</em>`);
   gold.addEventListener('click', () => { if (P.buyGold(profile)) { save(); sfx('buy'); render(); } else { sfx('error'); flash(gold); } });
@@ -636,14 +817,14 @@ function renderRoad() {
       if (r.at <= a.at || (next && r.at > next.at)) continue;
       const can = profile.best >= r.at, got = profile.road.includes(r.at);
       const row = el('div', `mile${got ? ' got' : can ? ' can' : ''}`);
-      row.append(el('span', 'at', `${fmt(r.at)} <span class="ico trophy"></span>`), el('span', 'what', r.kind === 'gold' ? `<span class="ico coin"></span>${r.n} Gold` : r.kind === 'gems' ? `<span class="ico gem"></span>${r.n} Runensplitter` : '<span class="chestIco holz mini"></span>Truhe'));
+      row.append(el('span', 'at', `${fmt(r.at)} <span class="ico trophy"></span>`), el('span', 'what', r.kind === 'gold' ? `<span class="ico coin"></span>${r.n} Gold` : r.kind === 'gems' ? `<span class="ico gem"></span>${r.n} Runensplitter${r.wild ? ' <span class="ico wild"></span>Wanderscherbe' : ''}` : `<span class="chestIco ${r.chest} mini"></span>${P.CHESTS[r.chest].name}`));
       const b = el('button', 'btn primary', got ? '✓' : can ? 'Abholen' : '');
       b.disabled = !can || got;
       b.addEventListener('click', () => {
         const loot = P.claimRoad(profile, r.at);
         if (!loot) return;
         save();
-        if (loot.cards.length) lootSheet('Truhe vom Trophäenweg', loot, '', 'holz'); else { sfx('coin'); render(); }
+        if (loot.cards.length) lootSheet(`${P.CHESTS[r.chest].name} vom Trophäenweg`, loot, '', r.chest); else { sfx('coin'); render(); }
       });
       row.append(b); body.append(row);
       if (can && !got && !firstOpen) firstOpen = row;
@@ -994,7 +1175,7 @@ function updateHud(force) {
     if (force || B.hand[i] !== key) {
       const fresh = !B.hand[i] || B.hand[i].split('|')[0] !== id;
       B.hand[i] = key;
-      const e = cardEl(id, { lvl: S.levels[id] || 1, pips: R ? { n: Math.min(R.cycles, S.cycle[id] || 0), of: R.cycles } : null, cost: echo ? (Number.isFinite(price) ? price : '?') : null });
+      const e = cardEl(id, { lvl: S.levels[id] || 1, rune: null, pips: R ? { n: Math.min(R.cycles, S.cycle[id] || 0), of: R.cycles } : null, cost: echo ? (Number.isFinite(price) ? price : '?') : null, ability: CARDS[id].hero ? CARDS[id].ability : null });
       if (echo && S.last) e.querySelector('.name').textContent = `↺ ${CARDS[S.last].name}`;
       e.dataset.i = i;
       if (!force && fresh) e.classList.add('new');
@@ -1004,20 +1185,20 @@ function updateHud(force) {
     e.classList.toggle('poor', price > S.kraft);
     e.classList.toggle('sel', B.sel === i);
   }
-  if (force || B.next !== S.next) { B.next = S.next; $('#nextCard').replaceChildren(cardEl(S.next, { tag: 'div' })); }
+  if (force || B.next !== S.next) { B.next = S.next; $('#nextCard').replaceChildren(cardEl(S.next, { tag: 'div', rune: null })); }
   // Heldenfähigkeiten
   const abl = g.over ? [] : sim.abilities(g, 0), akey = abl.map(a => a.cardId).join();
   const box = $('#abilities');
   if (force || B.flags.abl !== akey) {
     B.flags.abl = akey;
     box.classList.toggle('many', abl.length > 2);
-    box.replaceChildren(...abl.map(a => { const b = el('button', 'ability', `<span class="an">${a.ability.name}</span><span class="ac">${a.ability.cost}</span><span class="cdn"></span>`); b.dataset.id = a.cardId; return b; }));
+    box.replaceChildren(...abl.map(a => { const b = el('button', 'ability', `<span class="an">${a.ability.name}</span><span class="ac">${a.ability.cost}</span><span class="cdn"></span>`); b.dataset.id = a.cardId; b.setAttribute('aria-label', `${CARDS[a.cardId].name}: ${a.ability.name}, ${a.ability.cost} Kraft`); return b; }));
   }
   abl.forEach((a, i) => {
     const b = box.children[i];
     b.classList.toggle('ready', a.ready);
     b.classList.toggle('cool', a.cd > 0);
-    const txt = a.cd > 0 ? String(Math.ceil(a.cd)) : '';
+    const txt = a.cd > 0 ? `${Math.ceil(a.cd)} s` : '';
     if (b.lastChild.textContent !== txt) b.lastChild.textContent = txt;
   });
 }
@@ -1093,7 +1274,7 @@ function pause() {
   openSheet(d, true);
 }
 $('#pauseBtn').addEventListener('click', () => { sfx('click'); pause(); });
-document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); else if (screen === 'battle' && !B.g.over) wakeLock(true); else if (screen === 'menu' && overlay.hidden) show(tab); });
+document.addEventListener('visibilitychange', () => { stageSync(); if (document.hidden) pause(); else if (screen === 'battle' && !B.g.over) wakeLock(true); else if (screen === 'menu' && overlay.hidden) show(tab); });
 
 function finishBattle() {
   B.booked = true;
@@ -1117,8 +1298,8 @@ function finishBattle() {
   if (B.training) d.append(el('p', 'center', 'Übungskampf – Trophäen und Truhen bleiben unberührt.'));
   else if (special) {
     d.append(el('p', 'center', `${B.opts.boss != null ? `Bosskampf gegen ${B.foe}` : `Herausforderung „${P.MODES[B.opts.mode].name}“`} – ohne Trophäen.`));
-    if (res.bossFirst) d.append(el('div', 'notice', `Boss besiegt! +${P.BOSS_REWARD.gems} Runensplitter und eine große Truhe`));
-    if (res.bonus) d.append(el('div', 'notice', `Modus des Tages gewonnen: +${res.bonus} Runensplitter`));
+    if (res.bossFirst) d.append(el('div', 'notice', `Boss besiegt! +${P.BOSS_REWARD.gems} Runensplitter, ${P.BOSS_REWARD.wild} Wanderscherben und eine große Truhe`));
+    if (res.bonus) d.append(el('div', 'notice', `Modus des Tages gewonnen: +${res.bonus} Runensplitter${res.shards && res.shards.shards[0] ? ` und eine Runenscherbe (${CARDS[res.shards.shards[0].id].name})` : res.shards && res.shards.wild ? ' und eine Wanderscherbe' : ''}`));
   } else {
     const delta = el('div', 'delta', `<span class="ico trophy"></span>${res.delta > 0 ? '+' : ''}${res.delta}<span style="color:var(--dim);font-weight:600;font-size:15px">&nbsp;→ <b class="tcount">${fmt(profile.trophies - res.delta)}</b></span>`);
     d.append(delta);
@@ -1145,6 +1326,11 @@ function finishBattle() {
     });
     slot.append(cb); d.append(slot);
   }
+  if (res.slot) { // die gewonnene Truhe liegt jetzt auf einem Truhenplatz
+    const v = P.chestSlots(profile, Date.now())[res.slot.i], C = P.CHESTS[res.slot.kind];
+    d.append(el('div', 'wonChest', `<span class="chestIco ${res.slot.kind}"></span><span><b>${C.name} gewonnen</b><small>Truhenplatz ${res.slot.i + 1} · ${v && v.state === 'run' ? `öffnet sich in ${mins(v.left)}` : `wartet, braucht ${mins(P.chestTime(res.slot.kind))}`}</small></span>`));
+  } else if (res.full) d.append(el('div', 'notice', `Alle Truhenplätze sind belegt – die ${P.CHESTS[res.full].name} wartet auf deinen nächsten Sieg.`));
+  if (res.gold) d.append(el('p', 'center prize', `<span class="ico coin"></span>+${res.gold} Gold Siegprämie`));
   if (res.crownBox) d.append(el('div', 'notice', 'Die Kronentruhe ist voll – hol sie dir im Menü!'));
   if (P.questsOpen(profile) > questsBefore) d.append(el('div', 'notice', 'Tagesaufgabe erfüllt – Belohnung wartet im Menü.'));
   const row = el('div', 'btns');
@@ -1157,7 +1343,6 @@ function finishBattle() {
 }
 
 // ---- Start -------------------------------------------------------------------------------------
-drawIcon($('#emblem').getContext('2d'), 320, 20);
 applySettings();
 layout();
 // Kartenbilder nach und nach vorab erzeugen, damit das Menü sofort da ist
@@ -1165,7 +1350,7 @@ const artQueue = [...profile.deck, ...Object.keys(CARDS)];
 (function pump() { if (screen !== 'battle') for (let i = 0; i < 5 && artQueue.length; i++) art(artQueue.shift()); if (artQueue.length) setTimeout(pump, 25); })();
 document.addEventListener('pointerdown', unlock, { once: true });
 show('home');
-window.__runenfurt = { B, sim, renderer, get profile() { return profile; }, start: startBattle, show };
+window.__runenfurt = { B, sim, renderer, stage, P, save, get profile() { return profile; }, start: startBattle, show };
 
 // Offline-Betrieb: Service Worker anmelden; eine neue Version lädt die Seite neu, aber nie mitten im Kampf.
 if ('serviceWorker' in navigator && location.protocol !== 'file:' && !params.has('nosw')) {

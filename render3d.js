@@ -4,16 +4,17 @@
 // Gleiche Schnittstelle wie der 2D-Zeichner in render.js (resize, reset, onEvent, draw, toField, snapshot).
 import * as THREE from './vendor/three.module.min.js';
 import { CARDS, UNITS, RUNES } from './cards.js';
-import { W, H, RIVER_TOP, RIVER_BOT, BRIDGES, BRIDGE_HALF, OUTER_Y, MAIN_Y, POCKET, clampDeploy, cardCost, outerTower } from './sim.js';
+import { W, H, RIVER_TOP, RIVER_BOT, BRIDGES, BRIDGE_HALF, OUTER_Y, MAIN_Y, POCKET, deployPlan, cardCost, outerTower } from './sim.js';
+import * as SIM from './sim.js'; // nur für deployTiles: wird benutzt, sobald es das gibt
 import { TEAM } from './render.js';
 import { getDef, merge, P, box, cyl, cone, sph, rock, FLY, USCALE, STONE, STONE_D, STONE_L, WOOD_D } from './models3d.js';
 import { createLook, PITCH } from './engine/look.js';
-import { createSprites, loadUnit, getUnit, unitIndex, loadPortraits, hasPortrait, releaseUnits, frontOf, setFront, portrait, SCALE } from './engine/sprites.js';
+import { createSprites, loadUnit, getUnit, unitIndex, loadPortraits, hasPortrait, releaseUnits, warmUnits, frontOf, setFront, portrait, SCALE } from './engine/sprites.js';
 import { createFx } from './engine/fx.js';
 import { createActors } from './engine/actors.js';
 
 const PI = Math.PI;
-const BUILDING_ART = ['ballista', 'aussenturm', 'geschuetzturm', 'klingenturm', 'segensturm']; // Gebäude und Türme mit eigenem Kartenbild aus Blender (engine/assets/units/<modell>_k.webp)
+const BUILDING_ART = ['ballista', 'aussenturm', 'geschuetzturm', 'klingenturm', 'segensturm', 'steinschleuder', 'kesselturm', 'fernschleuder', 'sonnenspiegel', 'kraftquell', 'erdloch', 'raeuberlager', 'kieselhaufen', 'wolfszwinger', 'maulwurfshuegel', 'funkenpfahl', 'kurbelbogen', 'armbrustwagen_w']; // Gebäude und Türme mit eigenem Kartenbild aus Blender (engine/assets/units/<modell>_k.webp)
 const RUNE_COLOR = '#c98bff', GOLD = '#f5c542';
 const ease = t => 1 - (1 - t) * (1 - t);
 const LEAN = -0.3; // Figuren leicht zur Kamera kippen, damit man Gesichter statt Scheitel sieht
@@ -35,7 +36,7 @@ export function createRenderer3D(canvas, overlay) {
   // Kartenbilder geladen; die großen Bildfolgen holt prepare() für die Karten des jeweiligen Kampfs.
   const fresh = new Set();
   const ready = Promise.race([
-    Promise.allSettled([look.ready, unitIndex().then(list => { for (const n of list) fresh.add(n); return loadPortraits([...list, ...BUILDING_ART]); })]),
+    Promise.allSettled([look.ready, unitIndex().then(list => { for (const n of list) fresh.add(n); setTimeout(() => warmUnits(list), 6000); return loadPortraits([...list, ...BUILDING_ART]); })]),
     new Promise(r => setTimeout(r, 6000)),
   ]);
   const UNIT = SCALE;   // Größe der Figuren im Feld – gilt auch für die bisherigen
@@ -125,7 +126,7 @@ export function createRenderer3D(canvas, overlay) {
   function dropInst(id, animated) {
     const i = insts.get(id); if (!i) return;
     insts.delete(id); dropBeam(i);
-    if (i.neu) { if (i.status) { world.remove(i.status); i.status.material.dispose(); i.status = null; } if (i.tower) actors.removeTower(i); else if (i.building) actors.removeBuilding(i); else sprites.remove(i); return; }
+    if (i.neu) { for (const m of i.extras) world.remove(m); if (i.status) { world.remove(i.status); i.status.material.dispose(); i.status = null; } if (i.tower) actors.removeTower(i); else if (i.building) actors.removeBuilding(i); else sprites.remove(i); return; }
     if (i.sprite) {
       if (i.status) { world.remove(i.status); i.status.material.dispose(); i.status = null; }
       if (i.blob) world.remove(i.blob);
@@ -437,7 +438,7 @@ export function createRenderer3D(canvas, overlay) {
     const add = (unit, side) => {
       const u = UNITS[unit]; if (!u || u.tower || done.has(unit + side)) return;
       done.add(unit + side);
-      if (!u.building && !u.hero && !u.rune) { if (fresh.has(u.model || unit)) want.add(u.model || unit); else bakeQueue.push([u.model || unit, side]); }
+      if (!u.building) { if (fresh.has(u.model || unit)) want.add(u.model || unit); else if (!u.hero && !u.rune) bakeQueue.push([u.model || unit, side]); }
       for (const k of ['spawn', 'deathSpawn', 'morph', 'hatch', 'curse']) if (u[k] && !done.has(u[k].unit + side)) add(u[k].unit, side);
     };
     const done = new Set(), want = new Set();
@@ -450,7 +451,7 @@ export function createRenderer3D(canvas, overlay) {
       if (c.ability && c.ability.unit) add(c.ability.unit, side);
     } });
     releaseUnits(want);                               // Bildfolgen des letzten Kampfs freigeben, die jetzt nicht vorkommen
-    return Promise.all([...want].map(loadUnit));      // neue Bildfolgen dieses Kampfs laden
+    return Promise.all([...want].map(n => loadUnit(n).catch(() => { fresh.delete(n); })));      // neue Bildfolgen dieses Kampfs laden (nicht ladbar: Figur wie bisher)
   }
 
 
@@ -536,6 +537,7 @@ export function createRenderer3D(canvas, overlay) {
       }
     } else if (ev.t === 'wake') ringFx(ev.x, ev.y, TEAM[ev.side].light, 2.4, 0.6);
     else if (ev.t === 'burst') { ringFx(ev.x, ev.y, ev.frost ? '#bfeaff' : '#ffd27a', ev.r, ev.big ? 0.5 : 0.35); pop(ev.x, 0.5, ev.y, ev.frost ? '#dff3ff' : '#ffb347', ev.r * (ev.big ? 1 : 0.8), ev.big ? 0.5 : 0.3); if (ev.big) shake = Math.max(shake, 0.35); }
+    else if (ev.t === 'trail') ringFx(ev.x, ev.y, '#ffa53d', ev.r, 0.5);
     else if (ev.t === 'impact') { pop(ev.x, 0.7, ev.y, '#ffffff', 1.1, 0.25); ringFx(ev.x, ev.y, '#ffffff', ev.r || 1.6, 0.3); shake = Math.max(shake, 0.18); }
     else if (ev.t === 'bless') { // Segen: Lichtstrahl vom Turm, die Truppe leuchtet golden auf
       beam([ev.fx, 3.3, ev.fy], [ev.x, 1.0, ev.y], '#ffe08a', 0.1, 0.5); ringFx(ev.x, ev.y, GOLD, 1.4, 0.6); pop(ev.x, 1.1, ev.y, '#fff3c4', 0.9, 0.5, 0.8);
@@ -656,6 +658,42 @@ export function createRenderer3D(canvas, overlay) {
   const lock = [0, 1, 2, 3].map(() => { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), zoneMat); m.rotation.x = -PI / 2; m.visible = false; world.add(m); return m; });
   const ghostDisc = flat(discGeo, TEAM[0].main, 0.32), ghostRing = flat(ringGeo, '#ffffff', 0.95), rangeRing = flat(new THREE.RingGeometry(0.985, 1, 64), '#ffffff', 0.5);
   for (const m of [ghostDisc, ghostRing, rangeRing]) { m.visible = false; world.add(m); }
+  // Platzierungs-Vorschau (alles aus deployPlan in sim.js): Kachelraster des erlaubten Bereichs, belegte Kacheln eines
+  // Gebäudes, je Figur eines Trupps eine Scheibe an ihrem Platz
+  const gridImg = document.createElement('canvas'); gridImg.width = gridImg.height = 64;
+  { const q = gridImg.getContext('2d'); q.strokeStyle = 'rgba(255,255,255,.9)'; q.lineWidth = 3; q.strokeRect(0, 0, 64, 64); }
+  const grid = [0, 1, 2, 3].map(() => {
+    const tex = new THREE.CanvasTexture(gridImg); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.2, depthWrite: false }));
+    m.rotation.x = -PI / 2; m.visible = false; world.add(m); return m;
+  });
+  const setGrid = (m, x0, x1, z0, z1) => { // Kachelgrenzen liegen auf ganzen Feldmaßen, auch wenn der Bereich mittendrin beginnt
+    m.visible = true; m.position.set((x0 + x1) / 2, 0.045, (z0 + z1) / 2); m.scale.set(x1 - x0, z1 - z0, 1);
+    m.material.map.repeat.set(x1 - x0, z1 - z0); m.material.map.offset.set(x0 % 1, (1 - (z1 % 1)) % 1);
+  };
+  // Kachelkarte aus deployTiles: erlaubte Kacheln mit feinem Rand, gesperrte rötlich (nur neu gemalt, wenn sie sich ändert)
+  const TP = 24, maskCv = document.createElement('canvas'); maskCv.width = W * TP; maskCv.height = H * TP;
+  const maskTex = new THREE.CanvasTexture(maskCv); maskTex.colorSpace = THREE.SRGBColorSpace;
+  const maskMesh = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshBasicMaterial({ map: maskTex, transparent: true, depthWrite: false }));
+  maskMesh.rotation.x = -PI / 2; maskMesh.position.set(W / 2, 0.045, H / 2); maskMesh.visible = false; world.add(maskMesh);
+  let maskKey = '';
+  function paintMask(tiles, red) {
+    let key = red ? 'r' : 's'; for (let i = 0; i < tiles.length; i += 6) key += String.fromCharCode(48 + (tiles[i] | tiles[i + 1] << 1 | tiles[i + 2] << 2 | tiles[i + 3] << 3 | tiles[i + 4] << 4 | tiles[i + 5] << 5));
+    if (key === maskKey) return;
+    maskKey = key;
+    const q = maskCv.getContext('2d'); q.clearRect(0, 0, maskCv.width, maskCv.height);
+    q.lineWidth = 1;
+    for (let r = 0; r < H; r++) for (let col = 0; col < W; col++) {
+      if (tiles[r * W + col]) { q.strokeStyle = 'rgba(255,255,255,.3)'; q.strokeRect(col * TP + 0.5, r * TP + 0.5, TP - 1, TP - 1); }
+      else if (red) { q.fillStyle = 'rgba(60,8,24,.46)'; q.fillRect(col * TP, r * TP, TP, TP); } // dunkelrot: auch auf rotem Boden zu sehen
+    }
+    maskTex.needsUpdate = true;
+  }
+  const tileFill = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), flatMat(TEAM[0].main, 0.5)); tileFill.rotation.x = -PI / 2;
+  const tileEdge = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]].map(([x, z]) => new THREE.Vector3(x, 0, z))), new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.95, depthWrite: false }));
+  for (const m of [tileFill, tileEdge]) { m.visible = false; world.add(m); }
+  const spotPool = [];
+  const spotAt = i => { while (spotPool.length <= i) { const d = flat(discGeo, TEAM[0].main, 0.55), r = flat(ringGeo, '#ffffff', 0.95); world.add(d, r); spotPool.push([d, r]); } return spotPool[i]; };
   const border = flat(new THREE.PlaneGeometry(W, 0.08), '#ffffff', 0.6); border.position.set(W / 2, 0.05, RIVER_BOT + 0.2); border.visible = false; world.add(border);
   const setRect = (m, x0, x1, z0, z1) => { m.visible = true; m.position.set((x0 + x1) / 2, 0.04, (z0 + z1) / 2); m.scale.set(x1 - x0, z1 - z0, 1); };
   const ZONE_COLOR = { heilquell: '#58d68d', sumpfdunst: '#a6d94a', wirbelwind: '#d7f2ff', bodengrollen: '#b08a5a', wurzelfluch: '#9a2fff', geroellfeld: '#8d939c', sternenschlund: '#5a3aa0' };
@@ -701,17 +739,24 @@ export function createRenderer3D(canvas, overlay) {
       e._x = e.ox + (e.x - e.ox) * a; e._y = e.oy + (e.y - e.oy) * a;
       const moving = e.kind === 'unit' && !e.inRange && e.deployT <= 0 && e.rootT <= 0 && !(e.stunT > 0);
       const model = e.model || e.type;
-      const neu = e.kind === 'tower' ? actors.hasTower(model) : e.kind === 'building' ? actors.hasBuilding(model) : isFlat(e) && fresh.has(model); // neu gebaut? sonst wie bisher
-      if (neu && e.kind === 'unit' && !getUnit(model)) { loadUnit(model); continue; } // Bildfolge lädt noch (kam nicht über prepare): gleich da
+      const neu = e.kind === 'tower' ? actors.hasTower(model) : e.kind === 'building' ? actors.hasBuilding(model) : fresh.has(model); // neu gebaut? sonst wie bisher (auch Helden und Runenformen)
+      if (neu && e.kind === 'unit' && !getUnit(model)) { loadUnit(model).catch(() => fresh.delete(model)); continue; } // Bildfolge lädt noch (kam nicht über prepare): gleich da – oder nicht ladbar: dann wie bisher
       let inst = insts.get(e.id);
-      if (inst && (inst.model !== model || !!inst.sprite !== isFlat(e) || !!inst.neu !== neu)) { dropInst(e.id, false); inst = null; } // verwandelt (oder neue Teile sind eben fertig geladen)
+      if (inst && (inst.model !== model || !!inst.sprite !== (e.kind === 'unit' && (neu || isFlat(e))) || !!inst.neu !== neu)) { dropInst(e.id, false); inst = null; } // verwandelt (oder neue Teile sind eben fertig geladen)
       if (!inst) {
         inst = neu ? (e.kind === 'tower' ? actors.makeTower(e) : e.kind === 'building' ? actors.makeBuilding(e) : sprites.make(getUnit(model), e.side, e.id)) : isFlat(e) ? makeSprite(e) : makeInst(e); insts.set(e.id, inst);
         if (neu && e.air) sprites.setFlier(inst, FLY[model] || 1.5);
+        if (neu && e.kind === 'unit' && (e.rune || e.hero)) {   // Schein am Boden, bei Runenformen ein Stein über dem Kopf
+          const aura = new THREE.Mesh(auraGeo, e.rune ? runeAura : heroAura); aura.rotation.x = -PI / 2; aura.scale.setScalar(e.r * 1.5); inst.aura = aura; inst.extras.push(aura);
+          if (e.rune) { const gem = new THREE.Mesh(octaGeo, runeMat); gem.scale.set(0.09, 0.15, 0.09); inst.gem = gem; inst.extras.push(gem); }
+          for (const m of inst.extras) world.add(m);
+        }
       }
       if (inst.neu) {
         if (inst.tower) actors.updateTower(e, inst, dt, time); else if (inst.building) actors.updateBuilding(e, inst, g, dt, time); else { sprites.update(e, inst, g, dt, time, occ); if (e.clone) inst.u.uFrost.value = 0.8; }
         statusRing(e, inst, time);
+        if (inst.aura) { inst.aura.position.set(e._x, 0.035, e._y); inst.aura.rotation.z = time * 1.5; }
+        if (inst.gem) { inst.gem.position.set(inst.mesh.position.x, inst.mesh.position.y + inst.h + 0.3 + Math.sin(time * 3 + e.id) * 0.05, inst.mesh.position.z); inst.gem.rotation.y = time * 3; }
       } else if (inst.sprite) animateSprite(e, inst, time, dt, g, moving); else animate(e, inst, time, dt, g, moving);
       if (e.d.ramp) rampBeam(e, inst, g, time);
     }
@@ -741,7 +786,7 @@ export function createRenderer3D(canvas, overlay) {
     // Dauerzonen (Heilquell, Sumpfdunst)
     seen.clear();
     for (const z of g.zones) {
-      if (!z.hit || !ZONE_COLOR[z.spell]) continue;
+      if (!z.hit || !ZONE_COLOR[z.spell] || actors.hasSpell(z.spell)) continue;   // Zonen mit neuem Rezept zeichnet die Engine
       seen.add(z);
       let m = zones.get(z);
       if (!m) { m = flat(discGeo, ZONE_COLOR[z.spell], 0.25); m.position.set(z.x, 0.05, z.y); m.scale.setScalar(z.r); world.add(m); zones.set(z, m); }
@@ -761,24 +806,50 @@ export function createRenderer3D(canvas, overlay) {
     const selCard = sel ? (CARDS[sel].mirror && g.sides[0].last ? CARDS[g.sides[0].last] : CARDS[sel]) : null; // Widerhall zeigt die Karte, die er wiederholt
     const troop = sel && (selCard.ownSide || (selCard.type !== 'spell' && !selCard.anywhere));
     for (const m of lock) m.visible = false;
-    border.visible = !!troop;
-    if (troop) for (const lane of [0, 1]) {
+    for (const m of grid) m.visible = false;
+    const tiles = sel && SIM.deployTiles ? SIM.deployTiles(g, 0, sel) : null;
+    maskMesh.visible = !!tiles;
+    border.visible = !!troop && !tiles;
+    if (tiles) paintMask(tiles, !!troop);
+    else if (troop) for (const lane of [0, 1]) {
       const open = !outerTower(g, 1, lane), x0 = lane * W / 2, x1 = x0 + W / 2;
       setRect(lock[lane * 2], x0, x1, 0, open ? POCKET : RIVER_BOT + 0.2);
       if (open) setRect(lock[lane * 2 + 1], x0, x1, RIVER_TOP - 0.2, RIVER_BOT + 0.2);
-    }
+      setGrid(grid[lane * 2], x0, x1, RIVER_BOT + 0.2, H);                      // erlaubt: das eigene Feld …
+      if (open) setGrid(grid[lane * 2 + 1], x0, x1, POCKET, RIVER_TOP - 0.2);   // … und die Tasche hinter einem gefallenen Außenturm
+    } else if (sel) setGrid(grid[0], 0, W, 0, H);                               // Zauber und Karten für überall: das ganze Feld
     let label = null;
-    const showGhost = !!(sel && ui.ghost);
-    ghostDisc.visible = ghostRing.visible = showGhost; rangeRing.visible = false;
-    if (showGhost) {
-      const card = selCard, p = clampDeploy(g, 0, sel, ui.ghost.x, ui.ghost.y);
-      const r = card.type === 'spell' ? Math.max(0.9, card.roll ? card.roll.w / 2 : card.radius) : Math.max(0.9, UNITS[card.unit].r * (card.count > 4 ? 6 : card.count > 1 ? 2.4 : 1.4));
-      const ok = g.sides[0].kraft >= cardCost(g, 0, sel);
-      ghostDisc.material.color.set(ok ? TEAM[0].main : '#cc3333'); ghostRing.material.color.set(ok ? '#ffffff' : '#ffb3b3');
-      ghostDisc.position.set(p.x, 0.08, p.y); ghostRing.position.set(p.x, 0.09, p.y); ghostDisc.scale.setScalar(r); ghostRing.scale.setScalar(r);
-      if (card.type !== 'spell' && UNITS[card.unit].range >= 2) { const u = UNITS[card.unit]; rangeRing.visible = true; rangeRing.position.set(p.x, 0.07, p.y); rangeRing.scale.setScalar(u.range + u.r); }
-      label = { text: CARDS[sel].mirror ? `Widerhall: ${card.name}` : card.name, x: p.x, z: p.y - r - 0.2 };
+    const plan = sel && ui.ghost ? deployPlan(g, 0, sel, ui.ghost.x, ui.ghost.y) : null; // was beim Loslassen wirklich geschieht
+    ghostDisc.visible = ghostRing.visible = rangeRing.visible = tileFill.visible = tileEdge.visible = false;
+    let used = 0;
+    if (plan) {
+      const card = selCard, ok = g.sides[0].kraft >= cardCost(g, 0, sel) && plan.ok !== false, fill = ok ? TEAM[0].main : '#cc3333', edge = ok ? '#ffffff' : '#ffb3b3';
+      let top = plan.y - 0.9; // Oberkante der Vorschau: darüber steht der Name
+      if (plan.kind === 'spell') { // Wirkungskreis
+        const r = Math.max(0.9, plan.radius || (card.roll ? card.roll.w / 2 : 0));
+        ghostDisc.visible = ghostRing.visible = true;
+        ghostDisc.material.color.set(fill); ghostRing.material.color.set(edge);
+        ghostDisc.position.set(plan.x, 0.08, plan.y); ghostRing.position.set(plan.x, 0.09, plan.y); ghostDisc.scale.setScalar(r); ghostRing.scale.setScalar(r);
+        top = plan.y - r;
+      } else if (plan.tiles) { // Gebäude: seine Kacheln
+        const t = plan.tiles;
+        tileFill.visible = tileEdge.visible = true;
+        tileFill.material.color.set(fill); tileEdge.material.color.set(edge);
+        tileFill.position.set(t.x0 + t.w / 2, 0.08, t.y0 + t.h / 2); tileFill.scale.set(t.w, t.h, 1);
+        tileEdge.position.set(t.x0 + t.w / 2, 0.09, t.y0 + t.h / 2); tileEdge.scale.set(t.w, 1, t.h);
+        top = t.y0;
+      }
+      if (plan.kind !== 'spell' && !(plan.tiles && plan.kind === 'building')) for (const sp of plan.spots) { // jede Figur an ihrem Platz
+        const [d, r] = spotAt(used++), rr = Math.max(0.28, sp.r);
+        d.visible = r.visible = true; d.material.color.set(fill); r.material.color.set(edge);
+        d.position.set(sp.x, 0.08, sp.y); r.position.set(sp.x, 0.09, sp.y); d.scale.setScalar(rr); r.scale.setScalar(rr);
+        top = Math.min(top, sp.y - rr);
+      }
+      const lead = plan.spots[0] && UNITS[plan.spots[0].unit];
+      if (lead && lead.range >= 2) { rangeRing.visible = true; rangeRing.position.set(plan.x, 0.07, plan.y); rangeRing.scale.setScalar(lead.range + lead.r); }
+      label = { text: CARDS[sel].mirror ? `Widerhall: ${card.name}` : card.name, x: plan.x, z: top - 0.2 };
     }
+    for (let i = used; i < spotPool.length; i++) spotPool[i][0].visible = spotPool[i][1].visible = false;
 
     if (shake > 0 && !opt.shake) shake = 0;
     if (shake > 0) shake -= dt;
@@ -789,6 +860,7 @@ export function createRenderer3D(canvas, overlay) {
     o2.setTransform(dpr, 0, 0, dpr, 0, 0);
     o2.clearRect(0, 0, width, height);
     o2.textAlign = 'center'; o2.textBaseline = 'middle'; o2.lineJoin = 'round';
+    let lvlFont = '';
     for (const e of g.ents) {
       const tower = e.kind === 'tower';
       if (e.deployT > 0 && e.kind === 'unit') { // Aufmarsch-Uhr am Standpunkt
@@ -797,7 +869,6 @@ export function createRenderer3D(canvas, overlay) {
         o2.strokeStyle = '#ffffff'; o2.beginPath(); o2.arc(fx0, fy0 + r * 1.9, r, -PI / 2, -PI / 2 + PI * 2 * q); o2.stroke();
       }
       const bar = tower || e.hero || e.hp < e.maxHp || e.maxShield;
-      if (!bar && !e.blessed && !e.ench) continue;
       const inst = insts.get(e.id); if (!inst) continue;
       if (inst.bar == null) inst.bar = e.hp;
       inst.bar += (e.hp - inst.bar) * Math.min(1, dt * 5);
@@ -808,6 +879,15 @@ export function createRenderer3D(canvas, overlay) {
       const y = Math.max(2, sy - h);
       if (e.blessed) { o2.fillStyle = GOLD; o2.strokeStyle = 'rgba(15,20,26,.9)'; o2.lineWidth = 1.5; const q = Math.max(3.5, ppt * 0.16), my = y - q - 2; o2.beginPath(); o2.moveTo(sx, my - q); o2.lineTo(sx + q, my); o2.lineTo(sx, my + q); o2.lineTo(sx - q, my); o2.closePath(); o2.fill(); o2.stroke(); }
       if (e.ench) { o2.fillStyle = RUNE_COLOR; o2.strokeStyle = 'rgba(15,20,26,.9)'; o2.lineWidth = 1.5; const q = Math.max(3, ppt * 0.13), mx = sx + (e.blessed ? q * 2.6 : 0), my = y - q - 2; o2.beginPath(); o2.moveTo(mx, my - q); o2.lineTo(mx + q, my); o2.lineTo(mx, my + q); o2.lineTo(mx - q, my); o2.closePath(); o2.fill(); o2.stroke(); }
+      // Stufenschild in Teamfarbe: immer da; mit Balken (nach dem ersten Schaden) steht es links daneben
+      if (!tower) {
+        const q = Math.max(9, Math.round(ppt * 0.36)), two = e.lvl > 9, bw = two ? q * 1.45 : q, lx = bar ? sx - w / 2 - bw - 3 : sx - bw / 2, ly = bar ? y + h / 2 - q / 2 : y + h - q;
+        const font = `800 ${Math.max(8, Math.round(q * 0.82))}px -apple-system, system-ui, "Segoe UI", sans-serif`;
+        if (lvlFont !== font) { lvlFont = font; o2.font = font; } // Schrift nur setzen, wenn sie wechselt (Schwärme)
+        o2.fillStyle = 'rgba(10,16,24,.9)'; o2.fillRect(lx - 1.5, ly - 1.5, bw + 3, q + 3);
+        o2.fillStyle = TEAM[e.side].dark; o2.fillRect(lx, ly, bw, q);
+        o2.fillStyle = '#fff'; o2.fillText(String(e.lvl), lx + bw / 2, ly + q / 2 + 0.5);
+      }
       if (!bar) continue;
       const bx0 = sx - w / 2, rr = h * 0.45, T = TEAM[e.side];
       o2.fillStyle = e.hero ? GOLD : e.rune ? RUNE_COLOR : 'rgba(10,16,24,.9)'; o2.beginPath(); o2.roundRect(bx0 - 2, y - 2, w + 4, h + 4, rr + 2); o2.fill();
@@ -823,7 +903,7 @@ export function createRenderer3D(canvas, overlay) {
       }
       if (e.shield > 0) { o2.fillStyle = 'rgba(15,20,26,.9)'; o2.fillRect(sx - w / 2 - 1, y - h * 0.7 - 2, w + 2, h * 0.7 + 1); o2.fillStyle = '#dff3ff'; o2.fillRect(sx - w / 2, y - h * 0.7 - 1, w * e.shield / e.maxShield, h * 0.7 - 1); }
       if (tower) {
-        o2.font = `800 ${Math.max(10, Math.round(ppt * 0.5))}px -apple-system, system-ui, "Segoe UI", sans-serif`;
+        lvlFont = ''; o2.font = `800 ${Math.max(10, Math.round(ppt * 0.5))}px -apple-system, system-ui, "Segoe UI", sans-serif`;
         o2.lineWidth = 3; o2.strokeStyle = 'rgba(15,20,26,.9)'; o2.strokeText(String(Math.ceil(e.hp)), sx, y + h / 2 + 0.5);
         o2.fillStyle = '#fff'; o2.fillText(String(Math.ceil(e.hp)), sx, y + h / 2 + 0.5);
         const bw = h * 1.25, bx = sx - w / 2 - bw - 4; // Turmstufe links neben dem Balken
@@ -849,8 +929,8 @@ export function createRenderer3D(canvas, overlay) {
     const card = CARDS[id];
     if (card.type === 'spell') return null;
     const u = UNITS[card.unit], model = u.model || card.unit;
-    if (!u.hero && !card.mix && hasPortrait(model)) return portrait(model, w, h, u.building || u.tower ? 1 : Math.min(card.count, 5));
-    if (!u.hero && card.mix && card.mix.every(([m]) => hasPortrait(UNITS[m].model || m))) {   // gemischte Karte: alle Figuren neu -> Bild aus beiden
+    if (!card.mix && hasPortrait(model)) return portrait(model, w, h, u.building || u.tower ? 1 : Math.min(card.count, 5));
+    if (card.mix && card.mix.every(([m]) => hasPortrait(UNITS[m].model || m))) {   // gemischte Karte: alle Figuren neu -> Bild aus beiden
       const names = card.mix.flatMap(([m, k]) => Array(Math.min(k, 2)).fill(UNITS[m].model || m)).slice(0, 5);
       return portrait(names, w, h, names.length);
     }
@@ -896,5 +976,6 @@ export function createRenderer3D(canvas, overlay) {
   // Ort eines Feldpunkts auf dem Bildschirm (für Einblendungen über der Spielfläche)
   function toScreen(x, z, y = 1) { const [sx, sy] = project(x, y, z), r = canvas.getBoundingClientRect(); return { x: r.left + sx * r.width / width, y: r.top + sy * r.height / height }; }
 
-  return { ready, look, sprites, fx: efx, insts, resize, reset, onEvent, draw, toField, toScreen, snapshot, prepare, setOptions, sheet: (m, side) => getSheet(m, side).tex.image, three: true, info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }) };
+  return { ready, look, sprites, fx: efx, insts, resize, reset, onEvent, draw, toField, toScreen, snapshot, prepare, setOptions, warmFigures: () => unitIndex().then(list => warmUnits(list, { force: true })),   // alle Bildfolgen für den Offline-Betrieb laden (rund 72 MB)
+    sheet: (m, side) => getSheet(m, side).tex.image, three: true, info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }) };
 }

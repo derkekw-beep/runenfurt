@@ -23,13 +23,20 @@ export function frontOf(x, z, occ) {
 export function setFront(u, o) { if (o) u.uFront.value.set(1, o.h + 0.3, o.z + o.r + 0.3); else u.uFront.value.x = 0; }
 
 const defs = new Map(), ready = new Map();
-let index = null;
-export async function unitIndex() { if (!index) index = await (await fetch(ASSETS + 'units/index.json')).json(); return index; }
+let index = null, stand = {};
+// Verzeichnis der neuen Figuren; dazu ihr Stand (stand.json: je Figur ein Kürzel ihres Inhalts). Das Kürzel hängt an der
+// Adresse der großen Bildfolgen – so bleiben sie im Offline-Speicher über Versionen hinweg gültig, bis sich eine Figur ändert.
+export async function unitIndex() {
+  if (!index) [index, stand] = await Promise.all([fetch(ASSETS + 'units/index.json').then(r => r.json()), fetch(ASSETS + 'units/stand.json').then(r => (r.ok ? r.json() : {})).catch(() => ({}))]);
+  return index;
+}
+const ver = name => (stand[name] ? '?v=' + stand[name] : '');
 export function loadUnit(name) {
   if (!defs.has(name)) defs.set(name, (async () => {
-    const info = await (await fetch(`${ASSETS}units/${name}.json`)).json();
+    const info = await (await fetch(`${ASSETS}units/${name}.json${ver(name)}`)).json();
+    if (!info) throw new Error('Bildfolge nicht gespeichert: ' + name);   // Antwort des Service Workers ohne Netz
     const L = new THREE.TextureLoader();
-    const [tex, mask] = await Promise.all([L.loadAsync(`${ASSETS}units/${name}.webp`), L.loadAsync(`${ASSETS}units/${name}_m.webp`)]);
+    const [tex, mask] = await Promise.all([L.loadAsync(`${ASSETS}units/${name}.webp${ver(name)}`), L.loadAsync(`${ASSETS}units/${name}_m.webp${ver(name)}`)]);
     tex.colorSpace = THREE.SRGBColorSpace;
     for (const t of [tex, mask]) { t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = 2; }
     const [AW, AH] = info.size, k = SCALE / info.ppu;
@@ -39,10 +46,24 @@ export function loadUnit(name) {
     const def = { name, info, tex, mask, h: info.h, kind: 'sprite' };
     ready.set(name, def);
     return def;
-  })());
+  })().catch(err => { defs.delete(name); throw err; }));   // nicht ladbar (etwa offline und noch nie gesehen): der Aufrufer zeichnet die Figur dann wie bisher
   return defs.get(name);
 }
 export const getUnit = name => ready.get(name) || null;
+// Füllt den Offline-Speicher nach und nach mit allen Bildfolgen (eine nach der anderen; nur mit Service Worker).
+// Von selbst läuft das nur, wenn das Gerät WLAN oder Kabel meldet und kein Datensparmodus an ist – zusammen sind es rund
+// 72 MB, die niemand ungefragt über Mobilfunk laden soll (iPhones melden die Verbindungsart nicht: dort nur mit force).
+export async function warmUnits(names, { force = false, pause = 250 } = {}) {
+  if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) return 0;
+  const c = navigator.connection;
+  if (!force && (!c || c.saveData || !(c.type === 'wifi' || c.type === 'ethernet'))) return 0;
+  let n = 0;
+  for (const name of names) {
+    try { for (const f of ['.json', '.webp', '_m.webp']) { const r = await fetch(`${ASSETS}units/${name}${f}${ver(name)}`); if (!r.ok || r.headers.get('x-fehlt')) return n; await r.arrayBuffer(); } } catch { return n; }
+    n++; await new Promise(res => setTimeout(res, pause));
+  }
+  return n;
+}
 
 // Kleine Kartenbilder aller neuen Figuren (eine Datei je Figur): werden beim Start geladen, die großen Bildfolgen
 // dagegen erst für die Karten eines Kampfs (loadUnit) – und danach wieder freigegeben (releaseUnits).

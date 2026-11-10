@@ -4,11 +4,15 @@ import { THREE, TEAM, CARDS } from './deps.js';
 import { propMaterial } from './meshes.js';
 import { CELL } from './fx.js';
 import { PROJECTILES, MELEE, HITS, EVENTS, SPELLS } from './registry.js';
+import './rezepte.js';   // ergänzt die Rezepte um alle übrigen Karten
 
 // Türme (Modell im Spiel = Name des Modells aus Blender). Das bewegte Teil heißt immer 'crystal':
 // bob = Schweben, spin = Drehung je Sekunde, pulse = Aufblähen beim Schuss, spark = Farbe der Funken beim Schuss (sonst Teamfarbe)
 const TOWERS = { aussenturm: {}, hauptturm: {}, geschuetzturm: { bob: 0.012, spin: 0, pulse: 0.6, spark: '#ffb347' }, klingenturm: { bob: 0.05, spin: 3.2, pulse: 0.2 }, segensturm: { bob: 0.08, spin: 1.3, spark: '#ffe08a' } };
-const BUILDINGS = { ballista: 'ballista' };                              // Gebäude mit drehbarem Oberteil (Teile: body, top, bolt)
+// Gebäude (Modell im Spiel = Name des Modells aus Blender). Teile: body fest, top beweglich, bolt = Geschoss auf dem Oberteil (fehlt kurz nach dem Schuss).
+// aim: das Oberteil dreht sich zum Ziel · spin/bob: es kreist und schwebt · burrow: es versinkt so tief, solange die Spielregeln das Gebäude als vergraben führen
+const BUILDINGS = { ballista: { aim: true }, steinschleuder: { aim: true }, kesselturm: { aim: true }, fernschleuder: { aim: true }, sonnenspiegel: { aim: true }, kurbelbogen: { aim: true }, armbrustwagen_w: { aim: true },
+  kraftquell: { spin: 1.4, bob: 0.07 }, funkenpfahl: { burrow: 1.55 }, erdloch: {}, raeuberlager: {}, kieselhaufen: {}, wolfszwinger: {}, maulwurfshuegel: {} };
 
 export function createActors(look, fx) {
   let trauma = 0, flashV = 0;
@@ -49,25 +53,34 @@ export function createActors(look, fx) {
   function removeTower(i) { look.world.remove(i.group); i.mat.dispose(); i.cmat.dispose(); }
 
   // ---- Gebäude: fester Sockel, Oberteil dreht sich zum Ziel, der Bolzen fehlt kurz nach dem Schuss ----
-  const hasBuilding = model => !!look.props && !!BUILDINGS[model] && !!look.props[BUILDINGS[model]];
+  const hasBuilding = model => !!look.props && !!BUILDINGS[model] && !!look.props[model];
   function makeBuilding(e) {
-    const model = e.model || e.type, P = look.props[BUILDINGS[model]], mat = propMaterial(e.side, 1);
+    const model = e.model || e.type, P = look.props[model], mat = propMaterial(e.side, 1.3);
     const group = new THREE.Group(); group.position.set(e.x, 0, e.y);
     const body = new THREE.Mesh(P.parts.body.geo, mat); body.castShadow = body.receiveShadow = true; group.add(body);
-    const top = new THREE.Group(), piv = P.parts.top.pivot; top.position.set(piv[0], piv[1], piv[2]); group.add(top);
-    const tm = new THREE.Mesh(P.parts.top.geo, mat); tm.castShadow = true; top.add(tm);
-    let bolt = null;
-    if (P.parts.bolt) { bolt = new THREE.Mesh(P.parts.bolt.geo, mat); bolt.castShadow = true; top.add(bolt); }
+    let top = null, bolt = null, ty = 0;
+    if (P.parts.top) {
+      top = new THREE.Group(); const piv = P.parts.top.pivot; top.position.set(piv[0], piv[1], piv[2]); ty = piv[1]; group.add(top);
+      const tm = new THREE.Mesh(P.parts.top.geo, mat); tm.castShadow = true; top.add(tm);
+      if (P.parts.bolt) { bolt = new THREE.Mesh(P.parts.bolt.geo, mat); bolt.castShadow = true; top.add(bolt); }
+    }
     look.world.add(group);
-    return { neu: true, building: true, model, group, top, bolt, mat, def: { h: P.h, kind: 'building' }, scale: 1, hp: e.hp, flash: 0, age: 0, yaw: e.side === 0 ? Math.PI : 0, kick: 0, wasAnim: 0, status: null, statusKey: '', extras: [] };
+    return { neu: true, building: true, model, cfg: BUILDINGS[model], group, top, bolt, ty, sink: 0, mat, def: { h: P.h, kind: 'building' }, scale: 1, hp: e.hp, flash: 0, age: 0, yaw: e.side === 0 ? Math.PI : 0, kick: 0, wasAnim: 0, status: null, statusKey: '', extras: [] };
   }
   function updateBuilding(e, i, g, dt, time) {
     i.age += dt;
-    const t = e.targetId ? g.byId.get(e.targetId) : null;
-    if (t) { const want = Math.atan2(t.x - e.x, t.y - e.y), d = Math.atan2(Math.sin(want - i.yaw), Math.cos(want - i.yaw)); i.yaw += d * Math.min(1, dt * 10); }
-    if ((e.anim || 0) > i.wasAnim + 0.05) i.kick = 1;   // Schuss: Rückstoß
+    const cfg = i.cfg, t = e.targetId ? g.byId.get(e.targetId) : null;
+    if ((e.anim || 0) > i.wasAnim + 0.05) i.kick = 1;   // Schuss (oder Nachschub): Rückstoß
     i.wasAnim = e.anim || 0; i.kick = Math.max(0, i.kick - dt * 5);
-    i.top.rotation.y = i.yaw; i.top.position.x = -Math.sin(i.yaw) * i.kick * 0.12; i.top.position.z = -Math.cos(i.yaw) * i.kick * 0.12;
+    if (i.top && cfg.aim) {
+      if (t) { const want = Math.atan2(t.x - e.x, t.y - e.y), d = Math.atan2(Math.sin(want - i.yaw), Math.cos(want - i.yaw)); i.yaw += d * Math.min(1, dt * 10); }
+      i.top.rotation.y = i.yaw; i.top.position.x = -Math.sin(i.yaw) * i.kick * 0.12; i.top.position.z = -Math.cos(i.yaw) * i.kick * 0.12;
+    } else if (i.top && cfg.spin) { i.top.rotation.y += dt * cfg.spin * (1 + i.kick * 5); i.top.position.y = i.ty + Math.sin(time * 2 + e.id) * (cfg.bob || 0) + i.kick * 0.12; }
+    if (i.top && cfg.burrow) {   // vergraben: das Oberteil versinkt; taucht es auf, wirft es Erde auf
+      const want = e.buried ? cfg.burrow : 0, was = i.sink;
+      i.sink += (want - i.sink) * Math.min(1, dt * 9); i.top.position.y = i.ty - i.sink; i.top.visible = i.sink < cfg.burrow - 0.06;
+      if (was > cfg.burrow * 0.8 && i.sink <= cfg.burrow * 0.8) EVENTS.rise(fx, { x: e.x, y: e.y });
+    }
     if (i.bolt) i.bolt.visible = !(e.cd > e.atk * 0.45);   // nachgeladen wird in der zweiten Hälfte der Pause
     const q = Math.min(1, i.age / 0.22), pop = q < 1 ? 0.5 + 0.5 * q + Math.sin(q * Math.PI) * 0.18 : 1;   // erscheint mit einem kleinen Sprung
     i.group.scale.set(pop, q < 1 ? pop : 1 + i.kick * 0.03, pop);
@@ -95,12 +108,20 @@ export function createActors(look, fx) {
     for (const a of [Math.PI / 4, -Math.PI / 4]) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.03, 0.09), grau); b.rotation.y = a; g.add(b); }
     return g;
   })();
-  const hasProj = p => !p.line && Object.hasOwn(PROJECTILES, p.from) && p.from !== '_';
+  const logGeo = new THREE.CylinderGeometry(0.45, 0.45, 1, 12).rotateZ(Math.PI / 2);
+  const hasProj = p => Object.hasOwn(PROJECTILES, p.from) && p.from !== '_' && !!p.line === !!PROJECTILES[p.from].line;
   function makeProj(p) {
     const d = PROJECTILES[p.from];
     let m;
-    if (d.kind === 'arrow' || d.kind === 'blade') { m = (d.kind === 'arrow' ? arrow : blade).clone(); if (d.scale) m.scale.setScalar(d.scale); }
-    else {
+    if (d.kind === 'arrow' || d.kind === 'blade') { m = (d.kind === 'arrow' ? arrow : blade).clone(); if (d.scale) m.scale.setScalar(d.scale);
+      if (d.color) m.traverse(o => { if (o.material) o.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(d.color).multiplyScalar(2.6) }); });   // leuchtender Pfeil
+    } else if (d.kind === 'log') {   // Walze quer zur Bahn (Breite aus den Spielregeln)
+      m = new THREE.Group(); const roll = new THREE.Mesh(logGeo, new THREE.MeshLambertMaterial({ color: d.color || '#8d939c', flatShading: true })); roll.castShadow = true;
+      roll.scale.set(p.w || 2, d.k || 1, d.k || 1); m.add(roll); m.userData.roll = roll;
+    } else if (d.kind === 'fan') {   // Fächer aus Glutkernen quer zur Bahn
+      m = new THREE.Group(); const c = new THREE.Color(d.color || '#ffd75a').multiplyScalar(3), w = p.w || 1.5;
+      for (let k = 0; k < 5; k++) { const b = new THREE.Mesh(orbGeo, new THREE.MeshBasicMaterial({ color: c })); b.scale.setScalar(0.07); b.position.set((k / 4 - 0.5) * w, 0, (k % 2) * 0.25 - 0.1); m.add(b); }
+    } else {
       const c = new THREE.Color(d.color === 'team' ? TEAM[p.side].light : d.color || '#ffffff').multiplyScalar(d.kind === 'rock' ? 1 : 3.2);
       m = new THREE.Mesh(orbGeo, new THREE.MeshBasicMaterial({ color: c })); m.scale.setScalar(d.size || 0.18);
     }
@@ -110,6 +131,17 @@ export function createActors(look, fx) {
   const pv = new THREE.Vector3();
   function updateProj(p, o, a) {
     const x = p.ox + (p.x - p.ox) * a, z = p.oy + (p.y - p.oy) * a;
+    if (p.line) {   // Bahn-Geschoss: geradeaus in Bodennähe
+      const d = o.d; pv.set(x, d.y0, z);
+      const step = pv.distanceTo(o.last), yaw = Math.atan2(p.vx, p.vy);
+      if (d.kind === 'blade') o.m.rotation.y += Math.max(step, 0.05) * 9;
+      else { o.m.rotation.y = yaw; if (o.m.userData.roll) o.m.userData.roll.rotation.x += step / 0.45; else if (d.roll) o.m.rotateX(step / (d.size || 0.4)); }
+      o.m.position.copy(pv); o.acc += step; o.last.copy(pv);
+      while (o.acc > 0.22) { o.acc -= 0.22;
+        if (d.trail === 'dust') { const w = (p.w || 0.6) * 0.5, q = (Math.random() - 0.5) * 2 * w; fx.burst({ x: x + Math.cos(yaw) * q, y: 0.12, z: z - Math.sin(yaw) * q, n: 1, cell: CELL.dust, add: 0, color: '#e9dfc8', alpha: 0.55, size: [0.3, 0.45], size2: [0.7, 1.0], life: [0.3, 0.5], up: [0.2, 0.7], drag: 3 }); }
+        else fx.burst({ x: pv.x, y: pv.y, z: pv.z, n: 1, cell: CELL.glow, color: d.color || '#ffffff', color2: d.glow || d.color || '#ffffff', hdr: d.glow ? 2.4 : 1.1, alpha: d.glow ? 1 : 0.45, size: d.glow ? 0.5 : 0.2, size2: 0.03, life: 0.2 }); }
+      return;
+    }
     const left = Math.hypot(p.tx - x, p.ty - z), u = Math.min(1, left / o.d0), ty = p.air ? 1.6 : 0.85;
     pv.set(x, ty + (o.d.y0 - ty) * u + Math.sin(u * Math.PI) * o.d.arc, z);
     if (o.d.kind === 'arrow') { o.m.position.copy(o.last); o.m.lookAt(pv); }
@@ -132,13 +164,14 @@ export function createActors(look, fx) {
     if (g) { let best = null, bd = 9; for (const e of g.ents) { if ((e.model || e.type) !== ev.from) continue; const d = Math.hypot(e.x - ev.x, e.y - ev.y); if (d < bd) { bd = d; best = e; } } if (best) return best.side; }
     return 0;
   }
+  const MORE = new Set(['charge', 'impact', 'bolts', 'trail', 'burst', 'shield', 'kraft', 'fuse', 'chain', 'scatter', 'hook', 'hookcast', 'morph', 'heal', 'curse', 'hatch', 'rune', 'ench', 'rise', 'pulse', 'clone', 'bless', 'ability']);
   function onEvent(ev, g, projs) {
     const C = ctx(ev.side);
     if (ev.t === 'hit') {
       const known = Object.hasOwn(PROJECTILES, ev.from) && ev.from !== '_';
       if (!known && !MELEE[ev.from]) return false;
       if (ev.spin) { if (!MELEE[ev.from]) return false; HITS.spin(fx, ev, C); return true; }
-      HITS[known ? PROJECTILES[ev.from].hit : MELEE[ev.from]](fx, ev, ctx(sideOf(ev, g, projs)));
+      HITS[known ? PROJECTILES[ev.from].hit : MELEE[ev.from]](fx, ev, ctx(sideOf(ev, g, projs)), known ? PROJECTILES[ev.from] : null);
       if (ev.heavy) { fx.ring({ x: ev.x, z: ev.y, r0: 0.3, r: 1.3, dur: 0.25, color: '#ffffff', hdr: 1.6 }); trauma = Math.max(trauma, 0.2); }
       if (ev.splash) fx.ring({ x: ev.x, z: ev.y, r0: ev.splash * 0.3, r: ev.splash, dur: 0.3, color: ev.frost ? '#bfeaff' : '#ffd27a', hdr: 1.6, width: 0.25 });
       return true;
@@ -153,11 +186,11 @@ export function createActors(look, fx) {
       } else if (ev.kind === 'building') EVENTS.die_building(fx, ev, C); else EVENTS.die_unit(fx, ev, C);
       return true;
     }
-    if (ev.t === 'deploy') { if (ev.rune || ev.hero || ev.echo) return false; EVENTS.deploy(fx, ev, C); return true; }
+    if (ev.t === 'deploy') { EVENTS.deploy(fx, ev, C); return true; }
     if (ev.t === 'cast' && SPELLS[ev.spell]) { SPELLS[ev.spell].cast(fx, ev, C); return true; }
     if (ev.t === 'spell' && SPELLS[ev.spell]) { SPELLS[ev.spell].impact(fx, ev, C); return true; }
     if (ev.t === 'wake') { EVENTS.wake(fx, ev, C); return true; }
-    if (ev.t === 'charge' || ev.t === 'impact' || ev.t === 'bolts') { EVENTS[ev.t](fx, ev, C); return true; }
+    if (MORE.has(ev.t)) { EVENTS[ev.t](fx, ev, C); return true; }
     return false;
   }
   const land = e => { EVENTS.land(fx, { x: e._x, y: e._y, r: e.r }, ctx(e.side)); trauma = Math.max(trauma, e.r > 0.6 ? 0.22 : 0.08); };
@@ -172,5 +205,5 @@ export function createActors(look, fx) {
   }
   function reset() { for (const m of ruins) look.world.remove(m); ruins.length = 0; fx.clear(); trauma = flashV = 0; }
 
-  return { hasTower, makeTower, updateTower, removeTower, hasBuilding, makeBuilding, updateBuilding, removeBuilding, hasProj, makeProj, updateProj, removeProj, onEvent, land, frame, reset, cardSpell: id => !!SPELLS[CARDS[id] && CARDS[id].spell] };
+  return { hasTower, makeTower, updateTower, removeTower, hasBuilding, makeBuilding, updateBuilding, removeBuilding, hasProj, makeProj, updateProj, removeProj, onEvent, land, frame, reset, cardSpell: id => !!SPELLS[CARDS[id] && CARDS[id].spell], hasSpell: s => !!SPELLS[s] };
 }

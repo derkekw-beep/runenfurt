@@ -96,6 +96,11 @@ export const HITS = {
 
 // ---- Allgemeine Ereignisse
 export const EVENTS = {
+  // Antriebskreis einer Runenform: zwei Ringe in der Farbe des Antriebs, die bis zum Rand des Kreises laufen
+  trail(fx, ev) {
+    fx.ring({ x: ev.x, z: ev.y, r0: ev.r * 0.25, r: ev.r, dur: 0.55, color: '#ffa53d', hdr: 1.7, width: 0.2, alpha: 0.85 });
+    fx.ring({ x: ev.x, z: ev.y, r0: 0.1, r: ev.r * 0.6, dur: 0.4, color: '#ffe2a8', hdr: 1.3, width: 0.3, alpha: 0.6 });
+  },
   // Karte gespielt: Lichtring in Teamfarbe (der Staub kommt, wenn die Figuren landen)
   deploy(fx, ev, C) {
     fx.ring({ x: ev.x, z: ev.y, r0: 0.3, r: ev.hero || ev.rune ? 2.0 : 1.35, dur: 0.45, color: C.team.light, hdr: 1.8, width: 0.16 });

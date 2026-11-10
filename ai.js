@@ -247,7 +247,7 @@ export function aiChoose(g, side, ai) {
   }
   const hpOf = e => {
     let h = e.hp + (e.kind === 'tower' ? 0 : e.shield || 0);
-    if (pend) for (let i = 0; i < pend.length; i += 4) if (Math.hypot(e.x - pend[i], e.y - pend[i + 1]) <= pend[i + 2] + e.r * 0.6) h -= pend[i + 3] * (e.kind === 'tower' ? TOWER_SPELL_FACTOR : 1);
+    if (pend) for (let i = 0; i < pend.length; i += 4) if (Math.hypot(e.x - pend[i], e.y - pend[i + 1]) <= pend[i + 2] + e.r) h -= pend[i + 3] * (e.kind === 'tower' ? TOWER_SPELL_FACTOR : 1);
     return h;
   };
 
@@ -273,9 +273,9 @@ export function aiChoose(g, side, ai) {
   const inSpell = (c, x, y, e) => {
     if (c.roll) {
       const along = (e.y - y) * fwd;
-      return !(e.air || along < -0.5 || along > c.roll.len || Math.abs(e.x - x) > c.roll.w / 2 + e.r * 0.6);
+      return !(e.air || along < -0.5 || along > c.roll.len || Math.abs(e.x - x) > c.roll.w / 2 + e.r);
     }
-    return Math.hypot(e.x - x, e.y - y) <= c.radius + e.r * 0.6;
+    return Math.hypot(e.x - x, e.y - y) <= c.radius + e.r;
   };
   const targets = [...foes, ...foeB, foeTw[0], foeTw[1], foeMain].filter(Boolean);
   // getroffener Schaden, Türme zählen anteilig, ein Turm-Todesstoß sehr viel
@@ -570,7 +570,7 @@ export function aiChoose(g, side, ai) {
   const pushLane = grp[0] >= 500 || grp[1] >= 500 ? (grp[0] >= grp[1] ? 0 : 1) : -1;
   let front = pushLane >= 0 ? anchor[pushLane] : null;
   const frontM = front ? my(front.y) : 0;
-  const building = !!front && frontM < 8 && front.maxHp >= 1300 && front.speed < 1.2; // der Brocken läuft noch hinten an: Kraft sammeln
+  const building = !!front && frontM < 8 && front.maxHp >= 1300 && front.speed < 1.5; // der Brocken läuft noch hinten an: Kraft sammeln
   // steht seine Abwehr schon in dieser Bahn, lohnt die andere mehr
   let swap = false;
   if (front && smart >= 1 && finish < 0 && foeTw[0] && foeTw[1] && frontM < 13) {

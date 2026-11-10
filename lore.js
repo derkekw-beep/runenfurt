@@ -139,7 +139,7 @@ const d = v => String(Math.round(v * 100) / 100).replace('.', ',');
 const NAME = UNIT_NAMES;
 const some = (unit, k) => `${k === 1 ? (/[ei]n$|e$/.test(NAME[unit][0]) ? 'eine' : 'ein') : k} ${NAME[unit][k > 1 ? 1 : 0]}`; // „ein Kiesel“, „2 Flussräuber“, „eine Speerwache“
 const F = v => (v === 1 ? '1 Feld' : `${d(v)} Feldern`); // „im Umkreis von 1 Feld“
-const TEMPO = v => (v <= 0.8 ? 'langsam' : v <= 1.1 ? 'mittelschnell' : v <= 1.6 ? 'schnell' : 'sehr schnell');
+const TEMPO = v => (v <= 1.0 ? 'langsam' : v <= 1.4 ? 'mittelschnell' : v <= 2.0 ? 'schnell' : 'sehr schnell'); // 0,9 · 1,2 · 1,8 · 2,4 Felder je Sekunde
 
 // Was die Karte auf Stufe lvl genau tut – als Liste kurzer Sätze.
 export function explain(id, lvl = 1) {
@@ -258,7 +258,7 @@ export function explain(id, lvl = 1) {
   if (u.bounty) out.push(`Der Haken: Jedes Stück, das fällt, schenkt dem Gegner Kraft – insgesamt ${d(bounty(u))}, wenn alle Teile zerschlagen werden. Gegen wenig Schaden ein Geschenk an dich, gegen viel Schaden eines an ihn.`);
   if (u.deathZone) { const z = CARDS[u.deathZone]; out.push(`Beim Tod bleibt eine ${z.name} zurück: Deine Truppen im Umkreis von ${d(z.radius)} Feldern laufen und schlagen ${z.haste} s lang 30 % schneller.`); }
   if (c.hero) out.push(`Held: Er steht nur einmal auf dem Feld; seine Karte kehrt erst in den Stapel zurück, wenn er gefallen ist. Fähigkeit „${c.ability.name}“ (Knopf im Kampf, ${c.ability.cost} Kraft, alle ${c.ability.cd} s): ${c.ability.desc}`);
-  if (RUNES[id]) out.push(`Runenform ab Kartenstufe ${RUNE_LEVEL}: Jede ${RUNES[id].cycles + 1}. Ausspielung erscheint in der stärkeren Form – ${RUNES[id].desc}`);
+  if (RUNES[id]) out.push(`Runenform (mit sechs Runenscherben erweckt): Jede ${RUNES[id].cycles + 1}. Ausspielung erscheint in der stärkeren Form – ${RUNES[id].desc}`);
   out.push('Mit jeder Kartenstufe wachsen Leben und Schaden um 10 %.');
   return out;
 }

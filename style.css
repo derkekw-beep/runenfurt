@@ -34,9 +34,6 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
 .pause::before { content: ''; width: 5px; height: 16px; border-left: 5px solid var(--text); border-right: 5px solid var(--text); box-sizing: content-box; }
 
 /* Start */
-.hero { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-#emblem { width: min(34vw, 19vh); height: min(34vw, 19vh); border-radius: 22%; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
-h1 { margin: 10px 0 0; font-size: 34px; letter-spacing: .12em; text-transform: uppercase; font-weight: 800; text-shadow: 0 2px 0 #06202b, 0 0 22px rgba(46,196,182,.55); }
 .arenaBox { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; padding: 12px 14px; border-radius: 16px; background: var(--bg2); border: 1px solid var(--line); }
 .arenaName small { display: block; color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
 .arenaName b { font-size: 20px; }
@@ -190,7 +187,6 @@ button.pill { color: inherit; font: inherit; font-weight: 700; }
 .gem { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 1.5 16.500 8 10 18.500 3.500 8z' fill='%23c98bff' stroke='%235b2f8a' stroke-width='1.300'/%3E%3Cpath d='M10 1.500 12.500 8 10 18.500 7.500 8z' fill='%23e7ccff'/%3E%3C/svg%3E"); }
 .qico { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 3h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5z' fill='%23f1e3c4' stroke='%237a5a34' stroke-width='1.200'/%3E%3Cpath d='M5 3a2 2 0 0 0-2 2v9h2z' fill='%23d9c49a' stroke='%237a5a34' stroke-width='1.200'/%3E%3Cpath d='M8 7h6M8 10h6M8 13h4' stroke='%237a5a34' stroke-width='1.300' stroke-linecap='round'/%3E%3C/svg%3E"); }
 .nshop { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 10h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z' fill='%23cfe3ea'/%3E%3Cpath d='M3 5h18l1 5H2z' fill='%23cfe3ea' opacity='.6'/%3E%3Cpath d='M10 14h4v6h-4z' fill='%230d1c26'/%3E%3C/svg%3E"); } .ncards { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='5' width='11' height='15' rx='2' fill='%23cfe3ea' opacity='.6' transform='rotate(-8 8 12)'/%3E%3Crect x='9' y='4' width='11' height='15' rx='2' fill='%23cfe3ea' transform='rotate(8 14 12)'/%3E%3C/svg%3E"); } .nfight { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M5 3l11 11-2 2L3 5z' fill='%23cfe3ea'/%3E%3Cpath d='M19 3 8 14l2 2L21 5z' fill='%23cfe3ea' opacity='.75'/%3E%3Cpath d='M4 17l3 3M17 20l3-3' stroke='%23cfe3ea' stroke-width='2.500' stroke-linecap='round'/%3E%3C/svg%3E"); } .nroad { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 3h10v5a5 5 0 0 1-10 0z' fill='%23cfe3ea'/%3E%3Cpath d='M7 5H4c0 3 1 4.500 3.500 5M17 5h3c0 3-1 4.500-3.500 5' fill='none' stroke='%23cfe3ea' stroke-width='1.600'/%3E%3Cpath d='M10.500 13h3v4H16v3H8v-3h2.500z' fill='%23cfe3ea' opacity='.75'/%3E%3C/svg%3E"); } .nmore { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='8' r='4' fill='%23cfe3ea'/%3E%3Cpath d='M4 21a8 8 0 0 1 16 0z' fill='%23cfe3ea' opacity='.75'/%3E%3C/svg%3E"); }
-.who { margin-top: 4px; color: var(--dim); font-size: 13px; }
 button.arenaBox { text-align: left; color: inherit; font: inherit; width: 100%; }
 .btn.tile { display: flex; align-items: center; gap: 10px; height: 54px; padding: 0 12px; text-align: left; }
 .btn.tile .ico { width: 26px; height: 26px; }
@@ -461,6 +457,247 @@ body.lefty #abilities { right: auto; left: 6px; }
 .pane.story p { margin: 14px 2px 6px !important; padding: 12px 14px; border-radius: 12px; background: #0f222d; border-left: 4px solid var(--gold); font-size: 15px !important; line-height: 1.5; color: var(--text) !important; font-style: italic; }
 #toast { white-space: normal; width: max-content; max-width: calc(100% - 24px); text-align: center; }
 
-@media (max-height: 700px) { #emblem { width: 15vh; height: 15vh; } h1 { font-size: 28px; margin-top: 6px; } .who { display: none; } }
-@media (max-height: 640px) { :root { --panel: 128px; } h1 { font-size: 24px; } .big, .btn.side { height: 52px; } #tabHome { gap: 7px; } .btn.tile { height: 46px; } .seg button { height: 38px; } .arenaBox { padding: 8px 12px; } .hint { display: none; } }
-@media (max-height: 590px) { #emblem { display: none; } }
+
+/* ================= Überarbeitung 2026-11: Hauptmenü, Truhenplätze, Aufwertungs-Vorschau ================= */
+:root { --panel-bg: linear-gradient(#1a3544, #132835); --edge: #0a161d; --ok: #6fe06a; }
+.pill { background: linear-gradient(#1c3948, #12252f); box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 2px 0 var(--edge); }
+.pill b { font-variant-numeric: tabular-nums; }
+.btn { background: var(--panel-bg); box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 2px 0 var(--edge); }
+.btn.primary { background: linear-gradient(#49d6c8, #22a99d); box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 2px 0 #0d5f58; }
+.btn:disabled { box-shadow: none; }
+.sub b { letter-spacing: .02em; }
+
+/* Reiter: gleiten aus der Richtung herein, in der sie in der Leiste liegen */
+.tab.inR { animation: tabR .2s cubic-bezier(.2,.8,.3,1) both; }
+.tab.inL { animation: tabL .2s cubic-bezier(.2,.8,.3,1) both; }
+@keyframes tabR { from { opacity: 0; transform: translateX(26px); } }
+@keyframes tabL { from { opacity: 0; transform: translateX(-26px); } }
+
+/* Untere Leiste: Leuchtmarke wandert zum gewählten Reiter, sein Symbol hebt sich */
+#nav { position: relative; background: linear-gradient(#0e1d26, #081218); box-shadow: 0 -6px 18px rgba(0,0,0,.35); }
+#navGlow { position: absolute; top: 4px; left: calc(6px + (100% - 12px) / 5 * var(--i, 2)); width: calc((100% - 12px) / 5); height: 52px; border-radius: 14px; background: linear-gradient(#23495a, #173340); box-shadow: inset 0 1px 0 rgba(255,255,255,.14), inset 0 -3px 0 var(--gold); transition: left .22s cubic-bezier(.3,1.3,.5,1); pointer-events: none; }
+#nav button { z-index: 1; transition: color .15s; }
+#nav button.on { background: none; color: #fff; }
+#nav button .ico { transition: transform .2s cubic-bezier(.3,1.6,.5,1), opacity .15s; }
+#nav button.on .ico { transform: translateY(-3px) scale(1.22); }
+#nav button.on small { color: var(--gold); }
+#nav button:active .ico { transform: scale(.9); }
+.dot { animation: dotpulse 1.6s ease-in-out infinite; }
+@keyframes dotpulse { 50% { transform: scale(1.25); box-shadow: 0 0 12px #6fe06a; } }
+
+/* ---- Hauptmenü ---- */
+#tabHome { gap: 8px; padding-bottom: 8px; }
+.arenaBox { position: relative; grid-template-columns: 1fr auto; gap: 5px 12px; padding: 9px 14px 10px; border-radius: 16px; background: linear-gradient(100deg, #1d3d4c, #14303d 60%, #1b3a35); box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 2px 0 var(--edge); overflow: hidden; }
+.arenaBox::after { content: ''; position: absolute; right: 12px; bottom: 8px; width: 8px; height: 8px; border-right: 2px solid var(--dim); border-top: 2px solid var(--dim); transform: rotate(45deg); opacity: .7; }
+.arenaName small { font-size: 11px; color: var(--gold); font-weight: 700; }
+.arenaName b { font-size: 19px; line-height: 1.15; }
+.trophies { font-size: 21px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.track { height: 9px; box-shadow: inset 0 1px 2px rgba(0,0,0,.6); }
+.track i { transition: width .5s; }
+.hint { font-size: 12px; padding-right: 16px; }
+
+.hero { position: relative; flex: 1 1 0; min-height: 0; border-radius: 18px; overflow: hidden; background: radial-gradient(90% 70% at 50% 62%, rgba(46,196,182,.10), transparent 70%); }
+#stageCv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: manipulation; }
+.sideCol { position: absolute; top: 4px; bottom: 4px; display: flex; flex-direction: column; justify-content: flex-start; gap: 6px; width: 74px; pointer-events: none; }
+.sideCol.left { left: 0; } .sideCol.right { right: 0; }
+.sideBtn { position: relative; pointer-events: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-height: 64px; padding: 5px 2px 6px; border-radius: 14px; background: linear-gradient(rgba(28,57,72,.94), rgba(18,37,47,.94)); border: 1px solid var(--line); box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 2px 0 var(--edge); text-align: center; }
+.sideBtn:active { transform: scale(.95); }
+.sideBtn .ico { width: 28px; height: 28px; }
+.sideBtn .chestIco { width: 32px; height: 32px; margin: -1px auto -1px; }
+.sideBtn b { font-size: 10.5px; line-height: 1.1; font-weight: 800; letter-spacing: -.1px; }
+.sideBtn small { font-size: 10.5px; line-height: 1.15; color: var(--dim); font-weight: 700; font-variant-numeric: tabular-nums; }
+.sideBtn .dot { top: 4px; right: 5px; }
+.sideBtn .mini { display: block; width: 46px; height: 4px; margin-top: 2px; border-radius: 2px; background: #0a141b; overflow: hidden; }
+.sideBtn .mini i { display: block; height: 100%; background: var(--gold); }
+.sideBtn.go { border-color: var(--gold); }
+.sideBtn.go small { color: var(--ok); }
+.sideBtn.go .chestIco, .sideBtn.go .ico { animation: chestwob 1.6s infinite; }
+.who { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); max-width: calc(100% - 170px); padding: 3px 12px; border-radius: 12px; background: rgba(6,14,20,.55); color: var(--text); font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+
+#levelSeg { padding: 3px; border-radius: 13px; }
+#levelSeg button { height: 34px; font-size: 14px; }
+.seg button { transition: background .15s, color .15s; }
+.seg button.on { background: linear-gradient(#49d6c8, #22a99d); box-shadow: inset 0 1px 0 rgba(255,255,255,.3); }
+
+.playRow { grid-template-columns: 1fr 88px; }
+.big { position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; height: 66px; border-radius: 18px; background: linear-gradient(#ffe08a, #f6b93a 55%, #e99a1f); box-shadow: inset 0 2px 0 rgba(255,255,255,.55), 0 5px 0 #9a6412, 0 12px 22px rgba(0,0,0,.35); }
+.big span { font-size: 26px; line-height: 1; letter-spacing: .1em; text-shadow: 0 1px 0 rgba(255,255,255,.5); }
+.big small { font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: none; color: #6b4406; margin-top: 3px; }
+.big small:empty { display: none; }
+.big::after { content: ''; position: absolute; top: -20%; bottom: -20%; left: -40%; width: 26%; background: linear-gradient(100deg, transparent, rgba(255,255,255,.55), transparent); transform: skewX(-18deg); animation: sheen 4.2s ease-in-out infinite; pointer-events: none; }
+@keyframes sheen { 0%, 62% { left: -40%; } 100% { left: 125%; } }
+.big:active { transform: translateY(3px); box-shadow: inset 0 2px 0 rgba(255,255,255,.55), 0 2px 0 #9a6412, 0 6px 12px rgba(0,0,0,.35); }
+.btn.side { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 66px; border-radius: 18px; font-size: 14px; background: linear-gradient(#2a5263, #18333f); box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 5px 0 var(--edge); margin-bottom: 5px; }
+.btn.side .ico { width: 24px; height: 24px; margin: 0; }
+.btn.side:active { transform: translateY(3px); box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 2px 0 var(--edge); }
+
+/* Truhenplätze */
+.chestRow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.slot { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0; height: 88px; padding: 4px 2px 8px; border-radius: 14px; background: linear-gradient(#1a3544, #10222c); border: 1px solid var(--line); box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 2px 0 var(--edge); text-align: center; overflow: hidden; }
+.slot:active { transform: scale(.96); }
+.slot .chestIco { width: 44px; height: 44px; margin: 0; }
+.slot b { font-size: 13px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.slot small { font-size: 10px; line-height: 1.15; color: var(--dim); font-weight: 700; white-space: nowrap; }
+.slot .prog { position: absolute; left: 8px; right: 8px; bottom: 4px; height: 3px; border-radius: 2px; background: #0a141b; overflow: hidden; }
+.slot .prog i { display: block; height: 100%; width: 0; background: var(--kraft); }
+.slot.wait .prog, .slot.ready .prog { display: none; }
+.slot.wait .chestIco { filter: saturate(.75) brightness(.85); }
+.slot.vacant { background: rgba(10,20,27,.5); border-style: dashed; box-shadow: none; }
+.slot.vacant .chestIco { opacity: .28; filter: grayscale(.6); width: 36px; height: 36px; }
+.slot.vacant b { font-size: 11px; color: var(--dim); }
+.slot.ready { border-color: var(--gold); background: linear-gradient(#3d5a2b, #1c3a22); animation: slotglow 1.2s ease-in-out infinite alternate; }
+.slot.ready b { color: var(--gold); font-size: 14px; }
+.slot.ready .chestIco { animation: chestwob 1.3s infinite; }
+@keyframes slotglow { to { box-shadow: 0 0 14px rgba(246,196,83,.7), inset 0 1px 0 rgba(255,255,255,.1); } }
+.stats { font-size: 12px; min-height: 16px; }
+
+/* Truhenarten (Symbole) */
+.chestIco.frei { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M4 18h32v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z' fill='%239a6634' stroke='%233b2716' stroke-width='2'/%3E%3Cpath d='M4 18c0-7 5-11 16-11s16 4 16 11z' fill='%23b98a52' stroke='%233b2716' stroke-width='2'/%3E%3Cpath d='M11 8v26M29 8v26' stroke='%235d3d1f' stroke-width='3'/%3E%3Crect x='16' y='15' width='8' height='9' rx='2' fill='%23f6c453' stroke='%233b2716' stroke-width='2'/%3E%3C/svg%3E"); }
+.chestIco.eisen { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M4 18h32v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z' fill='%235d7183' stroke='%231c2630' stroke-width='2'/%3E%3Cpath d='M4 18c0-7 5-11 16-11s16 4 16 11z' fill='%2391a7b8' stroke='%231c2630' stroke-width='2'/%3E%3Cpath d='M11 8v26M29 8v26' stroke='%23e3edf4' stroke-width='3'/%3E%3Ccircle cx='11' cy='22' r='1.4' fill='%231c2630'/%3E%3Ccircle cx='29' cy='22' r='1.4' fill='%231c2630'/%3E%3Crect x='16' y='15' width='8' height='9' rx='2' fill='%23f6c453' stroke='%231c2630' stroke-width='2'/%3E%3C/svg%3E"); }
+.chestIco.riesen { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M2 17h36v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z' fill='%23a8452f' stroke='%232e120a' stroke-width='2'/%3E%3Cpath d='M2 17C2 8 8 4 20 4s18 4 18 13z' fill='%23d0613f' stroke='%232e120a' stroke-width='2'/%3E%3Cpath d='M9 6v29M31 6v29M2 26h36' stroke='%23f6c453' stroke-width='3'/%3E%3Crect x='15' y='13' width='10' height='11' rx='2' fill='%23fff3c4' stroke='%232e120a' stroke-width='2'/%3E%3C/svg%3E"); }
+.chestfx.frei { --c0: #c99a5e; --c1: #9a6634; --c2: #6b4420; --edge: #2e1c0c; }
+.chestfx.eisen { --c0: #a9bdcc; --c1: #6d8496; --c2: #46596a; --edge: #151e27; --band: #e3edf4; }
+.chestfx.riesen { --c0: #e0704a; --c1: #b04a30; --c2: #77301f; --edge: #2e120a; --band: #f6c453; }
+.chestfx.riesen .chestbox { width: 176px; margin-left: -88px; }
+
+/* Truhenblatt, Truhenfolge, gewonnene Truhe */
+.chestCard { text-align: center; }
+.chestCard > .chestIco { width: 92px; height: 92px; margin: 6px auto 2px; }
+.chestCard .meterBig { margin-top: 12px; }
+.cycle { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; margin: 10px 0 4px; }
+.cycle div { padding: 5px 0 4px; border-radius: 10px; background: #0f222d; }
+.cycle div.next { box-shadow: 0 0 0 2px var(--gold) inset; grid-column: span 2; }
+.cycle .chestIco { width: 30px; height: 30px; }
+.cycle div.next .chestIco { width: 38px; height: 38px; }
+.cycle small { display: block; font-size: 10px; color: var(--dim); font-weight: 700; }
+.cycle { grid-template-columns: repeat(9, 1fr); }
+.kinds { display: grid; gap: 6px; margin-top: 10px; text-align: left; }
+.kinds > div { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 12px; background: #0f222d; }
+.kinds .chestIco { width: 38px; height: 38px; margin: 0; flex: none; }
+.kinds b { display: block; font-size: 14px; } .kinds small { color: var(--dim); font-size: 12px; }
+.kinds em { font-style: normal; font-size: 11px; font-weight: 800; margin-left: 6px; padding: 1px 7px; border-radius: 8px; background: #24505a; color: var(--text); }
+.wonChest { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 10px 14px; border-radius: 14px; background: linear-gradient(#24505a, #173340); border: 2px solid var(--gold); text-align: left; animation: lootin .45s .5s cubic-bezier(.2,1.4,.4,1) both; }
+.wonChest .chestIco { width: 52px; height: 52px; margin: 0; flex: none; animation: chestwob 1.4s 1s infinite; }
+.wonChest b { display: block; color: var(--gold); font-size: 16px; } .wonChest small { color: var(--dim); font-size: 13px; }
+#sheet p.prize { margin: 8px 0 0; font-weight: 800; color: var(--gold); display: flex; align-items: center; justify-content: center; gap: 6px; }
+
+/* Laden: vier Truhenarten */
+.chestOffer small { min-height: 32px; line-height: 1.3; }
+.chestOffer .chestIco { width: 60px; height: 60px; }
+
+/* Kartenblatt: alt → neu */
+.lvlLine { display: flex; align-items: baseline; gap: 8px; margin-top: 12px; padding: 8px 12px; border-radius: 10px; background: linear-gradient(90deg, #173d2c, #0f222d); font-size: 14px; font-weight: 800; }
+.lvlLine span { color: var(--dim); } .lvlLine i { font-style: normal; color: var(--ok); } .lvlLine b { color: var(--ok); }
+.lvlLine small { margin-left: auto; color: var(--dim); font-size: 11px; font-weight: 700; }
+.lvlLine + .statlist { margin-top: 6px; }
+.statlist { grid-auto-flow: dense; }
+.statlist .chg { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #12303d; }
+.statlist .chg > span { min-width: 0; }
+.statlist .chg b { display: flex; align-items: baseline; gap: 6px; flex: none; font-variant-numeric: tabular-nums; }
+.statlist .chg s { text-decoration: none; color: var(--dim); font-weight: 600; }
+.statlist .chg i { font-style: normal; color: var(--dim); font-size: 12px; }
+.statlist .chg u { text-decoration: none; color: #fff; }
+.statlist .chg em { min-width: 44px; margin: 0; padding: 1px 6px; border-radius: 8px; background: #173d2c; font-size: 12px; font-weight: 800; text-align: center; }
+.uprow { align-items: baseline; gap: 10px; }
+.uprow .vals { display: flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; }
+.uprow s { text-decoration: none; font-size: 13px; } .uprow i { font-style: normal; font-size: 12px; }
+.uprow em { font-style: normal; font-size: 12px; font-weight: 800; color: var(--ok); padding: 1px 6px; border-radius: 8px; background: #173d2c; }
+
+/* Kleine Bildschirme */
+@media (max-height: 760px) { .hint { display: none; } .slot { height: 78px; } .slot .chestIco { width: 38px; height: 38px; } .sideBtn { min-height: 58px; } }
+@media (max-height: 640px) {
+  :root { --panel: 128px; }
+  #tabHome { gap: 6px; padding-bottom: 6px; }
+  .big, .btn.side { height: 52px; } .big span { font-size: 22px; } .big small { margin-top: 1px; font-size: 10px; }
+  .btn.tile { height: 46px; } .seg button { height: 38px; } #levelSeg button { height: 30px; }
+  .arenaBox { padding: 6px 12px 8px; } .arenaName b { font-size: 17px; }
+  .slot { height: 66px; padding-bottom: 6px; } .slot .chestIco { width: 30px; height: 30px; } .slot.vacant .chestIco { width: 26px; height: 26px; }
+  .sideBtn { min-height: 50px; padding: 3px 2px 4px; } .sideBtn .ico { width: 22px; height: 22px; } .sideBtn .chestIco { width: 25px; height: 25px; }
+  .sideCol { width: 68px; gap: 4px; } .stats { display: none; }
+}
+@media (max-width: 340px) { .slot small { font-size: 9px; letter-spacing: -.2px; } .chestRow { gap: 6px; } }
+
+/* Weniger Bewegung: Systemwunsch und Grafik „Niedrig“ – keine Dauer-Animationen, Übergänge bleiben kurz */
+body.calm .big::after, body.calm .dot, body.calm .slot.ready, body.calm .slot.ready .chestIco, body.calm .sideBtn.go .chestIco, body.calm .sideBtn.go .ico, body.calm .upItem, body.calm .wonChest .chestIco { animation: none; }
+body.calm .big::after { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .big::after { display: none; }
+  .dot, .slot.ready, .slot.ready .chestIco, .sideBtn.go .chestIco, .sideBtn.go .ico, .upItem, .wonChest .chestIco, .chestBtn, .chestBtn .chestIco, .card.pick, .tab.inL, .tab.inR { animation: none; }
+  #navGlow, #nav button .ico, .track i { transition: none; }
+}
+
+/* ================= Seltenheit, Helden, Runenformen ================= */
+:root { --r-selten: #f2a13c; --r-episch: #c76bff; --r-legendaer: #5ff0e0; --r-held: #f6c453; --rune: #c98bff; }
+/* Rahmen in der Farbe der Seltenheit; legendär schillert */
+.card.r-selten { border-color: var(--r-selten); }
+.card.r-episch { border-color: var(--r-episch); box-shadow: inset 0 0 0 1px rgba(199,107,255,.45); }
+.card.r-legendaer { border-color: transparent; background: linear-gradient(#22384d, #22384d) padding-box, linear-gradient(135deg, #5ff0e0, #fff3c4 30%, #ff9ad5 55%, #8ab4ff 80%, #5ff0e0) border-box; }
+.card.r-held { border-color: var(--r-held); box-shadow: inset 0 0 0 1px #a8741a, 0 0 8px rgba(246,196,83,.35); }
+.card.up { border-color: #6fe06a; }
+/* Stein oben in der Mitte: Raute (selten), Doppelraute (episch), Stern (legendär) */
+.card .rar { position: absolute; left: 29px; top: 3px; width: 12px; height: 12px; background: var(--r-selten); clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); filter: drop-shadow(0 0 2px #000); z-index: 1; }
+.card .rar.episch { width: 20px; background: var(--r-episch); clip-path: polygon(25% 0, 50% 38%, 75% 0, 100% 50%, 75% 100%, 50% 62%, 25% 100%, 0 50%); }
+.card .rar.legendaer { width: 16px; height: 16px; top: 1px; background: linear-gradient(135deg, #5ff0e0, #fff3c4, #ff9ad5); clip-path: polygon(50% 0, 62% 36%, 100% 38%, 70% 60%, 80% 100%, 50% 76%, 20% 100%, 30% 60%, 0 38%, 38% 36%); }
+/* Helden: goldenes Banner */
+.card .heroMark { position: absolute; left: 27px; top: 0; padding: 1px 7px 3px; background: linear-gradient(#ffe08a, #e9a01f); color: #3a2500; font-size: 8.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; line-height: 1.1; clip-path: polygon(0 0, 100% 0, 100% 72%, 50% 100%, 0 72%); z-index: 1; }
+.thumbs .card .heroMark, #next .card .heroMark, .upItem .card .heroMark { font-size: 0; padding: 0; width: 12px; height: 9px; }
+.thumbs .card .rar, #next .card .rar { transform: scale(.6); transform-origin: 0 0; left: 16px; top: 1px; }
+.thumbs .card .heroMark, #next .card .heroMark { left: 16px; }
+.card:has(.heroMark) .lv { top: 15px; } /* das Helden-Banner sitzt oben: die Stufe rückt darunter */
+/* Runenform: violette Raute unten links – erweckt leuchtet sie, sonst blass mit Scherbenstand */
+.card .runeMark, .runeBox .runeMark { left: 4px; bottom: 28px; width: 13px; height: 13px; background: linear-gradient(135deg, #e7ccff, var(--rune)); border: 1.5px solid #fff; box-shadow: 0 0 7px var(--rune); }
+.card .runeMark.off { background: rgba(20,12,34,.85); border-color: #9a7bbd; box-shadow: none; }
+.card .runeMark i { position: absolute; left: 13px; top: -4px; transform: rotate(-45deg); transform-origin: 0 100%; padding: 0 4px; border-radius: 6px; background: rgba(20,12,34,.85); color: #e7ccff; font-style: normal; font-size: 9px; font-weight: 800; line-height: 13px; white-space: nowrap; }
+.thumbs .card .runeMark, #next .card .runeMark, .upItem .card .runeMark { width: 8px; height: 8px; bottom: 4px; left: 3px; border-width: 1px; }
+.thumbs .card .runeMark i, #next .card .runeMark i, .upItem .card .runeMark i, .card.locked .runeMark i { display: none; }
+.runeBox b .runeMark { position: static; display: inline-block; transform: rotate(45deg); margin: 0 10px 1px 3px; width: 11px; height: 11px; }
+.runeBox b .runeMark.off { background: rgba(20,12,34,.85); border-color: #9a7bbd; box-shadow: none; }
+/* Hand im Kampf: Zyklus-Punkte größer, Banner wenn die Runenform dran ist, Heldenfähigkeit */
+#hand .card .pips { right: 4px; top: 4px; gap: 5px; padding: 3px 5px; border-radius: 9px; background: rgba(6,14,20,.6); }
+#hand .card .pips i { width: 10px; height: 10px; }
+.card .runeNow { position: absolute; left: 0; right: 0; bottom: 17px; padding: 1px 0; background: linear-gradient(90deg, transparent, #7b3fc0 20%, #7b3fc0 80%, transparent); color: #fff; font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-align: center; text-transform: uppercase; }
+.card .abil { position: absolute; left: 0; right: 0; bottom: 17px; display: flex; align-items: center; justify-content: center; gap: 3px; padding: 1px 2px; background: rgba(58,37,0,.82); color: #ffe79a; font-size: 9px; font-weight: 800; line-height: 1.2; white-space: nowrap; overflow: hidden; }
+.card .abil b { flex: none; min-width: 13px; height: 13px; border-radius: 4px; background: var(--kraft); color: #062a3d; font-size: 10px; line-height: 13px; text-align: center; }
+.card .abil { display: none; } #hand .card .abil { display: flex; }
+.ability .cdn { font-size: 20px; }
+/* Seltenheit als Wort */
+.rword { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #9fc3de; }
+.rword.selten { color: var(--r-selten); } .rword.episch { color: var(--r-episch); } .rword.legendaer { color: var(--r-legendaer); } .rword.held { color: var(--r-held); } .rword.rune { color: var(--rune); }
+.sortChips { align-items: center; margin-top: -4px; }
+.sortChips small { color: var(--dim); font-size: 12px; font-weight: 700; margin-right: 2px; }
+.sortChips button { height: 28px; font-size: 12px; }
+/* Runenscherben */
+.ico.shard { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M11 1 17 9 12.500 19 5 13.500 4 6z' fill='%23c98bff' stroke='%235b2f8a' stroke-width='1.300' stroke-linejoin='round'/%3E%3Cpath d='M11 1 9.500 10 12.500 19M4 6l5.500 4L17 9' fill='none' stroke='%23f3e3ff' stroke-width='1'/%3E%3C/svg%3E"); }
+.ico.wild { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%235ff0e0'/%3E%3Cstop offset='.5' stop-color='%23fff3c4'/%3E%3Cstop offset='1' stop-color='%23ff9ad5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M11 1 17 9 12.500 19 5 13.500 4 6z' fill='url(%23g)' stroke='%235b2f8a' stroke-width='1.300' stroke-linejoin='round'/%3E%3Cpath d='M11 1 9.500 10 12.500 19M4 6l5.500 4L17 9' fill='none' stroke='%23ffffff' stroke-width='1'/%3E%3C/svg%3E"); }
+.shards { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 13px; font-weight: 800; color: #e7ccff; }
+.shardRow { display: flex; gap: 4px; }
+.shardRow i { width: 14px; height: 18px; background: #2a1c3f; clip-path: polygon(55% 0, 100% 42%, 68% 100%, 12% 72%, 0 26%); }
+.shardRow i.on { background: linear-gradient(135deg, #e7ccff, var(--rune)); }
+.btn.wildBtn { width: 100%; height: 42px; margin-top: 8px; font-size: 14px; border-color: #6d4a8f; }
+.btn.wildBtn .ico { width: 18px; height: 18px; margin: 0 6px 0 0; vertical-align: -4px; }
+.btn.wildBtn em { font-style: normal; margin-left: 6px; padding: 1px 8px; border-radius: 9px; background: #3a2456; color: #e7ccff; font-size: 12px; }
+.runeBox small.src { display: block; margin-top: 8px; line-height: 1.35; }
+.qbonus { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px; background: #0f222d; border-left: 4px solid var(--rune); }
+.qbonus b { display: block; font-size: 15px; } .qbonus small { color: var(--dim); font-size: 12px; } .qbonus.claimed { opacity: .5; }
+.loot .shardItem span { display: flex; align-items: center; justify-content: center; gap: 2px; color: #e7ccff; }
+.loot .shardItem .ico { width: 15px; height: 15px; }
+.mile .what .ico.wild { margin-left: 8px; }
+.upnote.shard { background: #3a2456; color: #e7ccff; }
+.upnote.text { background: #1b1430; color: #e7ccff; font-weight: 600; font-size: 13px; }
+.uptitle .runeTitle { color: var(--rune); font-size: 26px; text-shadow: 0 0 18px rgba(201,139,255,.8); animation: popnum .5s .6s both; display: inline-block; }
+/* Truhe öffnen: seltenere Karten mit mehr Auftritt */
+.cinfo .rword { font-size: 11px; }
+.ritem.r-selten .card { box-shadow: 0 0 26px rgba(242,161,60,.7); }
+.ritem.r-episch .card { box-shadow: 0 0 34px rgba(199,107,255,.9); }
+.ritem.r-legendaer .card, .ritem.r-held .card { box-shadow: 0 0 44px rgba(95,240,224,.95), 0 0 80px rgba(255,154,213,.5); }
+.ritem.r-held .card { box-shadow: 0 0 44px rgba(246,196,83,1), 0 0 80px rgba(246,196,83,.5); }
+.ritem.r-episch, .ritem.r-legendaer, .ritem.r-held { animation: itemrare .9s cubic-bezier(.2,1.3,.4,1) both; }
+@keyframes itemrare { 0% { transform: translateY(150px) scale(.12) rotate(-25deg); opacity: 0; } 30% { opacity: 1; } 55% { transform: translateY(-34px) scale(1.25) rotate(4deg); filter: brightness(2.2); } 80% { transform: translateY(0) scale(.97); filter: none; } 100% { transform: none; } }
+.ritem .rspark { position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; margin: -4px; border-radius: 50%; background: #fff; box-shadow: 0 0 10px currentColor; color: var(--r-episch); opacity: 0; animation: spark .9s .45s ease-out forwards; }
+.ritem.r-legendaer .rspark { color: var(--r-legendaer); } .ritem.r-held .rspark { color: var(--r-held); }
+.ritem .ico.wild, .ritem.shard .card { filter: drop-shadow(0 0 16px rgba(201,139,255,.9)); }
+.chestfx[data-rar="selten"] .rays { background: repeating-conic-gradient(rgba(242,161,60,.3) 0 9deg, transparent 9deg 24deg); }
+.chestfx[data-rar="episch"] .rays, .chestfx[data-rar="rune"] .rays { background: repeating-conic-gradient(rgba(199,107,255,.38) 0 9deg, transparent 9deg 24deg); }
+.chestfx[data-rar="legendaer"] .rays { background: repeating-conic-gradient(rgba(95,240,224,.4) 0 9deg, rgba(255,154,213,.25) 9deg 14deg, transparent 14deg 24deg); }
+.chestfx[data-rar="held"] .rays { background: repeating-conic-gradient(rgba(246,196,83,.5) 0 9deg, transparent 9deg 24deg); }
+@media (prefers-reduced-motion: reduce) { .ritem.r-episch, .ritem.r-legendaer, .ritem.r-held { animation-name: itemout; } .ritem .rspark { display: none; } }

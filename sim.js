@@ -1,17 +1,17 @@
 // Spiel-Logik von Runenfurt: reine Simulation ohne Browser-Abhängigkeiten (läuft auch unter node --test).
 // Seite 0 spielt von unten (großes y), Seite 1 von oben. Fester Zeitschritt DT.
-import { UNITS, CARDS, RUNES, TOWER_SPELL_FACTOR, HASTE, SLOW_FACTOR, sanitizeDeck } from './cards.js';
+import { UNITS, CARDS, RUNES, FORMS, TOWER_SPELL_FACTOR, HASTE, SLOW_FACTOR, sanitizeDeck } from './cards.js';
 
 // Feldmaße wie im Genre üblich: 18 breit, 32 lang, der Fluss zwei Felder breit in der Mitte.
 export const W = 18, H = 32;
 export const RIVER_TOP = 15, RIVER_BOT = 17;
 export const OUTER_Y = 6.5, MAIN_Y = 3; // Abstand der Türme von der eigenen Grundlinie
 export const BRIDGES = [3.5, 14.5];
-export const BRIDGE_HALF = 1.3;
+export const BRIDGE_HALF = 1.0; // die Brücken sind zwei Felder breit
 export const DT = 1 / 30;
 export const MAX_KRAFT = 10;
 export const KRAFT_RATE = 1 / 2.8;
-const SIGHT = 5.5;
+const SIGHT = 5.5; // Sichtweite, wenn die Figur keine eigene hat (sight)
 export const POCKET = 11; // so weit darf man nach einem gefallenen Außenturm ins gegnerische Feld setzen (gespiegelt: y >= POCKET)
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -100,51 +100,134 @@ export const kraftRate = g => KRAFT_RATE * (g.kraftFixed ? g.kraftFixed : g.time
 export const timeLeft = g => (g.phase === 'main' ? g.duration - g.time : g.duration + g.overtime - g.time);
 
 // ---- Karten ausspielen -------------------------------------------------------------------------
+// Raster, Sperrflächen, nächstes freies Feld, Aufstellung und Auftrittstakt folgen den Regeln des Vorbilds.
+// Nachgelesen im offenen Nachbau crforge (github.com/voonhous/crforge, Apache-2.0, Stand d3ae65de1e):
+// core/battle/deploy/{CardPlacement,DeployMask,PlacementSearch,MapCheck,Formation,InitialDelay}.java und arena/standard_1v1_cells.txt.
+// Unser Feld ist deren Feld um eine halbe Drehung gedreht: Seite 0 steht unten, so wie der Spieler es sieht.
 
-// Nächster erlaubter Punkt für eine Karte. Zauber dürfen überallhin, Truppen/Gebäude nur aufs eigene Feld
-// (plus die Tasche hinter einem zerstörten gegnerischen Außenturm).
-export function clampDeploy(g, side, cardId, x, y) {
-  let c = CARDS[cardId];
-  if (c.mirror && g.sides[side].last) c = CARDS[g.sides[side].last]; // Widerhall: es gelten die Regeln der wiederholten Karte
-  x = clamp(x, 0.6, W - 0.6);
-  if (c.spread) x = clamp(x, c.spread / 2 + 0.6, W - c.spread / 2 - 0.6); // die ganze Reihe muss aufs Feld passen
-  if (c.type === 'spell' && !c.summon && !c.ownSide) return { x, y: clamp(y, 0.6, H - 0.6) };
-  if ((c.summon || c.anywhere) && !c.ownSide) { // überall, nur nicht ins Wasser
-    y = offRiver(clamp(y, 0.6, H - 0.6));
-    if (c.type === 'building') for (const e of g.ents) { // ein Gebäude nicht in ein anderes hinein, sondern daneben
-      if (e.kind === 'unit' || e.hp <= 0) continue;
-      const min = e.r + UNITS[c.unit].r + 0.15, dx = x - e.x, dy = y - e.y, d = Math.hypot(dx, dy);
-      if (d >= min) continue;
-      const nx = d > 0.01 ? dx / d : 0, ny = d > 0.01 ? dy / d : e.side === 0 ? -1 : 1;
-      x = clamp(e.x + nx * min, 0.6, W - 0.6); y = clamp(e.y + ny * min, 0.6, H - 0.6);
-    }
-    return { x, y };
+const waterTile = (c, r) => r >= RIVER_TOP && r < RIVER_BOT && c !== 3 && c !== 14; // nur die mittlere Kachel jeder Brücke ist trocken
+// Kacheln, auf die sich nichts setzen lässt: die Ecken der Grundlinien, die Randkacheln am Fluss und der Sockel der Haupttürme
+const deadTile = (c, r) => ((r === 0 || r === H - 1) && (c < 6 || c > 11)) || ((r === RIVER_TOP - 1 || r === RIVER_BOT) && (c === 0 || c === W - 1))
+  || (c >= 7 && c <= 10 && ((r >= 1 && r <= 4) || (r >= H - 5 && r <= H - 2)));
+// Kacheln je Seite, die ein Gebäude belegt: aus dem Kollisionsradius (bis 0,5 → 2, bis 1,0 → 3). Der Hauptturm sperrt über seinen Sockel 4 × 4.
+export const footprint = d => (d.main ? 2 : Math.floor((Math.round(d.r * 1000) + 499) / 500) + 1);
+
+// Was für das Setzen einer Karte gilt
+function placing(g, side, cardId) {
+  let id = cardId, c = CARDS[id];
+  if (c.mirror && g.sides[side].last) { id = g.sides[side].last; c = CARDS[id]; } // Widerhall: es gelten die Regeln der wiederholten Karte
+  const spell = c.type === 'spell', f = FORMS[id] || {};
+  return { fp: c.type === 'building' ? footprint(UNITS[c.unit]) : 1, enemyOk: (spell || !!c.anywhere) && !c.ownSide, onBuildings: spell, onWater: spell && !c.summon,
+    margin: f.margin || 0, lane: !!f.lane };
+}
+
+// Offene Kacheln für eine Karte (1 = frei): gegnerische Türme halten ihre Hälfte frei – fällt ein Außenturm, öffnet sich die Tasche davor –,
+// und jedes Gebäude sperrt seine eigene Fläche. Zauber dürfen auf Gebäude; manche Karten (lane) brauchen eine ganz freie Reihe.
+function deployMask(g, side, P) {
+  const open = new Uint8Array(W * H).fill(1);
+  const close = (x, y, w, h) => {
+    const c0 = Math.max(0, Math.floor(x - w / 2 + 1e-6)), c1 = Math.min(W, Math.floor(x + w / 2 + 1e-6));
+    const r0 = Math.max(0, Math.floor(y - h / 2 + 1e-6)), r1 = Math.min(H, Math.floor(y + h / 2 + 1e-6));
+    for (let r = r0; r < r1; r++) for (let c = c0; c < c1; c++) open[r * W + c] = 0;
+  };
+  for (const e of g.ents) {
+    if (e.kind === 'unit' || e.hp <= 0 || e.digT > 0) continue;
+    if (e.kind === 'tower' && e.side !== side && !P.enemyOk) close(e.x, e.y, e.main ? 18 : 11, e.main ? 16 : 21);
+    else if (!P.onBuildings) { const fp = footprint(e.d); close(e.x, e.y, fp, fp); }
   }
-  let m = side === 0 ? y : H - y; // gespiegelt: eigenes Feld ist m > RIVER_BOT
-  const lane = x < W / 2 ? 0 : 1;
-  const pocket = !outerTower(g, 1 - side, lane);
-  const minM = pocket ? POCKET : RIVER_BOT + 0.4;
-  m = clamp(m, minM, H - 0.6);
-  if (m > RIVER_TOP - 0.4 && m < RIVER_BOT + 0.4) m = m < (RIVER_TOP + RIVER_BOT) / 2 ? RIVER_TOP - 0.4 : RIVER_BOT + 0.4;
-  return { x, y: side === 0 ? m : H - m };
+  if (P.lane) for (let r = 0; r < H; r++) { let whole = 1; for (let c = 0; c < W; c++) whole &= open[r * W + c]; if (!whole) open.fill(0, r * W, (r + 1) * W); }
+  return open;
 }
 
+function legalAt(P, open, px, py) {
+  const c0 = Math.floor(px - P.fp / 2 + 1e-6), r0 = Math.floor(py - P.fp / 2 + 1e-6);
+  for (let c = c0; c < c0 + P.fp; c++) for (let r = r0; r < r0 + P.fp; r++) {
+    if (c < P.margin || c >= W - P.margin || r < 0 || r >= H || !open[r * W + c]) return false;
+    if (waterTile(c, r) ? !P.onWater : deadTile(c, r) && !P.onBuildings) return false;
+  }
+  return true;
+}
+
+// Wo eine Karte landet: Der Punkt rastet auf die Mitte seiner Kachel ein (Gebäude mit gerader Fläche auf die Ecke). Ist die Kachel nicht erlaubt,
+// gilt die nächste erlaubte im engsten Ring darum. blocked, wenn es nirgends geht.
+export function clampDeploy(g, side, cardId, x, y) {
+  const P = placing(g, side, cardId), open = deployMask(g, side, P);
+  const cx = clamp(x, 0, W - 0.001), cy = clamp(y, 0, H - 0.001), even = P.fp % 2 === 0;
+  const sx = even ? Math.ceil(cx) : Math.floor(cx) + 0.5, sy = even ? Math.ceil(cy) : Math.floor(cy) + 0.5;
+  for (let r = 0; r <= 30; r++) {
+    let best = null, bd = Infinity;
+    for (let j = 0; j < (r === 0 ? 1 : 2 * r); j++) for (let k = 0; k < (r === 0 ? 1 : 4); k++) {
+      let dx = k & 1 ? -r : j - r, dy = k & 1 ? r - j : -r;
+      if (k > 1) { dx = -dx; dy = -dy; }
+      const px = sx - dx, py = sy - dy;
+      if (!legalAt(P, open, px, py)) continue;
+      const d = (px - cx) * (px - cx) + (py - cy) * (py - cy);
+      if (d < bd) { bd = d; best = { x: px, y: py }; }
+    }
+    if (best) return best;
+  }
+  return { x: clamp(x, 0.5, W - 0.5), y: clamp(y, 0.5, H - 0.5), blocked: true };
+}
+
+// Liegt der Punkt auf der Kachel, auf der die Karte landet? (Ein Punkt im gesperrten Feld würde woandershin verschoben.)
 export function canDeploy(g, side, cardId, x, y) {
-  const p = clampDeploy(g, side, cardId, x, y);
-  return Math.abs(p.x - x) < 1e-6 && Math.abs(p.y - y) < 1e-6;
+  const p = clampDeploy(g, side, cardId, x, y), tol = (placing(g, side, cardId).fp % 2 === 0 ? 1 : 0.5) + 1e-6;
+  return !p.blocked && Math.abs(p.x - x) <= tol && Math.abs(p.y - y) <= tol;
 }
 
-const FORMATION = {
-  1: [[0, 0]],
-  2: [[-0.55, 0], [0.55, 0]],
-  3: [[0, -0.5], [-0.6, 0.4], [0.6, 0.4]],
-  4: [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]],
-};
-// Aufstellung für n Einheiten: kleine Gruppen fest, große als Spirale
-export function formation(n) {
-  if (FORMATION[n]) return FORMATION[n];
+// Für das Raster beim Setzen: auf welchen Kacheln die Karte landen kann, ohne verschoben zu werden (Index reihe * W + spalte, 1 = ja)
+export function deployTiles(g, side, cardId) {
+  const P = placing(g, side, cardId), open = deployMask(g, side, P), out = new Uint8Array(W * H), k = P.fp % 2 === 0 ? 1 : 0.5;
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) out[r * W + c] = legalAt(P, open, c + k, r + k) ? 1 : 0;
+  return out;
+}
+
+// Die Reihen, in denen die Figuren einer gesetzten Karte stehen dürfen: von der vordersten freien Kachel ihrer Spalte (deren Mitte) bis zur hintersten.
+// So stellt sich niemand in den Fluss. Ohne Grenze, wenn die Spalte weit ins gegnerische Feld offen ist.
+function columnSpan(g, side, cardId, px) {
+  const open = deployMask(g, side, { ...placing(g, side, cardId), onBuildings: false }), c = clamp(Math.floor(px), 0, W - 1);
+  let lo = -1, hi = -1;
+  for (let r = 0; r < H; r++) if (open[r * W + c]) { if (lo < 0) lo = r; hi = r; }
+  if (lo < 0) return null;
+  const span = side === 0 ? [lo + 0.5, hi + 1] : [lo, hi + 0.5];
+  return span[1] - span[0] >= 16 ? null : span;
+}
+
+const sin1024 = deg => Math.round(Math.sin((deg * Math.PI) / 180) * 1024);
+const idiv = (a, b) => (b === 0 ? 0 : Math.trunc(a / b));
+// Platz der index-ten Figur einer Karte um den gesetzten Punkt, in Tausendstel Feldern und in der Ausrichtung der Quelle (Formation.java):
+// eine Figur auf dem Punkt; zwei bis sechs auf einem Ring; sieben als eine in der Mitte und sechs im Ring; ab acht eine Spirale;
+// zwei Gruppen stehen sich verschränkt gegenüber (die erste vorn); Karten mit Breite stellen ihre Figuren in eine Reihe.
+// n1/n2 Größe der ersten/zweiten Gruppe, bottom = die untere Seite der Quelle (bei uns Seite 0).
+export function formOffset(index, n1, radius, width, bottom, shift, n2) {
+  let slots = n2 > 0 ? 2 * Math.max(n1, n2) : n1;
+  const pair = width !== 0 && n2 === 1;
+  if (slots === 1) return [0, 0];
+  if (slots === 7) { if (index === 0) return [0, 0]; index -= 1; slots = 6; }
+  else shift += slots === 2 ? 90 : slots === 3 ? 180 : slots === 4 ? 45 : slots === 5 ? 180 : 0;
+  if (slots >= 3 && width === 0) radius = idiv(radius * 577, idiv(sin1024(idiv(90, n1)) * 1000, 1024)); // der Ring wächst mit der Zahl der Figuren
+  if (slots >= 7) radius = idiv(radius * ((3 * index) % 7), 6);
+  if (pair) return index === 0 ? [0, 0] : [width, bottom ? -radius : radius];
+  let xa, ya, yd;
+  if (n2 === 0) { const a = idiv(360 * index, slots) + shift; xa = a + 180; ya = a + 90; yd = 1024; }
+  else {
+    let p2 = idiv(idiv(360, slots), 2), p1 = p2, sh = n1 === 1 ? 0 : shift;
+    if (n1 < n2) p1 += idiv(idiv(180, n2), 2); else if (n2 < n1) p2 += idiv(idiv(180, n1), 2);
+    if (n1 === 1 && index === 0) p1 = 90;
+    if (n1 >= 2 && n2 === 1) { if (index < n1) p1 = idiv(90, n1); sh = 0; }
+    if (index >= n1) { const a = p2 + sh + idiv(360 * (index - n1), slots); xa = a + 270; ya = a + 180; }
+    else { const a = p1 + sh + idiv(360 * index, slots); xa = a + 90; ya = a; }
+    yd = -1024;
+  }
+  let x = idiv(sin1024(xa) * radius, 1024), y = idiv(sin1024(ya) * radius, yd);
+  if (width !== 0) { x = idiv(index * width, slots - 1) - idiv(width, 2); y = radius * (index % 2) - idiv(radius, 2); if (bottom) { x = -x; y = -y; } }
+  else if (bottom) y = -y;
+  return [x, y];
+}
+// Aufstellung von n gleichen Figuren um einen Punkt, in Feldern (Seite 0 schaut nach oben); r = Kollisionsradius oder der Radius der Karte
+export function formation(n, r = 0.5, side = 0) {
   const out = [];
-  for (let i = 0; i < n; i++) { const a = i * 2.39996, r = 0.42 * Math.sqrt(i); out.push([Math.cos(a) * r, Math.sin(a) * r]); }
+  for (let i = 0; i < n; i++) { const [x, y] = formOffset(i, n, Math.round(r * 1000), 0, side === 0, 0, 0); out.push([-x / 1000, -y / 1000]); }
   return out;
 }
 
@@ -170,6 +253,37 @@ function castZone(g, id, side, x, y, lvl, delay) {
     n: 0, t2: c.summonOver ? c.summonOver.first : c.pulses ? c.pulses.first : 0 });
 }
 
+// Was passiert, wenn die Karte bei (x, y) losgelassen wird? Grundlage für playCard und für die Vorschau beim Ziehen.
+//   x, y     der Punkt, an dem die Karte wirklich landet (auf die Kachel eingerastet, aufs erlaubte Feld geholt)
+//   ok       false, wenn es für die Karte gerade kein freies Feld gibt
+//   kind     'spell' | 'building' | 'troop'
+//   radius   Wirkungskreis eines Zaubers, sonst 0
+//   tiles    belegte Kacheln eines Gebäudes { x0, y0, w, h } in Feldmaßen, sonst null
+//   spots    jede Figur einzeln: { unit, x, y, r, wait } – wait = Sekunden, die sie nach der ersten erscheint (bei Zaubern leer)
+// null, wenn es nichts zu setzen gibt (Widerhall ohne Vorgänger).
+export function deployPlan(g, side, cardId, x, y) {
+  const hc = CARDS[cardId], S = g.sides[side];
+  if (!hc || (hc.mirror && !S.last)) return null;
+  const id = hc.mirror ? S.last : cardId, c = CARDS[id];
+  const R = !hc.mirror && runeReady(g, side, id) ? RUNES[id] : null;
+  const p = clampDeploy(g, side, cardId, x, y);
+  const out = { x: p.x, y: p.y, ok: !p.blocked, kind: c.type === 'spell' ? 'spell' : c.type === 'building' ? 'building' : 'troop', radius: c.type === 'spell' ? c.radius || 0 : 0, tiles: null, spots: [] };
+  if (c.type === 'spell') return out;
+  const mixed = c.mix && !R; // gemischter Trupp: die zuerst genannten Einheiten stehen vorn
+  const list = mixed ? c.mix.flatMap(([u, n]) => Array(n).fill(u)) : Array((R && R.count) || c.count).fill(R ? R.unit : c.unit);
+  const n1 = mixed ? c.mix[0][1] : list.length, n2 = list.length - n1;
+  const f = FORMS[id] || {}, first = UNITS[list[0]];
+  if (first.building) { const fp = footprint(first); out.tiles = { x0: p.x - fp / 2, y0: p.y - fp / 2, w: fp, h: fp }; }
+  const radius = Math.round((f.r || first.r) * 1000), width = Math.round((f.w || 0) * 1000), col = columnSpan(g, side, cardId, p.x);
+  list.forEach((unit, i) => {
+    const d = UNITS[unit], [bx, by] = formOffset(i, n1, radius, width, side === 0, f.shift || 0, n2);
+    let uy = p.y - by / 1000;
+    if (col && !d.air) uy = clamp(uy, col[0], col[1]);
+    out.spots.push({ unit, x: clamp(p.x - bx / 1000, 0.25, W - 0.25), y: clamp(uy, 0.25, H - 0.25), r: d.r, wait: (f.lag || 0) * (first.building ? 1 : i) });
+  });
+  return out;
+}
+
 // Spielt die Handkarte handIdx an (x, y). Gibt true zurück, wenn die Karte gespielt wurde.
 export function playCard(g, side, handIdx, x, y) {
   const S = g.sides[side];
@@ -181,6 +295,8 @@ export function playCard(g, side, handIdx, x, y) {
   const id = hc.mirror ? S.last : hid, c = CARDS[id]; // Widerhall: die zuletzt gespielte Karte noch einmal
   const lvl = hc.mirror ? (S.levels[hid] || 1) + 1 : S.levels[id] || 1; // … auf der Stufe des Widerhalls plus eins
   const R = !hc.mirror && runeReady(g, side, id) ? RUNES[id] : null;
+  const plan = deployPlan(g, side, hid, x, y); // vor dem Weiterzählen des Runenzyklus: der Plan fragt selbst nach der Runenform
+  x = plan.x; y = plan.y;                      // die Karte landet auf ihrer Kachel
   if (!hc.mirror && S.runes.has(id) && RUNES[id]) S.cycle[id] = R ? 0 : (S.cycle[id] || 0) + 1;
   S.kraft -= cost;
   S.spent += cost;
@@ -192,15 +308,10 @@ export function playCard(g, side, handIdx, x, y) {
     castZone(g, id, side, x, y, lvl, c.delay);
     emit(g, { t: 'cast', spell: c.spell, side, x, y, r: c.radius, delay: c.delay, echo: !!hc.mirror });
   } else {
-    const put = (unit, dx, dy) => spawn(g, unit, side, clamp(x + dx, 0.4, W - 0.4), clamp(y + dy, 0.4, H - 0.4), { deployT: 1, cardId: c.hero ? id : '' }, lvl);
-    if (c.mix && !R) { // gemischter Trupp: die zuerst genannten Einheiten stehen vorn
-      const list = c.mix.flatMap(([u, n]) => Array(n).fill(u)), fwd = side === 0 ? -1 : 1;
-      const pos = [...formation(list.length)].sort((a, b) => (b[1] - a[1]) * fwd);
-      list.forEach((u, i) => put(u, pos[i][0], pos[i][1]));
-    } else if (c.spread && !R) { // eine Reihe quer über das Feld
-      for (let i = 0; i < c.count; i++) put(c.unit, (i / (c.count - 1) - 0.5) * c.spread, 0);
-    } else {
-      for (const [dx, dy] of formation((R && R.count) || c.count)) put(R ? R.unit : c.unit, dx, dy);
+    const home = mainTower(g, side);
+    for (const s of plan.spots) { // die Figuren eines Trupps erscheinen kurz nacheinander
+      const d = UNITS[s.unit], dig = d.tunnel && home ? Math.hypot(s.x - home.x, s.y - home.y) / d.tunnel : 0; // wer gräbt, braucht vom eigenen Hauptturm bis zum Ziel seine Zeit
+      spawn(g, s.unit, side, s.x, s.y, { deployT: (d.deploy || 1) + s.wait, cardId: c.hero ? id : '', ...(dig ? { digT: dig, hidden: true } : {}) }, lvl);
     }
     emit(g, { t: 'deploy', side, x, y, card: id, rune: !!R, hero: !!c.hero, echo: !!hc.mirror });
   }
@@ -292,6 +403,7 @@ export function useAbility(g, side, cardId) {
 function stun(e, t) {
   if (e.charging && e.d.dashGuard) return; // mitten im Sprung prallt auch die Betäubung ab
   e.stunT = Math.max(e.stunT, t); e.inRange = false; e.runT = 0; e.charging = false;
+  if (e.d.rampKeep) e.rampT = 0;
 }
 
 function die(g, e) {
@@ -302,6 +414,7 @@ function die(g, e) {
 
 // src: die angreifende Einheit (fehlt bei Zaubern) – nur sie kann einen Rückschlag abbekommen
 function damage(g, e, amount, bySide, src) {
+  if (e.digT > 0) return; // unter der Erde trifft nichts
   if (e.hp <= 0 || g.over) return;
   if (e.buried || (e.charging && e.d.dashGuard)) return; // vergraben oder mitten im Sprung: nichts trifft
   const rf = e.d.reflect;
@@ -316,10 +429,15 @@ function damage(g, e, amount, bySide, src) {
   if (e.ampT > 0) amount *= e.ampF || 1;
   if (e.shield > 0) { // der Schild fängt den Treffer ganz ab, auch wenn er dabei bricht
     e.shield -= amount;
-    if (e.shield <= 0) { e.shield = 0; emit(g, { t: 'shield', x: e.x, y: e.y }); }
+    if (e.shield <= 0) {
+      e.shield = 0; emit(g, { t: 'shield', x: e.x, y: e.y });
+      const sb = e.d.shieldBurst;   // Evolution: der brechende Schild trifft alles ringsum und stößt zurück
+      if (sb) { emit(g, { t: 'burst', x: e.x, y: e.y, r: sb.r, side: e.side }); areaDamage(g, e.side, e.x, e.y, sb.r, Math.round(sb.dmg * cardMult(e.lvl)), true, 1, 0, { knock: sb.knock }); }
+    }
     return;
   }
   e.hp -= amount;
+  if (e.d.dropAt && !e.dropped && e.hp > 0 && e.hp <= e.maxHp * e.d.dropAt.at) { e.dropped = true; e.dropNow = true; }
   if (e.main && !e.active) { e.active = true; e.cd = 3.5; emit(g, { t: 'wake', side: e.side, x: e.x, y: e.y }); }
   if (e.hp > 0) return;
   die(g, e);
@@ -345,12 +463,13 @@ function processDeaths(g) {
         emit(g, { t: 'fuse', x: e.x, y: e.y, r: dd.r, delay: dd.delay });
       } else {
         emit(g, { t: 'burst', x: e.x, y: e.y, r: dd.r, side: e.side, frost: !!dd.slow });
-        areaDamage(g, e.side, e.x, e.y, dd.r, dmg, false, 1, dd.slow || 0);
+        areaDamage(g, e.side, e.x, e.y, dd.r, dmg, false, dd.tower ?? 1, dd.slow || 0);
       }
     }
+    if (e.ownerId) { const o = g.byId.get(e.ownerId); if (o && o.hp > 0 && o.d.spawnHeal) overheal(g, o, o.d.spawnHeal.amt, o.d.spawnHeal.over); }   // Evolution: fällt ein Gerufener, heilt das die Ruferin
     if (d.kraft && d.kraft.death) { const S = g.sides[e.side]; S.kraft = Math.min(MAX_KRAFT, S.kraft + d.kraft.death); emit(g, { t: 'kraft', side: e.side, x: e.x, y: e.y }); }
     if (d.deathZone) castZone(g, d.deathZone, e.side, e.x, e.y, e.lvl, 0.05);
-    if (d.deathSpawn) {
+    if (d.deathSpawn && !(d.deathSpawn.killed && e.spent)) {   // killed: nur wenn besiegt, nicht nach dem eigenen Einschlag
       const n = d.deathSpawn.count, air = UNITS[d.deathSpawn.unit].air;
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2 + 0.5, rr = n > 1 ? 0.6 : 0, sy = clamp(e.y + Math.sin(a) * rr, 0.4, H - 0.4);
@@ -369,6 +488,22 @@ function processDeaths(g) {
       emit(g, { t: 'curse', side: e.curseSide, x: e.x, y: e.y });
     }
   }
+}
+
+// Heilen über das volle Leben hinaus (Evolutionen): höchstens over × Anfangsleben; der Lebensbalken wächst mit
+function overheal(g, u, amt, over) {
+  if (u.hp <= 0) return;
+  u.hp0 = u.hp0 || u.maxHp;
+  u.hp = Math.min(Math.round(u.hp0 * over), u.hp + Math.round(amt * cardMult(u.lvl)));
+  u.maxHp = Math.max(u.maxHp, u.hp);
+  emit(g, { t: 'heal', x: u.x, y: u.y });
+}
+
+// Stoß um die Einheit herum (Landung, Auftauchen). air: trifft auch Flieger, stun/slow: Dauer in Sekunden, tower: Anteil an Türmen (sonst voll)
+function groundPulse(g, u, dd) {
+  emit(g, { t: 'impact', x: u.x, y: u.y, r: dd.r });
+  if (dd.stun) for (const e of g.ents) if (e.side !== u.side && e.kind !== 'tower' && e.hp > 0 && (dd.air || !e.air) && Math.hypot(e.x - u.x, e.y - u.y) <= dd.r + e.r) stun(e, dd.stun);
+  areaDamage(g, u.side, u.x, u.y, dd.r, Math.round(dd.dmg * cardMult(u.lvl)), !!dd.air, dd.tower ?? 1, dd.slow || 0, dd.knock ? { knock: dd.knock } : null);
 }
 
 // Abbild (Trugbild): schlägt wie das Vorbild, fällt aber beim ersten Treffer
@@ -397,9 +532,9 @@ function finish(g, winner) {
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const edgeDist = (a, b) => dist(a, b) - a.r - b.r;
-// Reichweite: Truppen messen von Rand zu Rand, Türme und Gebäude von ihrer Mitte aus –
-// so erreicht ein Außenturm (7,5 Felder) niemanden, der noch auf der Brücke steht.
-const reachDist = (u, e) => (u.kind === 'unit' ? edgeDist(u, e) : dist(u, e) - e.r);
+// Reichweite: alle messen von Rand zu Rand, auch Türme und Gebäude (wie im Vorbild: Reichweite plus beide Kollisionsradien).
+// Ein Außenturm (7,5 Felder) erreicht damit eine Figur, die mitten auf der Brücke steht.
+const reachDist = edgeDist;
 
 function canHit(u, e) {
   if (e.side === u.side || e.hp <= 0 || e.hidden) return false;
@@ -412,7 +547,7 @@ function canHit(u, e) {
 function areaDamage(g, side, x, y, radius, dmg, hitsAir, towerFactor = 1, slow = 0, o = null) {
   for (const e of g.ents) {
     if (e.side === side || e.hp <= 0 || (e.air && !hitsAir)) continue;
-    if (Math.hypot(e.x - x, e.y - y) > radius + e.r * 0.6) continue;
+    if (Math.hypot(e.x - x, e.y - y) > radius + e.r) continue; // getroffen ist, wessen Trefferfläche den Kreis berührt
     if (slow && e.kind === 'unit') e.slowT = Math.max(e.slowT, slow);
     if (o && o.knock && e.kind === 'unit' && e.r < 0.75 && !e.buried) push(e, o.kx === undefined ? e.x - x : o.kx, o.kx === undefined ? e.y - y : o.ky, o.knock);
     damage(g, e, e.kind === 'tower' ? dmg * towerFactor : e.kind === 'building' && o && o.buildF ? dmg * o.buildF : dmg, side, o ? o.src : undefined);
@@ -428,7 +563,7 @@ function push(e, dx, dy, k) {
 
 function shoot(g, u, t, dmg) {
   g.projs.push({ x: u.x, y: u.y, ox: u.x, oy: u.y, sx: u.x, sy: u.y, tx: t.x, ty: t.y, targetId: t.id, speed: u.proj, dmg, splash: u.splash, slow: u.d.slow || 0, stun: u.d.stunHit || 0, root: 0,
-    curse: u.d.curse ? { ...u.d.curse, side: u.side, lvl: u.lvl } : null, burst: u.d.burst || null,
+    curse: u.d.curse ? { ...u.d.curse, side: u.side, lvl: u.lvl } : null, burst: u.d.burst || null, hitSpawn: u.d.hitSpawn ? { ...u.d.hitSpawn, lvl: u.lvl } : null,
     side: u.side, hitsAir: u.hitsAir, from: u.model, rune: u.rune, air: u.air || t.air, srcId: u.id });
 }
 
@@ -508,12 +643,13 @@ function strike(g, u, t) {
     else if (u.splash) areaDamage(g, u.side, t.x, t.y, u.splash, dmg, u.hitsAir, 1, 0, { src: u });
     else damage(g, t, dmg, u.side, u);
     if (d.stunArea) for (const e of g.ents) { // Frost: alles ringsum erstarrt kurz
-      if (e.side === u.side || e.hp <= 0 || Math.hypot(e.x - t.x, e.y - t.y) > u.splash + e.r * 0.6) continue;
+      if (e.side === u.side || e.hp <= 0 || Math.hypot(e.x - t.x, e.y - t.y) > u.splash + e.r) continue;
       stun(e, d.stunArea); if (d.ice) e.iceT = d.stunArea;
     }
+    if (d.again) g.zones.push({ blast: { dmg, stun: d.stunArea || 0, ice: !!d.ice }, side: u.side, x: t.x, y: t.y, r: u.splash, delay: d.again, dur: 0, done: false });   // Evolution: dieselbe Wirkung noch einmal
     if (d.healBurst) {
       const amt = Math.round(d.healBurst.amt * cardMult(u.lvl));
-      for (const e of g.ents) if (e !== u && e.side === u.side && e.kind === 'unit' && e.hp > 0 && e.hp < e.maxHp && Math.hypot(e.x - t.x, e.y - t.y) <= d.healBurst.r + e.r * 0.6) { e.hp = Math.min(e.maxHp, e.hp + amt); emit(g, { t: 'heal', x: e.x, y: e.y }); }
+      for (const e of g.ents) if (e !== u && e.side === u.side && e.kind === 'unit' && e.hp > 0 && e.hp < e.maxHp && Math.hypot(e.x - t.x, e.y - t.y) <= d.healBurst.r + e.r) { e.hp = Math.min(e.maxHp, e.hp + amt); emit(g, { t: 'heal', x: e.x, y: e.y }); }
     }
     emit(g, { t: 'hit', from: u.model, x: t.x, y: t.y, splash: u.splash || (d.healBurst ? d.healBurst.r : 0), frost: !!d.ice });
     if (u.hp > 0) die(g, u);
@@ -523,7 +659,7 @@ function strike(g, u, t) {
   else if (d.scatter) scatterShot(g, u, t, dmg);
   else if (d.line) { // Geschoss, das auf gerader Bahn durch alles hindurchgeht (mit „back“ kehrt es zum Werfer zurück)
     const dx = t.x - u.x, dy = t.y - u.y, L = Math.hypot(dx, dy) || 1;
-    g.projs.push({ line: true, x: u.x, y: u.y, ox: u.x, oy: u.y, vx: dx / L, vy: dy / L, left: d.line.len, len: d.line.len, back: !!d.line.back, w: d.line.w, speed: u.proj, dmg, knock: d.knock || 0, side: u.side, hitsAir: u.hitsAir, from: u.model, hit: new Set(), towerFactor: 1, srcId: u.id });
+    g.projs.push({ line: true, x: u.x, y: u.y, ox: u.x, oy: u.y, sx: u.x, sy: u.y, vx: dx / L, vy: dy / L, left: d.line.len, len: d.line.len, back: !!d.line.back, near: d.line.near || null, w: d.line.w, speed: u.proj, dmg, knock: d.knock || 0, side: u.side, hitsAir: u.hitsAir, from: u.model, hit: new Set(), towerFactor: 1, srcId: u.id });
     emit(g, { t: 'shoot', from: u.model, side: u.side, x: u.x, y: u.y });
   } else if (u.proj) {
     shoot(g, u, t, dmg);
@@ -540,8 +676,11 @@ function strike(g, u, t) {
   } else {
     if (d.spin) areaDamage(g, u.side, u.x, u.y, d.spin + u.r, dmg, false, 1, 0, { src: u });
     else if (u.splash) areaDamage(g, u.side, t.x, t.y, u.splash, dmg, u.hitsAir, 1, 0, { src: u });
-    else damage(g, t, t.kind === 'tower' && d.towerDmg ? dmg * d.towerDmg : dmg, u.side, u);
-    if (knock && t.hp > 0 && t.kind === 'unit' && t.r < 0.75) push(t, t.x - u.x, t.y - u.y, knock);
+    else {
+      damage(g, t, t.kind === 'tower' && d.towerDmg ? dmg * d.towerDmg : dmg, u.side, u);
+      if (d.killHeal && t.hp <= 0 && t.kind !== 'tower') overheal(g, u, (d.killHeal.tiers.find(([hp]) => t.maxHp < hp) || d.killHeal.tiers[d.killHeal.tiers.length - 1])[1], d.killHeal.over);   // Evolution: jeder Gefällte heilt
+    }
+    if (knock && t.hp > 0 && t.kind === 'unit' && t.r < 0.75) { const fwd = d.combo && d.combo.fwd; push(t, fwd ? 0 : t.x - u.x, fwd ? (u.side === 0 ? -1 : 1) : t.y - u.y, knock); }   // fwd: immer in Richtung der gegnerischen Türme
     if (d.ramp && !d.rampMelee) emit(g, { t: 'beam', x: u.x, y: u.y, tx: t.x, ty: t.y, from: u.model, air: u.air, tair: t.air, hot: dmg / u.dmg });
     else emit(g, { t: 'hit', from: u.model, x: d.spin ? u.x : t.x, y: d.spin ? u.y : t.y, heavy: dmg >= 300, spin: d.spin ? d.spin + u.r : 0 });
   }
@@ -550,27 +689,37 @@ function strike(g, u, t) {
     for (const e of g.ents) if (e !== u && !e.d.healHit && e.side === u.side && e.kind === 'unit' && e.hp > 0 && e.hp < e.maxHp && dist(u, e) <= d.healHit.r) { e.hp = Math.min(e.maxHp, e.hp + amt); emit(g, { t: 'heal', x: e.x, y: e.y }); }
   }
   if (d.frenzy) u.stacks = Math.min(d.frenzy.max, u.stacks + 1);
+  if (d.hitHaste) u.hasteT = Math.max(u.hasteT, d.hitHaste);   // Evolution: jeder Schlag treibt ihn selbst an
+  if (d.strikeWave) { const w = d.strikeWave; emit(g, { t: 'impact', x: u.x, y: u.y, r: w.r }); areaDamage(g, u.side, u.x, u.y, w.r, Math.round(w.dmg * cardMult(u.lvl)), false, 1, 0, { knock: w.knock }); }   // Evolution: Druckwelle um den Schützen
+  if (d.leech) { u.leechN = d.leech.pulses; u.leechT = 0; }
+  if (d.rageTrail) u.trailN = (u.trailN || 0) + 1;
+  u.rampIdle = 0;
 }
 
 // ---- Zielsuche ---------------------------------------------------------------------------------
 
+// Zielwahl wie im Vorbild (crforge: pathfinding/target/CandidateSelector, RangeTest, DefaultTargetSelection):
+// Es zählt der Gegner, dessen Mitte am nächsten liegt, unter allen in Sicht – Sichtweite plus beide Kollisionsradien, Türme sieht eine Truppe
+// zwei Felder weiter. Gebäude und Türme sehen so weit, wie sie schießen. Solange das Ziel nicht in Reichweite ist, wird jeden Takt neu gewählt.
 export function pickTarget(g, u) {
+  const isStatic = u.kind !== 'unit', sight = isStatic ? u.range : u.d.sight || SIGHT, min = u.d.minRange || 0;
   let best = null, bd = Infinity;
-  const isStatic = u.kind !== 'unit';
-  const reach = isStatic ? u.range : Math.max(SIGHT, u.range + 0.5);
   for (const e of g.ents) {
-    if (!canHit(u, e) || (u.d.minRange && dist(u, e) < u.d.minRange)) continue;
-    const d = reachDist(u, e);
-    if (d <= reach && d < bd) { bd = d; best = e; }
-  }
-  if (best || isStatic) return best;
-  // nichts in Sichtweite: zum nächsten gegnerischen Gebäude oder Turm laufen
-  for (const e of g.ents) {
-    if (e.kind === 'unit' || !canHit(u, e)) continue;
-    const d = dist(u, e) + (u.air || u.ford || bankOf(u.y) === bankOf(e.y) ? 0 : Math.min(...BRIDGES.map(b => Math.abs(u.x - b) + Math.abs(e.x - b))) * 0.5);
+    if (!canHit(u, e)) continue;
+    const d = dist(u, e), rr = u.r + e.r;
+    if (min && d < min + rr) continue; // zu nah für eine Belagerungswaffe
+    if (d > sight + rr + (e.kind === 'tower' && !isStatic ? 2 : 0)) continue;
     if (d < bd) { bd = d; best = e; }
   }
-  return best;
+  if (best || isStatic) return best;
+  // Nichts in Sicht: zum Außenturm der eigenen Bahn (dem in der Breite näheren), wenn er näher liegt als der Hauptturm – sonst zum Hauptturm.
+  // Gesetzte Gebäude sind kein Marschziel; sie locken erst, wenn sie in Sicht kommen.
+  let main = null, lane = null, ld = Infinity;
+  for (const e of g.ents) {
+    if (e.kind !== 'tower' || !canHit(u, e)) continue;
+    if (e.main) main = e; else if (Math.abs(e.x - u.x) < ld) { ld = Math.abs(e.x - u.x); lane = e; }
+  }
+  return lane && (!main || dist(u, lane) < dist(u, main)) ? lane : main || lane;
 }
 
 const bankOf = y => (y < RIVER_TOP ? -1 : y > RIVER_BOT ? 1 : 0);
@@ -584,7 +733,7 @@ export function waypoint(u, tx, ty) {
   if (a === b) return [tx, ty];
   let bx = BRIDGES[0], bc = Infinity;
   for (const c of BRIDGES) { const cost = Math.abs(u.x - c) + Math.abs(tx - c); if (cost < bc) { bc = cost; bx = c; } }
-  const lim = BRIDGE_HALF - 0.35;
+  const lim = BRIDGE_HALF - 0.25;
   if (a === 0) {
     const dir = b !== 0 ? b : ty > u.y ? 1 : -1;
     return [clamp(u.x, bx - lim, bx + lim), dir < 0 ? RIVER_TOP - 0.4 : RIVER_BOT + 0.4];
@@ -596,17 +745,137 @@ export function waypoint(u, tx, ty) {
   return [bx + clamp(u.x - bx, -lim + 0.1, lim - 0.1), a < 0 ? RIVER_TOP - 0.2 : RIVER_BOT + 0.2];
 }
 
+// ---- Wege über das Feld ---------------------------------------------------------------------------
+// Bodentruppen suchen ihren Weg wie im Vorbild über ein Raster aus halben Feldern (36 × 64 Zellen): Straßen sind billiger als Gelände,
+// eigene Gebäude und Türme teuer (man läuft außen herum), Wasser ist nur für Flussspringer begehbar. Gesucht wird mit acht Richtungen und
+// stark gewichteter Schätzung, das Ziel ist die Zelle in Schlagweite, die der Figur am nächsten liegt.
+// Nachgelesen in crforge (docs/pathfinding.md, pathfinding/grid/*): Kosten 8 Gelände, 5 Straße, 7 Wasser für Springer, 50 Gebäude;
+// Schritt gerade ×10, schräg ×14; Schätzung 10·max + 4·min, Gewicht 5. Flieger nehmen den geraden Weg.
+const CW = W * 2, CH = H * 2, NC = CW * CH;
+const roadCell = (c, r) => {
+  const x = c > CW / 2 - 1 ? CW - 1 - c : c, y = r > CH / 2 - 1 ? CH - 1 - r : r; // die Karte ist in beiden Richtungen spiegelgleich
+  if (y < 2) return false;
+  if (y < 5) return x >= 14;
+  if (y < 9) return x >= 5;
+  if (y === 9) return (x >= 5 && x <= 9) || x >= 14;
+  if (y < 17) return x >= 4 && x <= 9;
+  if (y < 31) return x >= 5 && x <= 8;
+  return x === 6 || x === 7;
+};
+const waterCell = (c, r) => r >= RIVER_TOP * 2 && r < RIVER_BOT * 2 && !((c >= 5 && c <= 8) || (c >= 27 && c <= 30));
+const BASE = new Uint8Array(NC); // 0 Wasser, 5 Straße, 8 Gelände
+for (let r = 0; r < CH; r++) for (let c = 0; c < CW; c++) BASE[r * CW + c] = waterCell(c, r) ? 0 : roadCell(c, r) ? 5 : 8;
+const cellOf = (x, y) => clamp(Math.floor(y * 2), 0, CH - 1) * CW + clamp(Math.floor(x * 2), 0, CW - 1);
+const cellX = n => (n % CW) * 0.5 + 0.25, cellY = n => Math.floor(n / CW) * 0.5 + 0.25;
+
+// Zellen, die die Gebäude und Türme einer Seite belegen (nur die eigenen stehen einer Figur im Weg); je Takt höchstens einmal geprüft
+function occluded(g, side) {
+  let o = g.occ;
+  if (!o) o = g.occ = { time: -1, ver: 0, cells: [new Uint8Array(NC), new Uint8Array(NC)] };
+  if (o.time !== g.time) {
+    o.time = g.time;
+    let ver = 7;
+    for (const e of g.ents) if (e.kind !== 'unit' && e.hp > 0) ver = (Math.imul(ver, 31) + e.id * 4 + (e.buried ? 1 : 0)) | 0;
+    if (ver !== o.ver) {
+      o.ver = ver; o.cells[0].fill(0); o.cells[1].fill(0);
+      for (const e of g.ents) {
+        if (e.kind === 'unit' || e.hp <= 0 || e.digT > 0) continue;
+        const c0 = Math.max(0, Math.floor((e.x - e.r) * 2 + 1e-6)), c1 = Math.min(CW - 1, Math.ceil((e.x + e.r) * 2 - 1e-6) - 1);
+        const r0 = Math.max(0, Math.floor((e.y - e.r) * 2 + 1e-6)), r1 = Math.min(CH - 1, Math.ceil((e.y + e.r) * 2 - 1e-6) - 1);
+        for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) o.cells[e.side][r * CW + c] = 1;
+      }
+    }
+  }
+  return o;
+}
+
+const rG = new Int32Array(NC), rFrom = new Int16Array(NC), rSeen = new Uint32Array(NC), rDone = new Uint32Array(NC);
+let rStamp = 0;
+const DIRS = [[0, -1, 10], [0, 1, 10], [-1, 0, 10], [1, 0, 10], [-1, -1, 14], [-1, 1, 14], [1, 1, 14], [1, -1, 14]];
+// Weg von der Zelle start zur Zelle goal: Zellen vom Ziel rückwärts bis zum ersten Schritt, oder null, wenn es keinen gibt
+function findRoute(occ, water, start, goal) {
+  if (start === goal) return [];
+  const stamp = ++rStamp, gc = goal % CW, gr = Math.floor(goal / CW), hN = [start], hF = [0];
+  rG[start] = 0; rSeen[start] = stamp; rFrom[start] = -1;
+  while (hN.length) {
+    // kleinsten Eintrag vom Haufen nehmen
+    const n = hN[0], lastN = hN.pop(), lastF = hF.pop();
+    if (hN.length) {
+      let i = 0;
+      for (;;) {
+        let k = 2 * i + 1;
+        if (k >= hN.length) break;
+        if (k + 1 < hN.length && hF[k + 1] < hF[k]) k++;
+        if (hF[k] >= lastF) break;
+        hN[i] = hN[k]; hF[i] = hF[k]; i = k;
+      }
+      hN[i] = lastN; hF[i] = lastF;
+    }
+    if (rDone[n] === stamp) continue;
+    rDone[n] = stamp;
+    if (n === goal) {
+      const path = [];
+      for (let k = goal; k !== start; k = rFrom[k]) path.push(k);
+      return path;
+    }
+    const c = n % CW, r = Math.floor(n / CW), g0 = rG[n];
+    for (const [dc, dr, w] of DIRS) {
+      const nc = c + dc, nr = r + dr;
+      if (nc < 0 || nc >= CW || nr < 0 || nr >= CH) continue;
+      const m = nr * CW + nc;
+      if (rDone[m] === stamp) continue;
+      const cost = occ[m] ? 50 : BASE[m] || water;
+      if (!cost) continue;
+      const ng = g0 + cost * w;
+      if (rSeen[m] === stamp && ng >= rG[m]) continue;
+      rSeen[m] = stamp; rG[m] = ng; rFrom[m] = n;
+      const dx = Math.abs(nc - gc), dy = Math.abs(nr - gr), f = ng + 5 * (10 * Math.max(dx, dy) + 4 * Math.min(dx, dy));
+      let i = hN.length;
+      hN.push(m); hF.push(f);
+      while (i > 0) { const p = (i - 1) >> 1; if (hF[p] <= f) break; hN[i] = hN[p]; hF[i] = hF[p]; i = p; }
+      hN[i] = m; hF[i] = f;
+    }
+  }
+  return null;
+}
+
+// Der Weg einer Bodentruppe zu ihrem Ziel: geplant bis zur nächsten Zelle in Schlagweite, neu geplant, wenn das Ziel wechselt oder wandert
+// oder ein Gebäude dazukommt oder fällt. Gibt den Punkt zurück, auf den die Figur jetzt zuläuft.
+function routePoint(g, u, t) {
+  if (u.air) return [t.x, t.y];
+  const o = occluded(g, u.side), occ = o.cells[u.side];
+  let rt = u.rt;
+  if (!rt || rt.id !== t.id || rt.ver !== o.ver || Math.abs(rt.tx - t.x) + Math.abs(rt.ty - t.y) > 0.75 || (rt.path && rt.path.length && Math.hypot(cellX(rt.path[rt.path.length - 1]) - u.x, cellY(rt.path[rt.path.length - 1]) - u.y) > 3)) {
+    // Ziel des Wegs: unter den Zellen in Schlagweite (Reichweite plus beide Trefferflächen) die der Figur nächste; trockene, freie Zellen zuerst
+    const reach = u.range + u.r + t.r - 0.05, k = Math.floor(reach * 2) + 1, tc = clamp(Math.floor(t.x * 2), 0, CW - 1), tr = clamp(Math.floor(t.y * 2), 0, CH - 1);
+    let goal = -1, rank = 0, bd = Infinity;
+    for (let r = Math.max(0, tr - k); r <= Math.min(CH - 1, tr + k); r++) for (let c = Math.max(0, tc - k); c <= Math.min(CW - 1, tc + k); c++) {
+      const n = r * CW + c, x = cellX(n), y = cellY(n);
+      if (Math.hypot(x - t.x, y - t.y) > reach) continue;
+      const rk = (BASE[n] === 0 && !u.ford) || occ[n] ? 1 : 2, d = (x - u.x) * (x - u.x) + (y - u.y) * (y - u.y);
+      if (rk > rank || (rk === rank && d < bd)) { rank = rk; bd = d; goal = n; }
+    }
+    rt = u.rt = { id: t.id, ver: o.ver, tx: t.x, ty: t.y, path: goal < 0 ? null : findRoute(occ, u.ford ? 7 : 0, cellOf(u.x, u.y), goal) };
+  }
+  const p = rt.path;
+  if (!p) return waypoint(u, t.x, t.y); // kein Weg im Raster: wie früher über die nächste Brücke
+  // Zellen abhaken, die erreicht sind; die Figur zielt dabei immer eine Zelle voraus und schneidet so Ecken leicht an
+  while (p.length && Math.hypot(cellX(p[p.length - 1]) - u.x, cellY(p[p.length - 1]) - u.y) < (p.length > 1 ? 0.75 : 0.3)) p.pop();
+  if (!p.length) return [t.x, t.y];
+  const n = p[p.length - 1];
+  return [cellX(n), cellY(n)];
+}
+
 function updateEnt(g, u, dt) {
   const d = u.d;
   if (u.anim > 0) u.anim -= dt;
+  if (u.digT > 0) { u.digT -= dt; u.hidden = u.digT > 0; return; } // noch unter der Erde unterwegs
   if (u.deployT > 0) {
     u.deployT -= dt;
     if (u.deployT <= 0 && d.deployDmg) { // Landung mit Erdstoß
-      const dd = d.deployDmg;   // air: trifft auch Flieger, stun/slow: Dauer in Sekunden, tower: Anteil an Türmen (sonst voll)
-      emit(g, { t: 'impact', x: u.x, y: u.y, r: dd.r });
-      if (dd.stun) for (const e of g.ents) if (e.side !== u.side && e.kind !== 'tower' && e.hp > 0 && (dd.air || !e.air) && Math.hypot(e.x - u.x, e.y - u.y) <= dd.r + e.r * 0.6) stun(e, dd.stun);
-      areaDamage(g, u.side, u.x, u.y, dd.r, Math.round(dd.dmg * cardMult(u.lvl)), !!dd.air, dd.tower ?? 1, dd.slow || 0, dd.knock ? { knock: dd.knock } : null);
+      groundPulse(g, u, d.deployDmg);
     }
+    if (u.deployT <= 0 && d.deployDmg && d.surfaceDmg) u.pulseCd = 1;   // der Stoß beim Aufstellen gilt auch für das erste Auftauchen gleich danach
     return;
   }
   if (d.morph && u.hp <= u.maxHp * d.morph.at && (!UNITS[d.morph.unit].building || bankOf(u.y) !== 0)) { morph(g, u); return; }
@@ -615,11 +884,31 @@ function updateEnt(g, u, dt) {
   if (u.iceT > 0) u.iceT -= dt;
   if (d.burrow) { // vergraben, solange kein Ziel in Reichweite ist (und noch einen Moment danach oben)
     if (u.inRange) u.upT = 1; else if (u.upT > 0) u.upT -= dt;
+    const was = u.buried;
     u.buried = u.upT <= 0;
+    if (u.pulseCd > 0) u.pulseCd -= dt;
+    if (was && !u.buried && d.surfaceDmg && !(u.pulseCd > 0)) groundPulse(g, u, d.surfaceDmg);   // Evolution: Stoß bei jedem Auftauchen
   }
   u.hidden = u.cloakT > 0 || (!!d.stealth && u.revealT <= 0) || u.buried;
   if (u.rootT > 0) u.rootT -= dt;
   if (u.slowT > 0) u.slowT -= dt;
+  if (u.dropNow) { // Evolution: lässt bei dieser Lebensschwelle eine erste Fracht fallen (mit Todesschaden)
+    u.dropNow = false;
+    const dr = d.dropAt, dd = d.deathDmg;
+    if (dd) { emit(g, { t: 'burst', x: u.x, y: u.y, r: dd.r, side: u.side }); areaDamage(g, u.side, u.x, u.y, dd.r, Math.round(dd.dmg * cardMult(u.lvl)), false, dd.tower ?? 1, dd.slow || 0); }
+    for (let i = 0; i < dr.count; i++) { const a = (i / dr.count) * Math.PI * 2; spawn(g, dr.unit, u.side, clamp(u.x + Math.cos(a) * 0.6, 0.4, W - 0.4), offRiver(clamp(u.y + Math.sin(a) * 0.6, 0.4, H - 0.4)), { deployT: 0.5 }, u.lvl); }
+  }
+  if (u.leechN > 0) { u.leechT -= dt; if (u.leechT <= 0) { u.leechN--; u.leechT = d.leech.every; overheal(g, u, d.leech.heal, d.leech.over); } }   // Evolution: jeder Biss heilt in Schüben
+  if (d.rageTrail && u.hp <= u.maxHp * d.rageTrail.below) { // Evolution: unter dieser Lebensschwelle immer wieder Antrieb für alle Eigenen ringsum; der Kreis wächst mit jedem Schlag
+    u.trailT = (u.trailT || 0) - dt;
+    if (u.trailT <= 0) {
+      const rt = d.rageTrail, r = Math.min(rt.max, rt.r0 + rt.grow * (u.trailN || 0));
+      u.trailT = rt.every;
+      for (const e of g.ents) if (e.side === u.side && e.kind === 'unit' && e.hp > 0 && Math.hypot(e.x - u.x, e.y - u.y) <= r + e.r) e.hasteT = Math.max(e.hasteT, rt.dur);
+      emit(g, { t: 'trail', side: u.side, x: u.x, y: u.y, r });
+    }
+  }
+  if (d.rampKeep) u.rampIdle = (u.rampIdle || 0) + dt;
   if (u.hasteT > 0) u.hasteT -= dt;
   if (u.abilityCd > 0) u.abilityCd -= dt;
   if (u.curseT > 0) u.curseT -= dt;
@@ -662,7 +951,7 @@ function updateEnt(g, u, dt) {
       const s = d.second, list = [];
       for (const e of g.ents) {
         if (e.side === u.side || e.hp <= 0 || e.hidden || (e.air && !s.hitsAir) || (s.units && e.kind !== 'unit')) continue;
-        if (edgeDist(u, e) > s.range || (s.minRange && dist(u, e) < s.minRange)) continue;
+        if (edgeDist(u, e) > s.range || (s.minRange && dist(u, e) < s.minRange + u.r + e.r)) continue;
         list.push(e);
       }
       if (!list.length) u.cd2 = 0.2;
@@ -691,10 +980,14 @@ function updateEnt(g, u, dt) {
   }
   if (d.spawn) {
     u.spawnT -= dt;
-    if (u.spawnT <= 0 && (!d.spawn.near || g.ents.some(e => e.side !== u.side && e.hp > 0 && !e.hidden && Math.hypot(e.x - u.x, e.y - u.y) - e.r <= d.spawn.near))) {   // near: nur wenn ein Gegner so nah ist
-      u.spawnT = d.spawn.every;
+    if (d.spawn.busy && u.inRange) u.spawnT = Math.min(u.spawnT, d.spawn.busy);   // busy: kürzerer Takt, solange sie kämpft
+    if (u.spawnT <= 0 && (!d.spawn.below || u.hp <= u.maxHp * d.spawn.below) && (!d.spawn.near || g.ents.some(e => e.side !== u.side && e.hp > 0 && !e.hidden && Math.hypot(e.x - u.x, e.y - u.y) - e.r <= d.spawn.near))) {   // near: nur wenn ein Gegner so nah ist
+      u.spawnT = d.spawn.busy && u.inRange ? d.spawn.busy : d.spawn.every;
       const f = u.side === 0 ? -1 : 1, n = d.spawn.count || 1;
-      for (let i = 0; i < n; i++) spawn(g, d.spawn.unit, u.side, clamp(u.x + (i - (n - 1) / 2) * 0.6 + (rnd(g) - 0.5) * 0.3, 0.4, W - 0.4), clamp(u.y + f * (u.r + 0.4), 0.4, H - 0.4), { deployT: 0.3 }, u.lvl);
+      for (let i = 0; i < n; i++) {
+        const heals = d.spawnHeal && (!d.spawnHeal.first || (u.called = (u.called || 0) + 1) <= d.spawnHeal.first);   // Evolution: nur die ersten Gerufenen heilen sie
+        spawn(g, d.spawn.unit, u.side, clamp(u.x + (i - (n - 1) / 2) * 0.6 + (rnd(g) - 0.5) * 0.3, 0.4, W - 0.4), clamp(u.y + f * (d.spawn.back ? -d.spawn.back : u.r + 0.4), 0.4, H - 0.4), { deployT: 0.3, ownerId: heals ? u.id : 0 }, u.lvl);
+      }
       u.anim = 0.3;
     }
   }
@@ -707,14 +1000,14 @@ function updateEnt(g, u, dt) {
   u.cd = Math.max(0, u.cd - dt * rate * (u.cloakT > 0 ? u.cloakRate : 1));
   u.scan -= dt;
   let t = u.targetId ? g.byId.get(u.targetId) : null;
-  if (t && (t.hp <= 0 || t.hidden || (d.minRange && dist(u, t) < d.minRange))) t = null;
+  if (t && (t.hp <= 0 || t.hidden || (d.minRange && dist(u, t) < d.minRange + u.r + t.r))) t = null;
   if (!t || (!u.inRange && u.scan <= 0)) {
     t = pickTarget(g, u);
-    u.scan = 0.25;
+    u.scan = 0.05; // ohne Ziel in Reichweite praktisch jeden Takt neu wählen
     u.targetId = t ? t.id : 0;
-    if (!t) { u.inRange = false; u.runT = 0; u.charging = false; u.rampT = 0; if (d.frenzy && d.frenzy.reset) u.stacks = 0; return; }
+    if (!t) { u.inRange = false; u.runT = 0; u.charging = false; if (!(d.rampKeep && u.rampIdle < d.rampKeep)) u.rampT = 0; if (d.frenzy && d.frenzy.reset) u.stacks = 0; return; }
   }
-  if (d.ramp && u.rampId !== t.id) { u.rampId = t.id; u.rampT = 0; }
+  if (d.ramp && u.rampId !== t.id) { u.rampId = t.id; if (!(d.rampKeep && u.rampIdle < d.rampKeep)) u.rampT = 0; }   // rampKeep: die Stufe bleibt so viele Sekunden ohne Treffer erhalten
   const dd = reachDist(u, t);
   if (dd <= u.range + (u.inRange ? 0.2 : 0)) {
     if (!u.inRange) { u.inRange = true; u.cd = u.charging ? 0 : Math.max(u.cd, d.first ?? (u.kind === 'unit' ? 0.4 : d.burrow ? 0.5 : 0.25)); }   // first: Zeit bis zum ersten Schlag
@@ -726,7 +1019,7 @@ function updateEnt(g, u, dt) {
       u.cd = u.atk * (d.frenzy ? Math.pow(d.frenzy.f, u.stacks) : 1);
     }
   } else {
-    u.inRange = false; u.rampT = 0;
+    u.inRange = false; if (!(d.rampKeep && u.rampIdle < d.rampKeep)) u.rampT = 0;
     if (d.frenzy && d.frenzy.reset) u.stacks = 0;
     if (u.kind === 'unit' && u.rootT <= 0) {
       if (d.hook) {
@@ -746,8 +1039,9 @@ function updateEnt(g, u, dt) {
         }
       }
       if (d.leap && !u.charging && !t.air && dd >= d.leap.min && dd <= d.leap.max) { u.charging = true; emit(g, { t: 'charge', x: u.x, y: u.y }); }
-      if (d.charge) { u.runT += dt; if (!u.charging && u.runT >= d.charge.after) { u.charging = true; emit(g, { t: 'charge', x: u.x, y: u.y }); } }
-      const [wx, wy] = waypoint(u, t.x, t.y);
+      if (d.charge && !(d.charge.noShield && u.shield > 0)) { u.runT += u.speed * rate * dt; // Anlauf nach Strecke (charge.after in Feldern), wie im Vorbild
+         if (!u.charging && u.runT >= d.charge.after) { u.charging = true; emit(g, { t: 'charge', x: u.x, y: u.y }); } }
+      const [wx, wy] = routePoint(g, u, t);
       const dx = wx - u.x, dy = wy - u.y, len = Math.hypot(dx, dy) || 1;
       const stepLen = Math.min(u.speed * rate * (u.charging ? (d.charge || d.leap).speed : 1) * dt, len);
       u.vx = dx / len; u.vy = dy / len;
@@ -761,14 +1055,14 @@ function separate(g) {
   const E = g.ents;
   for (let i = 0; i < E.length; i++) {
     const a = E[i];
-    if (a.hp <= 0) continue;
+    if (a.hp <= 0 || a.digT > 0) continue;
     for (let j = i + 1; j < E.length; j++) {
       const b = E[j];
-      if (b.hp <= 0 || a.air !== b.air) continue;
+      if (b.hp <= 0 || b.digT > 0 || a.air !== b.air) continue;
       const aS = a.kind !== 'unit', bS = b.kind !== 'unit';
       if (aS && bS) continue;
       let dx = b.x - a.x, dy = b.y - a.y;
-      const min = a.r + b.r, d2 = dx * dx + dy * dy;
+      const min = aS ? a.r + Math.min(b.r, 0.5) : bS ? b.r + Math.min(a.r, 0.5) : a.r + b.r, d2 = dx * dx + dy * dy; // ein Gebäude reicht höchstens ein halbes Feld in die Figur hinein
       if (d2 >= min * min) continue;
       let d = Math.sqrt(d2);
       if (d < 1e-4) { dx = ((a.id * 7 + b.id) % 5) - 2 || 1; dy = ((a.id + b.id * 3) % 5) - 2; d = Math.hypot(dx, dy); }
@@ -784,10 +1078,11 @@ function separate(g) {
           u.x += tx * over * 0.6; u.y += ty * over * 0.6;
         }
       } else {
-        const ma = a.r * a.r * (a.inRange ? 3 : 1), mb = b.r * b.r * (b.inRange ? 3 : 1);
-        const fa = mb / (ma + mb), fb = ma / (ma + mb);
-        a.x -= nx * over * fa * 0.7; a.y -= ny * over * fa * 0.7;
-        b.x += nx * over * fb * 0.7; b.y += ny * over * fb * 0.7;
+        // Wie im Vorbild schiebt die schwerere Figur: jede weicht im Verhältnis der Masse der anderen zur eigenen, höchstens 0,2 Felder je Takt
+        const ma = a.d.mass || 1, mb = b.d.mass || 1, qa = ma * ma, qb = mb * mb, k = Math.min(over * 0.7, 0.2);
+        const fa = qb / (qa + qb), fb = qa / (qa + qb);
+        a.x -= nx * k * fa; a.y -= ny * k * fa;
+        b.x += nx * k * fb; b.y += ny * k * fb;
       }
     }
   }
@@ -798,14 +1093,14 @@ function separate(g) {
     if (u.air || u.ford || u.y <= RIVER_TOP || u.y >= RIVER_BOT) continue;
     let bx = BRIDGES[0];
     for (const c of BRIDGES) if (Math.abs(u.x - c) < Math.abs(u.x - bx)) bx = c;
-    const lim = BRIDGE_HALF - 0.15;
+    const lim = BRIDGE_HALF;
     if (Math.abs(u.x - bx) <= BRIDGE_HALF + 0.3 && bankOf(u.oy) === 0) u.x = clamp(u.x, bx - lim, bx + lim);
     else if (Math.abs(u.x - bx) <= lim) { /* auf der Brücke */ }
     else u.y = u.oy <= RIVER_TOP ? RIVER_TOP : u.oy >= RIVER_BOT ? RIVER_BOT : u.y < (RIVER_TOP + RIVER_BOT) / 2 ? RIVER_TOP : RIVER_BOT;
   }
 }
 
-const inZone = (z, e) => Math.hypot(e.x - z.x, e.y - z.y) <= z.r + e.r * 0.6;
+const inZone = (z, e) => Math.hypot(e.x - z.x, e.y - z.y) <= z.r + e.r;
 
 function updateZones(g, dt) {
   for (const z of g.zones) {
@@ -813,7 +1108,8 @@ function updateZones(g, dt) {
       z.delay -= dt;
       if (z.delay <= 0) {
         z.done = true;
-        emit(g, { t: 'burst', x: z.x, y: z.y, r: z.r, side: z.side, big: true });
+        emit(g, { t: 'burst', x: z.x, y: z.y, r: z.r, side: z.side, big: !z.blast.stun, frost: !!z.blast.ice });
+        if (z.blast.stun) for (const e of g.ents) if (e.side !== z.side && e.hp > 0 && Math.hypot(e.x - z.x, e.y - z.y) <= z.r + e.r) { stun(e, z.blast.stun); if (z.blast.ice) e.iceT = z.blast.stun; }
         areaDamage(g, z.side, z.x, z.y, z.r, z.blast.dmg, true, z.blast.tf || 1, z.blast.slow);
       }
       continue;
@@ -841,7 +1137,7 @@ function updateZones(g, dt) {
         emit(g, { t: 'clone', x: e.x, y: e.y, air: e.air });
       }
       if (c.freeze) for (const e of g.ents) if (e.side !== z.side && e.hp > 0 && inZone(z, e)) { stun(e, c.freeze); e.iceT = c.freeze; }
-      if (c.summon) for (const [dx, dy] of formation(c.summon.count)) spawn(g, c.summon.unit, z.side, clamp(z.x + dx, 0.4, W - 0.4), offRiver(clamp(z.y + dy, 0.4, H - 0.4)), { deployT: 0.4 }, z.lvl);
+      if (c.summon) for (const [dx, dy] of formation(c.summon.count, 0.5, z.side)) spawn(g, c.summon.unit, z.side, clamp(z.x + dx, 0.4, W - 0.4), offRiver(clamp(z.y + dy, 0.4, H - 0.4)), { deployT: 0.4 }, z.lvl);
       if (c.root) for (const e of g.ents) if (e.side !== z.side && e.kind === 'unit' && !e.air && e.hp > 0 && inZone(z, e)) e.rootT = c.root;
       if (c.haste) for (const e of g.ents) if (e.side === z.side && e.kind === 'unit' && e.hp > 0 && inZone(z, e)) e.hasteT = c.haste;
     }
@@ -905,17 +1201,19 @@ function updateProjs(g, dt) {
       for (const e of g.ents) {
         if (e.side === p.side || e.hp <= 0 || p.hit.has(e.id) || (e.air && !p.hitsAir)) continue;
         const rx = e.x - p.x, ry = e.y - p.y, along = rx * p.vx + ry * p.vy, across = Math.abs(rx * p.vy - ry * p.vx);
-        if (across > p.w / 2 + e.r * 0.6 || along > e.r + 0.3 || along < -stepLen - e.r - 0.3) continue;
+        if (across > p.w / 2 + e.r || along > e.r + 0.3 || along < -stepLen - e.r - 0.3) continue;
         p.hit.add(e.id);
         if (p.knock && e.kind === 'unit' && e.r < 0.75) { // zurückstoßen (schwere Brocken bleiben stehen)
           e.x = clamp(e.x + p.vx * p.knock, 0.4, W - 0.4); e.y = clamp(e.y + p.vy * p.knock, 0.4, H - 0.4);
           e.inRange = false; e.runT = 0; e.charging = false;
         }
-        damage(g, e, e.kind === 'tower' ? p.dmg * p.towerFactor : p.dmg, p.side, p.srcId ? g.byId.get(p.srcId) : undefined);
+        const close = p.near && Math.hypot(e.x - p.sx, e.y - p.sy) <= p.near.max, hd = close ? Math.round(p.dmg * p.near.f) : p.dmg;   // Evolution: wer nah am Werfer steht, bekommt mehr ab
+        if (close && p.near.knock && !p.rev && e.kind === 'unit' && e.r < 0.75) { e.x = clamp(e.x + p.vx * p.near.knock, 0.4, W - 0.4); e.y = clamp(e.y + p.vy * p.near.knock, 0.4, H - 0.4); e.inRange = false; e.runT = 0; e.charging = false; }
+        damage(g, e, e.kind === 'tower' ? hd * p.towerFactor : hd, p.side, p.srcId ? g.byId.get(p.srcId) : undefined);
         emit(g, { t: 'hit', from: p.from, x: e.x, y: e.y });
       }
       if (p.left <= 1e-6) {
-        if (p.back) { p.back = false; p.vx = -p.vx; p.vy = -p.vy; p.left = p.len; p.hit = new Set(); } // kehrt um und trifft alle noch einmal
+        if (p.back) { p.back = false; p.rev = true; p.vx = -p.vx; p.vy = -p.vy; p.left = p.len; p.hit = new Set(); } // kehrt um und trifft alle noch einmal
         else {
           p.done = true;
           if (p.spawnEnd) for (let i = 0; i < p.spawnEnd.count; i++) spawn(g, p.spawnEnd.unit, p.side, clamp(p.x + i * 0.6, 0.4, W - 0.4), offRiver(clamp(p.y, 0.4, H - 0.4)), { deployT: 0.4 }, p.spawnEnd.lvl);
@@ -935,6 +1233,7 @@ function updateProjs(g, dt) {
         continue;
       }
       p.done = true;
+      if (p.hitSpawn) for (let i = 0; i < p.hitSpawn.count; i++) spawn(g, p.hitSpawn.unit, p.side, clamp(p.tx + (i - (p.hitSpawn.count - 1) / 2) * 0.6, 0.4, W - 0.4), offRiver(clamp(p.ty, 0.4, H - 0.4)), { deployT: p.hitSpawn.deploy ?? 0.3 }, p.hitSpawn.lvl);   // Evolution: mit dem Geschoss landet jemand
       if (p.burst) { // zerspringt am Ziel; die Kerne fliegen in der Schussrichtung weiter
         const bx = p.tx - p.sx, by = p.ty - p.sy, L = Math.hypot(bx, by) || 1;
         g.projs.push({ line: true, x: p.tx - (bx / L) * 0.5, y: p.ty - (by / L) * 0.5, ox: p.tx, oy: p.ty, vx: bx / L, vy: by / L, left: p.burst.len, len: p.burst.len, back: false, w: p.burst.w, speed: 13, dmg: p.dmg, knock: 0,
@@ -1000,7 +1299,7 @@ export function step(g, dt = DT) {
         budget -= c.cost;
         const x = BRIDGES[lanes[k % lanes.length]] + (rnd(g) - 0.5) * 3, y = 4 + rnd(g) * 5;
         const units = c.mix ? c.mix.flatMap(([u, n]) => Array(n).fill(u)) : Array(c.count).fill(c.unit);
-        formation(units.length).forEach(([dx, dy], i) => spawn(g, units[i], 1, clamp(x + dx, 0.4, W - 0.4), clamp(y + dy, 0.4, RIVER_TOP - 0.5), { deployT: 1 }, wv.lvl));
+        formation(units.length, 0.5, 1).forEach(([dx, dy], i) => spawn(g, units[i], 1, clamp(x + dx, 0.4, W - 0.4), clamp(y + dy, 0.4, RIVER_TOP - 0.5), { deployT: 1 }, wv.lvl));
         emit(g, { t: 'deploy', side: 1, x, y, card: id });
       }
     }

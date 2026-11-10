@@ -1,6 +1,6 @@
 // Zeichnet Spielfeld, Einheiten, Geschosse und Effekte auf ein Canvas. Alles ist gezeichnet, es gibt keine Bilddateien.
 import { CARDS, UNITS } from './cards.js';
-import { W, H, RIVER_TOP, RIVER_BOT, BRIDGES, BRIDGE_HALF, OUTER_Y, MAIN_Y, POCKET, clampDeploy, outerTower } from './sim.js';
+import { W, H, RIVER_TOP, RIVER_BOT, BRIDGES, BRIDGE_HALF, OUTER_Y, MAIN_Y, POCKET, clampDeploy, deployPlan, cardCost, outerTower } from './sim.js';
 
 export const TEAM = [
   { main: '#2ec4b6', dark: '#0f6b63', light: '#a8f3ea' },
@@ -523,9 +523,13 @@ export function createRenderer(canvas) {
   }
 
   function hpBar(e, x, y) {
-    if (e.kind !== 'tower' && e.hp >= e.maxHp) return;
     const w = e.kind === 'tower' ? 1.9 : Math.max(0.7, e.r * 2), h = e.kind === 'tower' ? 0.3 : 0.16;
     const top = Math.max(0.12, y - (e.kind === 'tower' ? e.r * 2.2 : e.kind === 'building' ? e.r * 1.5 : e.r * 2.6 + (e.air ? 0.9 : 0)) - h);
+    // Stufenschild in Teamfarbe: immer da; mit Balken steht es links daneben
+    const bar = e.kind === 'tower' || e.hp < e.maxHp, q = e.kind === 'tower' ? 0.42 : 0.36, lx = bar ? x - w / 2 - q - 0.08 : x - q / 2, ly = bar ? top + h / 2 - q / 2 : top + h - q;
+    rrect(c, lx - 0.04, ly - 0.04, q + 0.08, q + 0.08, 0.05, 'rgba(15,20,26,.85)'); rrect(c, lx, ly, q, q, 0.04, TEAM[e.side].dark);
+    text(String(e.lvl), lx + q / 2, ly + q / 2 + 0.02, q * 0.8, '#fff', false);
+    if (!bar) return;
     rrect(c, x - w / 2 - 0.04, top - 0.04, w + 0.08, h + 0.08, 0.06, 'rgba(15,20,26,.85)');
     rrect(c, x - w / 2, top, Math.max(0.02, w * e.hp / e.maxHp), h, 0.04, TEAM[e.side].main);
     if (e.kind === 'tower') text(String(Math.ceil(e.hp)), x, top + h / 2, 0.42, '#fff', true);
@@ -577,16 +581,26 @@ export function createRenderer(canvas) {
 
     // Auswahl: gesperrten Bereich abdunkeln
     const sel = ui && ui.sel != null ? g.sides[0].hand[ui.sel] : null;
-    if (sel && CARDS[sel].type !== 'spell' && !CARDS[sel].anywhere) {
+    const selCard = sel ? (CARDS[sel].mirror && g.sides[0].last ? CARDS[g.sides[0].last] : CARDS[sel]) : null; // Widerhall: Regeln der wiederholten Karte
+    const gridOver = (x0, x1, y0, y1) => { // dezentes Kachelraster über dem erlaubten Bereich
+      c.strokeStyle = 'rgba(255,255,255,.16)'; c.lineWidth = 0.04; c.beginPath();
+      for (let x = Math.ceil(x0); x <= x1; x++) { c.moveTo(x, y0); c.lineTo(x, y1); }
+      for (let y = Math.ceil(y0); y <= y1; y++) { c.moveTo(x0, y); c.lineTo(x1, y); }
+      c.stroke();
+    };
+    if (sel && (selCard.ownSide || (selCard.type !== 'spell' && !selCard.anywhere))) {
       c.fillStyle = 'rgba(190,40,60,.22)';
       for (const lane of [0, 1]) {
         const open = !outerTower(g, 1, lane);
         c.fillRect(lane * W / 2, 0, W / 2, open ? POCKET : RIVER_BOT + 0.2);
         if (open) c.fillRect(lane * W / 2, RIVER_TOP - 0.2, W / 2, RIVER_BOT - RIVER_TOP + 0.4);
+        gridOver(lane * W / 2, lane * W / 2 + W / 2, RIVER_BOT + 0.2, H);
+        if (open) gridOver(lane * W / 2, lane * W / 2 + W / 2, POCKET, RIVER_TOP - 0.2);
       }
       c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 0.06; c.setLineDash([0.3, 0.25]);
       c.beginPath(); c.moveTo(0, RIVER_BOT + 0.2); c.lineTo(W, RIVER_BOT + 0.2); c.stroke(); c.setLineDash([]);
-    }
+    } else if (sel) gridOver(0, W, 0, H);
+    // (Sobald sim.js deployTiles anbietet, zeigt der 3D-Zeichner die Kacheln daraus; der 2D-Rückfall bleibt bei den Feldgrenzen.)
 
     // Heilkreise
     for (const z of g.zones) if (z.hit && CARDS[z.card].heal) {
@@ -628,14 +642,18 @@ export function createRenderer(canvas) {
     drawFx(dt);
 
     // Geist der gewählten Karte unter dem Finger
-    if (sel && ui.ghost) {
-      const card = CARDS[sel], p = clampDeploy(g, 0, sel, ui.ghost.x, ui.ghost.y);
-      const r = card.type === 'spell' ? card.radius : Math.max(0.9, UNITS[card.unit].r * (card.count > 1 ? 2.4 : 1.4));
-      const ok = g.sides[0].kraft >= card.cost;
-      c.globalAlpha = 0.3; circ(c, p.x, p.y, r, ok ? TEAM[0].main : '#c33'); c.globalAlpha = 1;
-      circ(c, p.x, p.y, r, null, ok ? '#fff' : '#ffb3b3', 0.08);
-      if (card.type !== 'spell') { const u = UNITS[card.unit]; if (u.range >= 2) { c.setLineDash([0.25, 0.25]); circ(c, p.x, p.y, u.range + u.r, null, 'rgba(255,255,255,.6)', 0.05); c.setLineDash([]); } }
-      text(card.name, p.x, Math.max(0.5, p.y - r - 0.5), 0.55, '#fff', true);
+    // (alles aus deployPlan: Wirkungskreis, Kacheln eines Gebäudes, jede Figur eines Trupps an ihrem Platz)
+    const plan = sel && ui.ghost ? deployPlan(g, 0, sel, ui.ghost.x, ui.ghost.y) : null;
+    if (plan) {
+      const ok = g.sides[0].kraft >= cardCost(g, 0, sel) && plan.ok !== false, fill = ok ? TEAM[0].main : '#c33', edge = ok ? '#fff' : '#ffb3b3';
+      let top = plan.y - 0.9;
+      const disc = (x, y, r) => { c.globalAlpha = 0.34; circ(c, x, y, r, fill); c.globalAlpha = 1; circ(c, x, y, r, null, edge, 0.07); top = Math.min(top, y - r); };
+      if (plan.kind === 'spell') disc(plan.x, plan.y, Math.max(0.9, plan.radius || (selCard.roll ? selCard.roll.w / 2 : 0)));
+      else if (plan.tiles) { const t = plan.tiles; c.globalAlpha = 0.4; c.fillStyle = fill; c.fillRect(t.x0, t.y0, t.w, t.h); c.globalAlpha = 1; c.strokeStyle = edge; c.lineWidth = 0.08; c.strokeRect(t.x0, t.y0, t.w, t.h); top = t.y0; }
+      if (plan.kind !== 'spell' && !(plan.tiles && plan.kind === 'building')) for (const sp of plan.spots) disc(sp.x, sp.y, Math.max(0.28, sp.r));
+      const lead = plan.spots[0] && UNITS[plan.spots[0].unit];
+      if (lead && lead.range >= 2) { c.setLineDash([0.25, 0.25]); circ(c, plan.x, plan.y, lead.range + lead.r, null, 'rgba(255,255,255,.6)', 0.05); c.setLineDash([]); }
+      text(CARDS[sel].mirror ? `Widerhall: ${selCard.name}` : selCard.name, plan.x, Math.max(0.5, top - 0.5), 0.55, '#fff', true);
     }
   }
 
