@@ -16,6 +16,7 @@ export const PROJECTILES = {
   ballista: { kind: 'arrow', y0: 0.95, arc: 0.15, scale: 1.5, hit: 'arrow' },
   dornwerfer: { kind: 'arrow', y0: 0.45, arc: 0.35, scale: 0.55, hit: 'bite' },
   funkenweberin: { kind: 'orb', y0: 1.45, arc: 0.7, size: 0.2, color: '#ffd45a', glow: '#ffb347', hit: 'spark' },
+  kraehe: { kind: 'orb', y0: 1.6, arc: 0.05, size: 0.09, color: '#dfe9ff', glow: '#8fb4ff', hit: 'bite' },   // die Krähen spucken aus kurzer Entfernung
   geschuetzturm: { kind: 'rock', y0: 3.0, arc: 1.1, size: 0.26, color: '#2a2d35', trail: 'smoke', hit: 'shell' },
   klingenturm: { kind: 'blade', y0: 2.9, arc: 0.25, hit: 'slash' },
   segensturm: { kind: 'orb', y0: 2.9, arc: 0.3, size: 0.19, color: '#ffe9a8', glow: '#ffb347', hit: 'spark' },
@@ -24,8 +25,8 @@ export const PROJECTILES = {
   _: { kind: 'orb', y0: 1.0, arc: 0.4, size: 0.16, color: '#fff3c4', hit: 'orb' },
 };
 // ---- Nahkampf-Treffer je Angreifer (sonst 'punch')
-export const MELEE = { raufbold: 'punch', steinhueter: 'slam', wicht: 'bite', kraehe: 'bite', raeuber: 'punch', wueterich: 'slash', eisenwaechter: 'slash', kiesel: 'bite',
-  hammerschmied: 'slam', schildknappe: 'slash', torknacker: 'slam', klingentaenzerin: 'slash' };   // Rundumschläge (ev.spin) nehmen stets HITS.spin
+export const MELEE = { raufbold: 'punch', steinhueter: 'slam', wicht: 'bite', raeuber: 'punch', wueterich: 'slash', eisenwaechter: 'slash', kiesel: 'bite',
+  hammerschmied: 'slam', schildknappe: 'slash', torknacker: 'slam', klingentaenzerin: 'slash', stammlaeufer: 'slam', distelritter: 'slash' };   // Rundumschläge (ev.spin) nehmen stets HITS.spin
 
 export const HITS = {
   punch(fx, ev, C) {
@@ -132,6 +133,28 @@ export const EVENTS = {
     C.shake(ev.main ? 1.0 : 0.7); C.flash(0.35);
   },
   wake(fx, ev, C) { fx.ring({ x: ev.x, z: ev.y, r0: 0.6, r: 3, dur: 0.7, color: C.team.light, hdr: 1.8, width: 0.14 }); },
+  // Ansturm beginnt: Staub wirbelt auf
+  charge(fx, ev) {
+    fx.ring({ x: ev.x, z: ev.y, r0: 0.2, r: 0.9, dur: 0.28, color: '#f3ead2', hdr: 1.4, width: 0.2 });
+    fx.burst({ x: ev.x, y: 0.15, z: ev.y, n: 6, cell: CELL.dust, add: 0, color: '#efe6cf', alpha: 0.6, size: [0.3, 0.45], size2: [0.7, 1.0], life: [0.35, 0.55], speed: [0.6, 1.6], up: [0.2, 0.7], drag: 3, spread: 0.3 });
+  },
+  // Wucht eines Ansturms, Sprungs oder Aufschlags (ev.r = Reichweite der Wucht): Stern, Ring, Staub, Wackeln
+  impact(fx, ev, C) {
+    const r = ev.r || 1.6;
+    fx.burst({ x: ev.x, y: 0.7, z: ev.y, n: 1, cell: CELL.star, color: '#ffffff', hdr: 2.4, size: [1.3, 1.5], size2: 0.3, life: 0.15, spin: 2 });
+    fx.ring({ x: ev.x, z: ev.y, r0: r * 0.2, r, dur: 0.3, color: '#ffffff', hdr: 1.8, width: 0.16 });
+    for (let i = 0; i < 8; i++) { const a = i / 8 * 6.283; fx.burst({ x: ev.x + Math.cos(a) * 0.3, y: 0.15, z: ev.y + Math.sin(a) * 0.3, n: 1, cell: CELL.dust, add: 0, color: '#e9dfc8', alpha: 0.6, size: [0.35, 0.5], size2: [0.8, 1.1], life: [0.35, 0.55], dir: [Math.cos(a), 0.15, Math.sin(a)], cone: 0.2, speed: [1.8, 3], drag: 4 }); }
+    fx.burst({ x: ev.x, y: 0.5, z: ev.y, n: 6, cell: CELL.shard, add: 0, color: '#c9a878', size: [0.08, 0.15], life: [0.35, 0.6], speed: [1.5, 4], up: [2, 4.5], gravity: -15, spin: [5, 12], floor: true });
+    C.shake(0.18);
+  },
+  // Blitze eines Zaubers auf einzelne Ziele (ev.hits = [{ x, y, air }])
+  bolts(fx, ev, C) {
+    for (const h of ev.hits) { const y = h.air ? 1.5 : 0.3; bolt(fx, h.x, h.y);
+      fx.burst({ x: h.x, y, z: h.y, n: 1, cell: CELL.glow, color: '#fff9b0', hdr: 2.3, size: 1.2, size2: 0.3, life: 0.18 });
+      fx.ring({ x: h.x, z: h.y, r0: 0.2, r: 1.1, dur: 0.28, color: '#fff27a', hdr: 1.9, width: 0.14 });
+      fx.burst({ x: h.x, y, z: h.y, n: 9, cell: CELL.spark, color: '#ffffff', color2: '#ffe45a', hdr: 3, size: [0.09, 0.2], life: [0.25, 0.5], speed: [2.5, 6], up: [1, 4.5], gravity: -12, drag: 2, floor: true }); }
+    C.shake(0.3);
+  },
 };
 
 // ---- Zauber: cast = Ankündigung beim Ausspielen (ev.delay Sekunden bis zum Einschlag), impact = Einschlag
@@ -258,6 +281,52 @@ Object.assign(SPELLS, {
       fx.debris({ x, z, n: 16, power: 1.2, size: 1.3 });
       fx.decal({ x, z, r: r * 1.25, dur: 14, strength: 0.75 });
       C.shake(0.8); C.flash(0.1);
+    },
+  },
+});
+
+Object.assign(SPELLS, {
+  // Wurzelgriff: Ranken schießen aus dem Boden und halten fest; ein grüner Ring bleibt, solange der Griff hält
+  wurzelgriff: {
+    cast(fx, ev, C) { fx.zone({ x: ev.x, z: ev.y, r: ev.r, dur: Math.max(0.15, ev.delay), color: '#a8e88a', hdr: 1.3, fill: 0.25 }); },
+    impact(fx, ev, C) {
+      const { x, y: z, r } = ev, hold = 3.4;
+      fx.ring({ x, z, r0: r * 0.2, r, dur: 0.4, color: '#c8f5a8', hdr: 1.8, width: 0.16 });
+      fx.ring({ x, z, r0: r * 0.985, r, dur: hold, color: '#7fd069', hdr: 1.2, width: 0.06, alpha: 0.9 });
+      for (let i = 0; i < 11; i++) { const a = i / 11 * 6.283 + Math.random() * 0.4, q = (0.35 + Math.random() * 0.55) * r, bx = x + Math.cos(a) * q, bz = z + Math.sin(a) * q;   // Ranken: zwei Glieder, die sich nach innen neigen
+        const mx = bx - Math.cos(a) * 0.12, mz = bz - Math.sin(a) * 0.12, tx = bx - Math.cos(a + 0.9) * 0.3, tz = bz - Math.sin(a + 0.9) * 0.3, h = 0.5 + Math.random() * 0.35;
+        fx.beam({ from: [bx, 0.03, bz], to: [mx, h * 0.6, mz], color: '#5fae4a', hdr: 1.3, width: 0.085, dur: hold }); fx.beam({ from: [mx, h * 0.6, mz], to: [tx, h, tz], color: '#8fd66a', hdr: 1.3, width: 0.055, dur: hold }); }
+      fx.burst({ x, y: 0.2, z, n: 16, cell: CELL.shard, add: 0, color: '#6fb84a', color2: '#4a7a34', size: [0.08, 0.15], life: [0.4, 0.7], speed: [0.8, 2.5], up: [2, 4.5], gravity: -14, spin: [5, 12], spread: r * 0.85 });
+      fx.burst({ x, y: 0.15, z, n: 10, cell: CELL.dust, add: 0, color: '#d9cfae', alpha: 0.5, size: [0.4, 0.6], size2: [0.9, 1.3], life: [0.4, 0.7], speed: [0.4, 1.2], up: [0.2, 0.7], drag: 3, spread: r * 0.8 });
+      C.shake(0.15);
+    },
+  },
+  // Heilquell: sanfter grüner Schein, ein Ring bleibt fünf Sekunden, Lichtpunkte steigen auf
+  heilquell: {
+    cast(fx, ev, C) { fx.zone({ x: ev.x, z: ev.y, r: ev.r, dur: Math.max(0.15, ev.delay), color: '#7dffa8', hdr: 1.2, fill: 0.22 }); },
+    impact(fx, ev, C) {
+      const { x, y: z, r } = ev, dur = 5;
+      fx.burst({ x, y: 0.5, z, n: 1, cell: CELL.glow, color: '#9dffbc', hdr: 1.3, alpha: 0.6, size: r * 1.7, size2: r * 1.2, life: 0.5 });
+      fx.ring({ x, z, r0: r * 0.2, r, dur: 0.45, color: '#d6ffe2', hdr: 1.7, width: 0.14 });
+      fx.ring({ x, z, r0: r * 0.985, r, dur, color: '#7dffa8', hdr: 1.2, width: 0.06, alpha: 0.9 });
+      for (let i = 0; i < 10; i++) fx.after(i * 0.5, () => {
+        fx.ring({ x, z, r0: r * 0.15, r: r * 0.95, dur: 0.9, color: '#7dffa8', hdr: 1.0, width: 0.1, alpha: 0.5 });
+        fx.burst({ x, y: 0.2, z, n: 7, cell: CELL.diamond, color: '#e6ffee', color2: '#7dffa8', hdr: 1.9, size: [0.1, 0.17], size2: 0.03, life: [0.8, 1.3], speed: [0.05, 0.3], up: [0.9, 1.7], drag: 0.8, spin: [1, 3], spread: r * 0.9 }); });
+    },
+  },
+  // Donnerkeil: dunkle Ankündigung mit Knistern, dann gelber Stoß; die drei Blitze selbst kommen als eigenes Ereignis (EVENTS.bolts)
+  donnerkeil: {
+    cast(fx, ev, C) {
+      fx.zone({ x: ev.x, z: ev.y, r: ev.r, dur: ev.delay, color: '#fff27a', hdr: 1.4, fill: 0.2 });
+      fx.ring({ x: ev.x, z: ev.y, r0: ev.r * 1.1, r: ev.r * 0.4, dur: ev.delay, color: '#1c1f26', hdr: 0.5, width: 0.9, alpha: 0.4 });
+      const n = Math.max(3, Math.round(ev.delay / 0.1));
+      for (let i = 0; i < n; i++) fx.after(i * 0.1, () => fx.burst({ x: ev.x, y: 0.3, z: ev.y, n: 4, cell: CELL.spark, color: '#ffffff', color2: '#ffe45a', hdr: 2.6, size: [0.12, 0.26], life: [0.1, 0.2], spread: ev.r * 0.9, jitterY: 1.2 }));
+    },
+    impact(fx, ev, C) {
+      const { x, y: z, r } = ev;
+      fx.burst({ x, y: 0.6, z, n: 1, cell: CELL.glow, color: '#fff27a', hdr: 1.2, alpha: 0.55, size: r * 1.8, size2: r * 1.1, life: 0.2 });
+      fx.ring({ x, z, r0: r * 0.3, r: r * 1.05, dur: 0.35, color: '#fff9b0', hdr: 2.2, width: 0.12 });
+      C.shake(0.45); C.flash(0.12);
     },
   },
 });

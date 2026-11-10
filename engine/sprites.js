@@ -1,7 +1,7 @@
 // 2D-Figuren: lädt die in Blender gerenderten Bildfolgen und zeigt sie als Tafeln, die zur Kamera stehen.
 // Teamfarbe kommt aus einer Maske (ein Sammelbild für beide Seiten), der Schatten ist dasselbe Bild flach auf den
 // Boden gelegt. Die Bewegung folgt allein dem Zustand der Spielregeln (laufen, ausholen, zuschlagen, stehen).
-import { THREE, TEAM, ASSETS } from './deps.js';
+import { THREE, TEAM, ASSETS, RIVER_TOP, RIVER_BOT } from './deps.js';
 import { PITCH, SUN } from './look.js';
 
 const TAU = Math.PI * 2;
@@ -52,14 +52,16 @@ export function loadPortraits(names) {
 }
 export const hasPortrait = name => ports.has(name);
 // Bild für Karten und Menüs: n Figuren nebeneinander, mit hellem Schein (dunkle Figuren heben sich vom Kartengrund ab)
+// name: ein Modell oder eine Liste von Modellen (gemischte Karte: das erste steht vorn)
 export function portrait(name, w, h, n = 1) {
-  const fig = ports.get(name); if (!fig) return null;
+  const figs = (Array.isArray(name) ? name : [name]).map(x => ports.get(x)); if (!figs.length || figs.some(f => !f)) return null;
+  const fig = figs.reduce((a, b) => (b.height > a.height ? b : a));
   const out = document.createElement('canvas'); out.width = w; out.height = h;
   const c = out.getContext('2d'); c.imageSmoothingQuality = 'high';
   const s = Math.min(h * 0.7 / fig.height, w * 0.84 / fig.width) * (n > 2 ? 0.62 : n > 1 ? 0.74 : 1), fw = fig.width * s, fh = fig.height * s;
   const spots = n === 1 ? [[0, 0]] : n === 2 ? [[-0.2, -0.04], [0.2, 0.03]] : n === 3 ? [[0, -0.1], [-0.22, 0.04], [0.22, 0.05]] : n === 4 ? [[-0.2, -0.1], [0.2, -0.09], [-0.22, 0.05], [0.21, 0.06]] : [[-0.28, -0.1], [0, -0.12], [0.28, -0.09], [-0.16, 0.05], [0.17, 0.06]];
   c.shadowColor = 'rgba(210,235,255,.5)'; c.shadowBlur = Math.max(4, w * 0.045);
-  for (const [x, y] of spots) c.drawImage(fig, w / 2 + x * w - fw / 2, h * 0.84 + y * h - fh, fw, fh);
+  spots.forEach(([x, y], k) => { const im = figs[(spots.length - 1 - k) % figs.length], iw = im.width * s, ih = im.height * s; c.drawImage(im, w / 2 + x * w - iw / 2, h * 0.84 + y * h - ih, iw, ih); });   // hinten zuerst
   return out;
 }
 // Bildfolgen freigeben, die im nächsten Kampf nicht vorkommen (keep: Menge der Namen, die bleiben)
@@ -183,10 +185,16 @@ export function createSprites(look, hooks = {}) {
     else if (striking) { anim = 'strike'; f = Math.min(A.strike.n - 1, Math.floor((1 - s) * A.strike.n)); }
     else if (wind > 0) { anim = 'windup'; f = Math.min(A.windup.n - 1, Math.floor(wind * A.windup.n)); }
     else if (info.flap) { inst.phase += dt * info.flap; anim = moving ? 'walk' : 'idle'; f = Math.floor(inst.phase * A[anim].n) % A[anim].n; }   // Flieger schlagen immer mit den Flügeln
-    else if (moving) { inst.phase += moved / info.stride; anim = 'walk'; f = Math.floor(inst.phase * A.walk.n) % A.walk.n; }
+    else if (moving) { inst.phase += moved / info.stride; anim = e.charging && A.run ? 'run' : 'walk'; f = Math.floor(inst.phase * A[anim].n) % A[anim].n; }   // 'run' (wenn vorhanden): Lauf im Ansturm
     else if (e.inRange && info.hold && info.hold !== 'idle') { anim = info.hold; f = 0; }
     else { inst.idle += dt * 1.15; f = Math.floor(inst.idle * A.idle.n) % A.idle.n; }
+    // Flussspringer (ford): über dem Wasser ein Sprungbogen – er beginnt kurz vor dem Ufer und endet kurz dahinter
+    let hop = 0;
+    if (e.ford && !inst.fly) { const k = (e._y - RIVER_TOP + 0.45) / (RIVER_BOT - RIVER_TOP + 0.9); if (k > 0 && k < 1) hop = Math.sin(Math.PI * k) * 1.05; }
+    if (hop > 0.03 && moving) { anim = 'walk'; f = Math.floor(A.walk.n / 4); }   // im Sprung: Schrittbild mit weit gespreizten Beinen
     setFrame(inst, frameOf(info, inst.dir, anim, f));
+    if (hop > 0.03 && !inst.hopping) { inst.hopping = true; inst.sqv += 3.2; }   // Absprung: streckt sich
+    else if (hop <= 0.03 && inst.hopping) { inst.hopping = false; inst.sqv -= 4.5; if (hooks.onLand) hooks.onLand(e, inst); }   // Landung: staucht, Staub
 
     // Schlag: ein kurzer Ruck zum Ziel (nur Nahkämpfer)
     if (striking && !inst.wasStrike) { inst.lunge = e.range < 2 ? 0.16 : -0.05; inst.sqv += e.range < 2 ? 1.6 : 0.8; if (hooks.onStrike) hooks.onStrike(e, inst); }
@@ -204,6 +212,7 @@ export function createSprites(look, hooks = {}) {
     let y = inst.fly ? inst.fly + Math.sin(time * 2.5 + e.id) * 0.08 : 0, sx = 1, sy = 1;
     const drop0 = y;
     const q = Math.min(1, inst.age / 0.26);
+    y += hop;
     if (q < 1) { y += (1 - q) * (1 - q) * 5.5; sx = 0.88; sy = 1.14; }
     else if (!inst.landed) { inst.landed = true; if (!inst.fly) { inst.sqv -= 5.2; if (hooks.onLand) hooks.onLand(e, inst); } }
     for (let i = 0; i < 2; i++) { const h = dt / 2; inst.sqv += (-inst.sq * 300 - inst.sqv * 17) * h; inst.sq += inst.sqv * h; }   // Feder: Stauchen und Nachschwingen
@@ -220,7 +229,7 @@ export function createSprites(look, hooks = {}) {
     u.uAlpha.value = e.hidden ? 0.42 : 1;
     u.uFrost.value = e.iceT > 0 ? 1 : e.slowT > 0 ? 0.5 : 0;
     // Schatten bleibt am Boden; in der Luft kleiner und blasser
-    const air = Math.min(1, (y - drop0 * 0.6) / 5.5);
+    const air = Math.min(1, (y - drop0 * 0.6) / 5.5 + hop * 0.25);
     inst.shadow.position.set(e._x + inst.kx + lx + y * 0.3, 0.025, e._y + inst.kz + lz - y * 0.22);
     inst.su.uScale.value.set(sx * (1 - air * 0.5), sy * (1 - air * 0.5));
     inst.su.uStrength.value = (e.hidden ? 0.3 : 0.95) * (1 - air * 0.75);

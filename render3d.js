@@ -850,6 +850,10 @@ export function createRenderer3D(canvas, overlay) {
     if (card.type === 'spell') return null;
     const u = UNITS[card.unit], model = u.model || card.unit;
     if (!u.hero && !card.mix && hasPortrait(model)) return portrait(model, w, h, u.building || u.tower ? 1 : Math.min(card.count, 5));
+    if (!u.hero && card.mix && card.mix.every(([m]) => hasPortrait(UNITS[m].model || m))) {   // gemischte Karte: alle Figuren neu -> Bild aus beiden
+      const names = card.mix.flatMap(([m, k]) => Array(Math.min(k, 2)).fill(UNITS[m].model || m)).slice(0, 5);
+      return portrait(names, w, h, names.length);
+    }
     const def = getDef(model, 0);
     const solid = u.building || u.tower;
     const holder = new THREE.Group(), cel = !u.hero && !solid, stage = cel ? celScene : snapScene;

@@ -157,6 +157,7 @@ export function createActors(look, fx) {
     if (ev.t === 'cast' && SPELLS[ev.spell]) { SPELLS[ev.spell].cast(fx, ev, C); return true; }
     if (ev.t === 'spell' && SPELLS[ev.spell]) { SPELLS[ev.spell].impact(fx, ev, C); return true; }
     if (ev.t === 'wake') { EVENTS.wake(fx, ev, C); return true; }
+    if (ev.t === 'charge' || ev.t === 'impact' || ev.t === 'bolts') { EVENTS[ev.t](fx, ev, C); return true; }
     return false;
   }
   const land = e => { EVENTS.land(fx, { x: e._x, y: e._y, r: e.r }, ctx(e.side)); trauma = Math.max(trauma, e.r > 0.6 ? 0.22 : 0.08); };
