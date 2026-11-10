@@ -54,6 +54,16 @@ try {
   fit = kept != null ? Math.min(2, Math.max(0, Number(kept) || 0)) : matchMedia('(pointer: coarse)').matches && devicePixelRatio > 2 ? 1 : 0;
 } catch { /* ohne Speicher: jedes Mal neu messen */ }
 const fitted = () => P.QUALITIES[Math.max(fit, P.QUALITIES.indexOf(profile.set.quality))];
+// Höhe der sichtbaren Fläche. Als Startbildschirm-App melden iPhones mit Notch die Höhe um den oberen Rand zu kurz: Unten bleibt
+// dann ein Streifen leer. Fehlt genau dieser Rand, gilt die Bildschirmhöhe.
+function appHeight(sat) {
+  let h = Math.max(window.innerHeight, document.documentElement.clientHeight);
+  const alone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const full = matchMedia('(orientation: portrait)').matches ? Math.max(screen.height, screen.width) : Math.min(screen.height, screen.width);
+  if (alone && full > h && full - h <= Math.max(70, sat + 8)) h = full;
+  document.documentElement.style.setProperty('--app-h', `${Math.round(h)}px`);
+  return h;
+}
 function applySettings() {
   setSound(profile.sound); setVolume(profile.set.volume);
   renderer.setOptions({ ...profile.set, quality: fitted() });
@@ -92,8 +102,9 @@ function cardEl(id, opt = {}) {
   if (rar === 'held') e.append(el('span', 'heroMark', 'Held')); else if (rar !== 'gewoehnlich') e.append(el('span', `rar ${rar}`, ''));
   // Runenform: Zeichen unten links – blass mit Scherbenstand, solange sie noch nicht erweckt ist
   const rune = opt.rune === undefined ? (opt.locked == null && profile.cards[id] ? P.runeInfo(profile, id) : RUNES[id] ? { have: 0, need: P.RUNE_SHARDS, done: false } : null) : opt.rune;
-  if (rune) e.append(el('span', rune.done ? 'runeMark' : 'runeMark off', rune.done ? '' : `<i>${rune.have}/${rune.need}</i>`));
-  if (HERO_FORMS[id] && opt.locked == null && opt.rune !== null && profile.cards[id] && P.hasForm(profile, id)) e.append(el('span', 'formMark', ''));
+  // Beschriftete Marken: „Rune“ violett, „Held“ gold; blass heißt: die Karte hat diese Form, sie ist aber noch nicht freigeschaltet
+  if (rune) { const m = el('span', rune.done ? 'runeMark' : 'runeMark off', rune.done ? '' : `<i>${rune.have}/${rune.need}</i>`); m.title = rune.done ? 'Runenform erweckt' : `Runenform: ${rune.have} von ${rune.need} Scherben`; e.append(m); }
+  if (HERO_FORMS[id] && opt.rune !== null) e.append(el('span', opt.locked == null && profile.cards[id] && P.hasForm(profile, id) ? 'formMark' : 'formMark off', ''));
   if (opt.ability) e.append(el('span', 'abil', `<b>${opt.ability.cost}</b>${opt.ability.name}`)); // Held in der Hand: Fähigkeit und ihre Kosten
   if (opt.wish) e.append(el('span', 'wishMark', '★'));
   if (opt.pips) { // Zyklen bis zur Runenform
@@ -522,7 +533,7 @@ let swap = null; // Karte aus der Sammlung, die gerade ins Deck getauscht wird
 let cardView = 'werte'; // zuletzt gewählte Ansicht im Kartenblatt (Werte, Erklärung, Geschichte)
 let filter = 'alle', sort = 'arena';
 const SORTS = { arena: ['Arena', null], selten: ['Seltenheit', (a, b) => RAR_ORDER[P.rarity(b)] - RAR_ORDER[P.rarity(a)]], kraft: ['Kraft', (a, b) => CARDS[a].cost - CARDS[b].cost], stufe: ['Stufe', (a, b) => (profile.cards[b] ? profile.cards[b].lvl : 0) - (profile.cards[a] ? profile.cards[a].lvl : 0)] };
-const FILTERS = { alle: ['Alle', () => true], troop: ['Truppen', c => c.type === 'troop' && !c.hero], hero: ['Helden', c => !!c.hero], spell: ['Zauber', c => c.type === 'spell'], building: ['Gebäude', c => c.type === 'building'] };
+const FILTERS = { alle: ['Alle', () => true], rune: ['Runenform', (c, id) => !!RUNES[id]], form: ['Heldenform', (c, id) => !!HERO_FORMS[id]], troop: ['Truppen', c => c.type === 'troop' && !c.hero], hero: ['Helden', c => !!c.hero], spell: ['Zauber', c => c.type === 'spell'], building: ['Gebäude', c => c.type === 'building'] };
 function renderDeck() {
   const ups = P.upgradable(profile);
   $('#upBox').hidden = !ups.length;
@@ -550,14 +561,18 @@ function renderDeck() {
     const e = cardEl(id, { lvl: profile.cards[id].lvl, meter: meter(id), wish: profile.wish === id });
     if (swap) e.classList.add('pick');
     const sl = P.SPECIAL_SLOTS[i]; // die ersten drei Plätze: Runenplatz, Heldenplatz, freier Platz
-    if (sl) { e.classList.add('slot', `slot-${sl.kind}`); if (!P.slotOpen(profile, i)) e.classList.add('slot-closed'); }
+    if (sl) {
+      const open = P.slotOpen(profile, i), form = open && P.formActive(profile, id), rune = open && !form && P.runeActive(profile, id), hero = open && !!CARDS[id].hero && sl.kind !== 'rune';
+      e.classList.add('dslot', `slot-${sl.kind}`); if (!open) e.classList.add('slot-closed'); if (form || rune || hero) e.classList.add('live');
+      e.dataset.slot = !open ? `ab Arena ${sl.arena + 1}` : form ? 'Held aktiv' : hero ? 'Held' : rune ? 'Rune aktiv' : sl.name;   // steht unter der Karte: was dieser Platz gerade bewirkt
+    }
     if (P.hasRune(profile, id) && !P.runeActive(profile, id)) e.classList.add('rune-asleep'); // erweckt, aber nicht auf einem Runenplatz
     dg.append(e);
   });
   let legend = $('#slotLegend');
   if (!legend) { legend = el('p', 'slotLegend'); legend.id = 'slotLegend'; dg.after(legend); }
   legend.innerHTML = P.SPECIAL_SLOTS.map((sl, i) => `<span class="${P.slotOpen(profile, i) ? '' : 'off'}"><i class="k ${sl.kind}"></i>Platz ${i + 1}: ${sl.name}${P.slotOpen(profile, i) ? '' : ` (ab Arena ${sl.arena + 1})`}</span>`).join('')
-    + '<small>Nur auf dem Runenplatz und dem freien Platz spielt eine Karte ihre Runenform. Helden stehen nur auf dem Heldenplatz und dem freien Platz.</small>';
+    + '<small>Goldene Krone an der Karte: Sie hat eine Heldenform. Violette Raute: Sie hat eine Runenform. Blass heißt: noch nicht freigeschaltet.<br>Die Runenform spielt nur auf dem Runenplatz und dem freien Platz, Helden und Heldenformen nur auf dem Heldenplatz und dem freien Platz.</small>';
   // Türme: die gewählte Art gilt für beide Außentürme; der Hauptturm steigt mit der Spielerstufe
   $('#towerInfo').textContent = `Hauptturm: Stufe ${P.playerLevel(profile.xp).lvl}`;
   $('#towerGrid').replaceChildren(...TOWER_IDS.map(id => {
@@ -570,7 +585,7 @@ function renderDeck() {
   chips.replaceChildren(...Object.entries(FILTERS).map(([k, [label]]) => { const b = el('button', k === filter ? 'on' : '', label); b.dataset.f = k; return b; }));
   $('#sortChips').replaceChildren(el('small', '', 'Sortieren'), ...Object.entries(SORTS).map(([k, [label]]) => { const b = el('button', k === sort ? 'on' : '', label); b.dataset.s = k; return b; }));
   const cg = $('#collGrid'); cg.replaceChildren();
-  const all = P.ARENAS.flatMap(a => a.unlock).filter(id => CARDS[id].type !== 'tower' && !profile.deck.includes(id) && FILTERS[filter][1](CARDS[id]));
+  const all = P.ARENAS.flatMap(a => a.unlock).filter(id => CARDS[id].type !== 'tower' && !profile.deck.includes(id) && FILTERS[filter][1](CARDS[id], id));
   if (SORTS[sort][1]) { const own = all.filter(id => profile.cards[id]).sort(SORTS[sort][1]), rest = all.filter(id => !profile.cards[id]).sort(SORTS[sort][1]); all.splice(0, all.length, ...own, ...rest); } // eigene Karten zuerst
   for (const id of all) cg.append(profile.cards[id] ? cardEl(id, { lvl: profile.cards[id].lvl, meter: meter(id), wish: profile.wish === id }) : cardEl(id, { locked: P.unlockArena(id) }));
   if (!all.length) cg.append(el('p', 'empty', 'Keine weiteren Karten in dieser Auswahl.'));
@@ -906,6 +921,35 @@ function playUpgrade(id, from, to, changes, notes, done, title) {
 function toastSheet(msg) { sheet.prepend(el('div', 'notice', msg)); }
 
 // ---- Reiter „Laden“ ----------------------------------------------------------------------------
+// Gekauftes zeigen: erst die einfachen Dinge als Flug zur Kopfzeile, dann jede Truhe nacheinander
+function bought(src, got) {
+  if (!got) return;
+  save(); sfx('buy');
+  if (Object.keys(got.sum).length > 1) collectFx(src, got.sum);
+  render();
+  const next = i => { // die nächste Truhe erst, wenn die vorige ganz geschlossen ist
+    const l = got.boxes[i]; if (!l) return;
+    lootSheet(l.box === 'runenkiste' ? 'Runenkiste' : 'Schicksalstruhe', l, '', l.box);
+    const t = setInterval(() => { if (overlay.hidden && $('#fx').hidden) { clearInterval(t); next(i + 1); } }, 250);
+  };
+  next(0);
+}
+// Kasse der Kauf-Simulation: Angebot, Preis, deutlicher Hinweis – dann eine kurze „Zahlung“ und die Gutschrift
+function simCheckout(o, src) {
+  const parts = o.give.map(r => rewardParts(r, profile.arena));
+  const d = el('div', 'simPay');
+  d.append(el('h3', '', 'Kauf-Simulation'), el('div', 'simItem', `<span class="packIcons">${parts.map(pt => pt.ico).join('')}</span><b>${o.name}</b><small>${parts.map(pt => pt.name).join(' · ')}</small>`),
+    el('div', 'simPrice', `<span>Preis</span><b>${P.euro(o.cents)}</b>`), el('p', 'simHint', 'Das ist nur gespielt: Es wird kein Geld abgebucht und nichts gespeichert außer der Summe in deinem Profil.'));
+  const btns = el('div', 'btns'), no = el('button', 'btn', 'Abbrechen'), yes = el('button', 'btn primary', `Kaufen · ${P.euro(o.cents)}`);
+  no.addEventListener('click', () => { sfx('click'); closeSheet(); });
+  yes.addEventListener('click', () => {
+    if (yes.disabled) return;
+    yes.disabled = no.disabled = true; yes.innerHTML = '<span class="spin"></span>Zahlung wird geprüft …'; sfx('click');
+    setTimeout(() => { const got = P.buySim(profile, o.id); closeSheet(); if (got) { toast(`Gekauft (simuliert): ${o.name}`, 1800); bought($(`[data-sim="${o.id}"]`) || src, got); } }, 1100);
+  });
+  btns.append(no, yes); d.append(btns);
+  openSheet(d);
+}
 function renderShop() {
   const body = $('#shopBody'); body.replaceChildren();
   const head = (t, s) => body.append(el('div', 'sub', `<b>${t}</b><span>${s || ''}</span>`));
@@ -957,6 +1001,30 @@ function renderShop() {
   const gold = el('button', 'offer wide', `<span class="ico coin big"></span><span><b>${P.GOLD_PACK.gold} Gold</b><small>Für Aufwertungen und Angebote</small></span><em class="${profile.gems < P.GOLD_PACK.gems ? 'poor' : ''}"><span class="ico gem"></span>${P.GOLD_PACK.gems}</em>`);
   gold.addEventListener('click', () => { const r = P.buyGold(profile); if (r) { save(); sfx('buy'); collectFx(gold, r); render(); } else { sfx('error'); flash(gold); } });
   body.append(gold);
+
+  // Kartenpakete gegen Runensplitter
+  head('Kartenpakete', 'gegen Runensplitter');
+  const packs = el('div', 'offers two');
+  for (const o of P.PACKS) {
+    const parts = o.give.map(r => rewardParts(r, profile.arena));
+    const b = el('button', 'offer packOffer', `<span class="packIcons">${parts.map(pt => pt.ico).join('')}</span><b>${o.name}</b><small>${parts.map(pt => pt.name).join(' · ')}</small><em class="${profile.gems < o.gems ? 'poor' : ''}"><span class="ico gem"></span>${o.gems}</em>`);
+    b.addEventListener('click', () => { if (profile.gems < o.gems) { sfx('error'); flash(b); toast('Zu wenig Runensplitter – in der Schatzkammer gibt es welche'); return; } bought(b, P.buyPack(profile, o.id)); });
+    packs.append(b);
+  }
+  body.append(packs);
+
+  // Schatzkammer: Kauf-Simulation – Preise wie in einem echten Laden, aber es fließt kein Geld
+  head('Schatzkammer', 'Kauf-Simulation');
+  body.append(el('p', 'simNote', `Hier kaufst du wie mit echtem Geld – nur gespielt. Es wird nichts abgebucht. Bisher „ausgegeben“: <b>${P.euro(profile.sim.spent)}</b>`));
+  const store = el('div', 'offers two');
+  for (const o of P.storeInfo(profile)) {
+    const parts = o.give.map(r => rewardParts(r, profile.arena));
+    const b = el('button', `offer simOffer${o.pack ? ' pack' : ''}${o.sold ? ' sold' : ''}`, `${o.tag ? `<i class="tag">${o.tag}</i>` : ''}<span class="packIcons">${o.pack ? parts.map(pt => pt.ico).join('') : '<span class="ico gem xl"></span>'}</span><b>${o.pack ? o.name : fmt(o.give[0].n)}</b><small>${o.pack ? parts.map(pt => pt.name).join(' · ') : o.name}</small><em class="euro">${o.sold ? 'Gekauft' : P.euro(o.cents)}</em>`);
+    b.dataset.sim = o.id; b.disabled = o.sold;
+    b.addEventListener('click', () => simCheckout(o, b));
+    store.append(b);
+  }
+  body.append(store);
 
   // Saisonmarkt: Furtmarken aus Spielmodi und Bosskämpfen gegen Sonderdinge; die besten Stücke öffnen sich erst nach und nach
   const s = profile.season;
@@ -1299,7 +1367,7 @@ const B = { arena: null, g: null, ai: null, auto: null, acc: 0, last: 0, sel: nu
 function layout() {
   const cs = getComputedStyle($('#probe'));
   const sat = parseFloat(cs.paddingTop) || 0, sab = parseFloat(cs.paddingBottom) || 0;
-  const vw = window.innerWidth, vh = window.innerHeight;
+  const vw = window.innerWidth, vh = appHeight(sat);
   const root = getComputedStyle(document.documentElement);
   const hud = parseFloat(root.getPropertyValue('--hud')) || 44, panel = parseFloat(root.getPropertyValue('--panel')) || 148;
   renderer.resize(vw, vh - sat - sab - hud - panel, Math.min(3, window.devicePixelRatio || 1), B.arena ?? profile.arena);

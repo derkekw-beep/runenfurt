@@ -910,3 +910,152 @@ body.calm .slot.next .chestIco, body.calm .pcell.can, body.calm .pcell.can .ico,
 .extra.formBox .btn { margin-top: 10px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .extra.formBox .btn em { font-style: normal; opacity: .75; }
 #deckGrid .card.form-live { box-shadow: 0 0 0 2px #f2c14e, 0 0 16px rgba(242,193,78,.75); }
+
+/* ===== 2026-11-11: Deck-Plätze, Kennzeichen, Schatzkammer, volle Bildhöhe, Bewegung ===== */
+/* Volle Höhe auch als Startbildschirm-App auf iPhones (main.js: appHeight setzt --app-h) */
+html { background: #0a161d; }
+.screen, #overlay, #fx { bottom: auto; height: var(--app-h, 100%); }
+
+/* Deck-Plätze: farbiger Rahmen, darunter steht, was der Platz gerade bewirkt; leuchtet nur, wenn die besondere Form wirklich mitspielt */
+#deckGrid .card.dslot { overflow: visible; margin-bottom: 18px; box-shadow: 0 0 0 2px var(--slot); }
+#deckGrid .card.dslot canvas { border-radius: 8px; }
+#deckGrid .card.dslot::after { content: attr(data-slot); position: absolute; left: -4px; right: -4px; top: 100%; margin-top: 5px; text-align: center; font-size: 9.5px; font-weight: 800; letter-spacing: .02em; color: var(--slot); white-space: nowrap; }
+#deckGrid .card.slot-rune { --slot: #c98bff; }
+#deckGrid .card.slot-hero { --slot: #f2c14e; }
+#deckGrid .card.slot-wild { --slot: #7fe0d4; }
+#deckGrid .card.dslot:not(.live) { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--slot) 55%, transparent); }
+#deckGrid .card.dslot:not(.live)::after { opacity: .7; font-weight: 700; }
+#deckGrid .card.dslot.live { box-shadow: 0 0 0 2px var(--slot), 0 0 16px color-mix(in srgb, var(--slot) 70%, transparent); }
+#deckGrid .card.dslot.slot-closed { --slot: #7c8c98; box-shadow: 0 0 0 1.5px rgba(255,255,255,.16); }
+@keyframes slotGlow { from { box-shadow: 0 0 0 2px var(--slot), 0 0 8px color-mix(in srgb, var(--slot) 40%, transparent); } to { box-shadow: 0 0 0 2px var(--slot), 0 0 20px color-mix(in srgb, var(--slot) 85%, transparent); } }
+
+/* Kennzeichen an Karten: beschriftete Marken. Violett „Rune“, gold „Held“; blass = vorhanden, aber noch nicht freigeschaltet */
+.card .runeMark, .card .formMark { position: absolute; left: 4px; width: auto; height: auto; transform: none; clip-path: none; filter: none; padding: 1px 5px 1px 4px; border-radius: 7px; border: 1px solid rgba(255,255,255,.9); font-size: 9px; font-weight: 800; line-height: 12px; white-space: nowrap; z-index: 1; }
+.card .runeMark { bottom: 29px; background: linear-gradient(135deg, #f0dcff, var(--rune, #c98bff)); color: #2a1247; box-shadow: 0 0 7px rgba(201,139,255,.9); }
+.card .formMark { bottom: 46px; background: linear-gradient(#ffe9a8, #e9a01f); color: #3a2500; box-shadow: 0 0 7px rgba(242,193,78,.9); }
+.card .runeMark.off { background: rgba(14,20,30,.84); color: #d9bcff; border-color: #9a7bbd; box-shadow: none; }
+.card .formMark.off { background: rgba(14,20,30,.84); color: #f2c14e; border-color: #a8852e; box-shadow: none; }
+.card .runeMark i { position: static; transform: none; padding: 0; background: none; color: inherit; font: inherit; }
+.card:not(:has(.runeMark)) .formMark { bottom: 29px; }
+.thumbs .card .runeMark, #next .card .runeMark, .upItem .card .runeMark, .offer .card .runeMark, .thumbs .card .formMark, #next .card .formMark, .upItem .card .formMark, .offer .card .formMark { font-size: 0; line-height: 0; padding: 0; width: 8px; height: 8px; bottom: 4px; left: 3px; border-width: 1px; border-radius: 50%; }
+.thumbs .card .formMark, #next .card .formMark, .upItem .card .formMark, .offer .card .formMark { left: 13px; }
+.formBox .formMark { width: 14px; height: 12px; }
+
+/* Laden: Kartenpakete und Schatzkammer (Kauf-Simulation) */
+.packIcons { display: flex; justify-content: center; align-items: center; gap: 6px; min-height: 34px; }
+.packIcons .ico { width: 24px; height: 24px; }
+.packIcons .ico.big { width: 34px; height: 34px; }
+.packIcons .ico.xl { width: 38px; height: 38px; filter: drop-shadow(0 0 8px rgba(201,139,255,.7)); }
+.packIcons .chestIco { transform: scale(.8); }
+.offer.packOffer small, .offer.simOffer small { color: var(--dim); font-size: 11.5px; line-height: 1.25; min-height: 28px; }
+.offer.simOffer { background: linear-gradient(160deg, #1f3550, #172536); border-color: #3b5d83; overflow: hidden; }
+.offer.simOffer.pack { background: linear-gradient(160deg, #3a2a52, #1d1830); border-color: #6e4fa0; }
+.offer.simOffer::before { content: ''; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,.12) 50%, transparent 60%); transform: translateX(-100%); animation: shine 4.5s ease-in-out infinite; pointer-events: none; }
+.offer.simOffer .tag { position: absolute; right: -1px; top: -1px; padding: 2px 8px; border-radius: 0 11px 0 9px; background: linear-gradient(#ffe08a, #e9a01f); color: #3a2500; font-size: 9.5px; font-weight: 800; font-style: normal; text-transform: uppercase; letter-spacing: .04em; }
+.offer .euro { background: linear-gradient(#58d68d, #2ea66a); color: #062415; border-radius: 9px; padding: 5px 8px; font-style: normal; font-weight: 800; }
+.offer.sold .euro { background: none; color: var(--dim); }
+.simNote { margin: 0 2px 8px; font-size: 12.5px; color: var(--dim); line-height: 1.35; }
+.simNote b { color: var(--text); }
+.simPay h3 { margin: 0 0 12px; text-align: center; }
+.simPay .simItem { display: grid; gap: 4px; justify-items: center; text-align: center; padding: 14px; border-radius: 14px; background: var(--bg2); border: 1px solid var(--line); }
+.simPay .simItem b { font-size: 18px; }
+.simPay .simItem small { color: var(--dim); }
+.simPay .simPrice { display: flex; justify-content: space-between; align-items: baseline; margin: 14px 4px 6px; font-size: 15px; }
+.simPay .simPrice b { font-size: 24px; }
+.simPay .simHint { margin: 0 4px 14px; padding: 8px 10px; border-radius: 10px; background: rgba(88,214,141,.12); border: 1px solid rgba(88,214,141,.35); color: #bdf0d2; font-size: 12.5px; line-height: 1.35; }
+.spin { display: inline-block; width: 14px; height: 14px; margin-right: 8px; border-radius: 50%; border: 2px solid rgba(0,0,0,.25); border-top-color: currentColor; vertical-align: -2px; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes shine { 0%, 70% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+/* Bewegung: Reiter blenden weich ein, Karten und Angebote rücken nacheinander ins Bild, Tasten geben nach */
+.tab:not([hidden]) { animation: tabIn .22s ease-out; }
+@keyframes tabIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+#deckGrid .card, #collGrid .card, .offers > .offer, .list > .btn.item, .mile { animation: popIn .28s cubic-bezier(.2, .9, .3, 1.2) backwards; }
+#deckGrid .card:nth-child(2), #collGrid .card:nth-child(2), .offers > .offer:nth-child(2), .list > .btn.item:nth-child(2) { animation-delay: .03s; }
+#deckGrid .card:nth-child(3), #collGrid .card:nth-child(3), .offers > .offer:nth-child(3), .list > .btn.item:nth-child(3) { animation-delay: .06s; }
+#deckGrid .card:nth-child(4), #collGrid .card:nth-child(4), .offers > .offer:nth-child(4), .list > .btn.item:nth-child(4) { animation-delay: .09s; }
+#deckGrid .card:nth-child(n+5), #collGrid .card:nth-child(n+5), .offers > .offer:nth-child(n+5), .list > .btn.item:nth-child(n+5) { animation-delay: .12s; }
+#deckGrid .card.dslot.live { animation: popIn .28s cubic-bezier(.2, .9, .3, 1.2) backwards, slotGlow 1.8s ease-in-out .3s infinite alternate; }
+@keyframes popIn { from { opacity: 0; transform: translateY(10px) scale(.94); } to { opacity: 1; transform: none; } }
+.btn:active, .card:active, #nav button:active { transform: scale(.96); }
+.btn, .offer, #nav button { transition: transform .08s ease-out, filter .15s; }
+#nav button.on .ico, #nav button.on svg { animation: navPop .32s cubic-bezier(.2, .9, .3, 1.6); }
+@keyframes navPop { from { transform: translateY(4px) scale(.8); } to { transform: none; } }
+body.calm .tab:not([hidden]), body.calm #deckGrid .card, body.calm #collGrid .card, body.calm .offers > .offer, body.calm .list > .btn.item, body.calm .mile, body.calm .offer.simOffer::before, body.calm #deckGrid .card.dslot.live { animation: none; }
+@media (prefers-reduced-motion: reduce) { .tab:not([hidden]), #deckGrid .card, #collGrid .card, .offers > .offer, .list > .btn.item, .mile, .offer.simOffer::before, #deckGrid .card.dslot.live { animation: none; } }
+
+/* ===== 2026-11-11 (zweite Runde): schönere Marken, lebendigere Felder, Truhen ===== */
+/* Marken „Held“ und „Rune“: kleine Plaketten mit Wappenzeichen und wanderndem Glanz; blass = vorhanden, aber nicht freigeschaltet */
+.card .formMark, .card .runeMark { border: 0; border-radius: 8px; overflow: hidden; font-size: 8.5px; line-height: 13px; letter-spacing: .07em; text-transform: uppercase; }
+.card .formMark { padding: 0 7px 0 18px; background: linear-gradient(180deg, #fff3c9 0%, #f6c453 42%, #d48f22 100%); color: #4a2f05; box-shadow: 0 0 0 1px #7a4f0c, inset 0 1px 0 rgba(255,255,255,.7), 0 2px 6px rgba(0,0,0,.45), 0 0 9px rgba(246,196,83,.75); }
+.card .formMark::before { content: ''; position: absolute; left: 4px; top: 50%; width: 11px; height: 8px; margin-top: -4.5px; background: #5a3806; clip-path: polygon(0 100%, 4% 12%, 28% 55%, 50% 0, 72% 55%, 96% 12%, 100% 100%); }
+.card .runeMark { padding: 0 7px 0 16px; background: linear-gradient(180deg, #f8edff 0%, #cf97ff 45%, #9a5fd6 100%); color: #2a1247; box-shadow: 0 0 0 1px #5a2f8a, inset 0 1px 0 rgba(255,255,255,.7), 0 2px 6px rgba(0,0,0,.45), 0 0 9px rgba(201,139,255,.8); }
+.card .runeMark::before { content: ''; position: absolute; left: 5px; top: 50%; width: 6px; height: 6px; margin-top: -3px; background: #3c1a66; transform: rotate(45deg); border-radius: 1px; }
+.card .formMark::after, .card .runeMark::after { content: ''; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 35%, rgba(255,255,255,.8) 50%, transparent 65%); transform: translateX(-130%); animation: markShine 3.6s ease-in-out infinite; pointer-events: none; }
+.card .runeMark::after { animation-delay: 1.2s; }
+@keyframes markShine { 0%, 62% { transform: translateX(-130%); } 100% { transform: translateX(130%); } }
+.card .formMark.off { background: linear-gradient(180deg, rgba(34,30,22,.92), rgba(18,18,20,.92)); color: #e2bf62; box-shadow: 0 0 0 1px #8a6a1e, 0 2px 5px rgba(0,0,0,.4); }
+.card .formMark.off::before { background: #c9a03c; }
+.card .runeMark.off { background: linear-gradient(180deg, rgba(34,24,48,.92), rgba(18,14,28,.92)); color: #d9bcff; box-shadow: 0 0 0 1px #7d5aa6, 0 2px 5px rgba(0,0,0,.4); }
+.card .runeMark.off::before { background: #b88ae6; }
+.card .formMark.off::after, .card .runeMark.off::after { display: none; }
+.thumbs .card .runeMark, #next .card .runeMark, .upItem .card .runeMark, .offer .card .runeMark, .thumbs .card .formMark, #next .card .formMark, .upItem .card .formMark, .offer .card .formMark { padding: 0; box-shadow: 0 0 0 1px rgba(255,255,255,.8); }
+.thumbs .card .runeMark::before, #next .card .runeMark::before, .upItem .card .runeMark::before, .offer .card .runeMark::before, .thumbs .card .formMark::before, #next .card .formMark::before, .upItem .card .formMark::before, .offer .card .formMark::before,
+.thumbs .card .runeMark::after, #next .card .runeMark::after, .upItem .card .runeMark::after, .offer .card .runeMark::after, .thumbs .card .formMark::after, #next .card .formMark::after, .upItem .card .formMark::after, .offer .card .formMark::after { display: none; }
+#deckGrid .card.dslot::after { text-transform: uppercase; letter-spacing: .06em; font-size: 8.5px; }
+
+/* Felder: Sieg-Felder und Truhenplätze rücken nacheinander ins Bild; das nächste atmet, schimmert, seine Truhe schwebt */
+.slot { animation: popIn .32s cubic-bezier(.2, .9, .3, 1.25) backwards; transition: transform .12s, box-shadow .25s, border-color .25s; overflow: hidden; }
+.slot:nth-child(2) { animation-delay: .05s; }
+.slot:nth-child(3) { animation-delay: .1s; }
+.slot:nth-child(4) { animation-delay: .15s; }
+.slot.next { animation: popIn .32s cubic-bezier(.2, .9, .3, 1.25) backwards, fieldBreath 1.9s ease-in-out .4s infinite; }
+.slot.next::after, .slot.ready::after { content: ''; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 38%, rgba(255,255,255,.16) 50%, transparent 62%); transform: translateX(-120%); animation: shine 3.4s ease-in-out infinite; pointer-events: none; }
+.slot .chestIco { filter: drop-shadow(0 4px 5px rgba(0,0,0,.45)); }
+.slot.next .chestIco { animation: chestHover 2.2s ease-in-out infinite; }
+.slot.vacant .chestIco { filter: grayscale(.6) drop-shadow(0 3px 4px rgba(0,0,0,.35)); }
+@keyframes fieldBreath { 0%, 100% { box-shadow: 0 0 0 0 rgba(246,196,83,0), 0 3px 0 rgba(0,0,0,.35); transform: none; } 50% { box-shadow: 0 0 18px 2px rgba(246,196,83,.45), 0 3px 0 rgba(0,0,0,.35); transform: translateY(-2px); } }
+@keyframes chestHover { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-4px) rotate(2deg); } }
+.offer .chestIco, .mile .chestIco, .packIcons .chestIco { filter: drop-shadow(0 3px 4px rgba(0,0,0,.45)); }
+.offer.chestOffer .chestIco { animation: chestHover 2.6s ease-in-out infinite; }
+.offer.chestOffer:nth-child(2) .chestIco { animation-delay: .4s; }
+.offer.chestOffer:nth-child(3) .chestIco { animation-delay: .8s; }
+.offer.chestOffer:nth-child(4) .chestIco { animation-delay: 1.2s; }
+.mile.can { animation: popIn .28s cubic-bezier(.2, .9, .3, 1.2) backwards, mileGlow 1.6s ease-in-out .3s infinite alternate; }
+@keyframes mileGlow { from { background: transparent; } to { background: linear-gradient(90deg, rgba(246,196,83,.16), transparent 70%); } }
+
+/* Truhe öffnen: Schatten darunter, beim Öffnen ein Hüpfer, Lichtblitz, Funken und Strahlen, die sich drehen */
+.chestfx .chestbox { filter: drop-shadow(0 14px 12px rgba(0,0,0,.5)); }
+.chestfx.open .chestbox { animation: chestPop .55s cubic-bezier(.3, 1.6, .5, 1); }
+@keyframes chestPop { 0% { transform: none; } 22% { transform: scale(1.16, .82) translateY(10px); } 52% { transform: scale(.92, 1.14) translateY(-16px); } 78% { transform: scale(1.04, .97); } 100% { transform: none; } }
+.chestfx.open .rays { animation: rays .5s ease-out, raySpin 16s linear infinite; }
+@keyframes raySpin { to { rotate: 360deg; } }
+.chestfx.open .chestbox::before { content: ''; position: absolute; left: 50%; top: 18%; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: #fff; box-shadow: -52px -28px 0 0 var(--band), 46px -46px 0 1px #fff, -20px -74px 0 0 #fff, 26px -92px 0 0 var(--band), 72px -14px 0 0 var(--c0), -78px -6px 0 1px var(--c0), 6px -118px 0 0 #fff, -44px -104px 0 0 var(--band), 60px -84px 0 0 var(--c0); animation: chestSparks 1s ease-out forwards; pointer-events: none; z-index: 3; }
+@keyframes chestSparks { 0% { transform: scale(.15); opacity: 1; } 65% { opacity: 1; } 100% { transform: scale(1.8) translateY(-34px); opacity: 0; } }
+.chestfx.open .chestbox::after { content: ''; position: absolute; left: 50%; top: 30%; width: 24px; height: 24px; margin: -12px 0 0 -12px; border-radius: 50%; background: #fff; box-shadow: 0 0 50px 34px rgba(255,255,255,.85); animation: chestFlash .5s ease-out forwards; pointer-events: none; z-index: 3; }
+@keyframes chestFlash { from { transform: scale(.3); opacity: 1; } to { transform: scale(6); opacity: 0; } }
+body.calm .slot, body.calm .slot.next, body.calm .slot.next .chestIco, body.calm .offer.chestOffer .chestIco, body.calm .mile.can, body.calm .card .formMark::after, body.calm .card .runeMark::after, body.calm .slot.next::after, body.calm .slot.ready::after { animation: none; }
+@media (prefers-reduced-motion: reduce) { .slot, .slot.next, .slot.next .chestIco, .offer.chestOffer .chestIco, .mile.can, .card .formMark::after, .card .runeMark::after, .slot.next::after, .slot.ready::after, .chestfx.open .rays, .chestfx.open .chestbox::before { animation: none; } }
+#fx { background: radial-gradient(circle at 50% 62%, rgba(22,36,48,.97), rgba(3,7,10,.985)); }   /* Bühne der Truhen: dichter, mit Lichtkegel */
+
+/* ===== 2026-11-11 (dritte Runde): Marken verdecken die Figur nicht mehr =====
+   Kleine Abzeichen auf der Höhe des Fortschrittsbalkens: Krone (gold) = Heldenform, Raute (violett) = Runenform; der Balken rückt daneben. */
+.card .formMark, .card .runeMark { bottom: 16px; height: 11px; line-height: 11px; padding: 0; border-radius: 4px; font-size: 7.5px; letter-spacing: 0; text-transform: none; }
+.card .formMark, .card:not(:has(.runeMark)) .formMark { left: 4px; bottom: 16px; width: 15px; }
+.card .formMark::before { left: 2px; width: 11px; height: 7px; margin-top: -3.5px; }
+.card .runeMark { left: 4px; width: 12px; }
+.card .runeMark::before { left: 3px; width: 6px; height: 6px; margin-top: -3px; }
+.card .runeMark.off { width: auto; padding: 0 3px 0 12px; }
+.card:has(.formMark) .runeMark { left: 21px; }
+.card:has(.runeMark) .meter { left: 19px; }
+.card:has(.runeMark.off) .meter { left: 34px; }
+.card:has(.formMark) .meter { left: 22px; }
+.card:has(.formMark):has(.runeMark) .meter { left: 36px; }
+.card:has(.formMark):has(.runeMark.off) .meter { left: 51px; }
+.thumbs .card:has(.formMark) .runeMark, #next .card:has(.formMark) .runeMark, .upItem .card:has(.formMark) .runeMark, .offer .card:has(.formMark) .runeMark { left: 3px; }
+.thumbs .card .runeMark, #next .card .runeMark, .upItem .card .runeMark, .offer .card .runeMark, .thumbs .card .formMark, #next .card .formMark, .upItem .card .formMark, .offer .card .formMark { bottom: 4px; width: 8px; height: 8px; padding: 0; }
+.thumbs .card .formMark, #next .card .formMark, .upItem .card .formMark, .offer .card .formMark { left: 13px; }
+.formBox .formMark { position: static; width: 15px; height: 11px; }
+.slotLegend .formMark, .slotLegend .runeMark { position: relative; display: inline-block; left: auto; bottom: auto; vertical-align: -2px; margin: 0 4px 0 0; }
+/* das nächste Sieg-Feld leuchtet, ohne sich zu verschieben (sonst gilt es beim Antippen als „in Bewegung“) */
+@keyframes fieldBreath { 0%, 100% { box-shadow: 0 0 0 0 rgba(246,196,83,0), 0 3px 0 rgba(0,0,0,.35); } 50% { box-shadow: 0 0 18px 2px rgba(246,196,83,.5), 0 3px 0 rgba(0,0,0,.35); } }

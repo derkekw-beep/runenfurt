@@ -117,7 +117,7 @@ export function newProfile() {
     v: 2, trophies: 0, best: 0, arena: 0, gold: 0, gems: 0, xp: 0, cards, decks, slot: 0, deck: decks[0], level: 'leicht', sound: true,
     wins: 0, losses: 0, draws: 0, seenHelp: false, name: 'Runenwächter', set: newSet(), stats: newStats(), log: [],
     runes: {}, wild: 0, road: [], day: '', quests: [], shop: { bought: [], gift: false }, wish: '', bosses: [], modeDay: '', towerSel: DEFAULT_TOWER,
-    jk: newJokers(), potions: 0, boosts: {}, stash: [], dayWins: 0, modeWins: 0, season: newSeason(), coll: [], mast: {}, note: null, slots: 1, heroCoins: 0, forms: {}, surv: { best: 0, got: [], runs: 0 },
+    jk: newJokers(), potions: 0, boosts: {}, stash: [], dayWins: 0, modeWins: 0, season: newSeason(), coll: [], mast: {}, note: null, slots: 1, heroCoins: 0, forms: {}, surv: { best: 0, got: [], runs: 0 }, sim: { spent: 0, n: 0, once: [] },
   };
 }
 
@@ -202,6 +202,7 @@ export function loadProfile(raw) {
   if (typeof d.modeDay === 'string') p.modeDay = d.modeDay.slice(0, 10);
   if (TOWER_IDS.includes(d.towerSel) && p.cards[d.towerSel]) p.towerSel = d.towerSel;
   if (Array.isArray(d.road)) p.road = [...new Set(d.road.filter(a => ROAD.some(r => r.at === a)))];
+  if (d.sim && typeof d.sim === 'object') p.sim = { spent: Math.max(0, Math.round(num(d.sim.spent, 0))), n: num(d.sim.n, 0), once: Array.isArray(d.sim.once) ? d.sim.once.filter(x => STORE.some(o => o.id === x && o.once)) : [] };
   if (d.surv && typeof d.surv === 'object') p.surv = { best: Math.max(0, Math.floor(num(d.surv.best, 0))), got: Array.isArray(d.surv.got) ? [...new Set(d.surv.got.filter(a => SURV.some(m => m.at === a)))] : [], runs: num(d.surv.runs, 0) };
   if (typeof d.day === 'string') p.day = d.day.slice(0, 10);
   if (Array.isArray(d.quests)) p.quests = d.quests.filter(q => q && QUESTS[q.id]).slice(0, 3).map(q => ({ id: q.id, need: Math.max(1, num(q.need, 1)), have: num(q.have, 0), claimed: !!q.claimed }));
@@ -894,6 +895,53 @@ export function claimQuest(p, i, rnd = Math.random) {
 }
 
 // ---- Laden: täglich wechselnde Kartenangebote, ein Geschenk, Schicksalstruhen und Sonderdinge gegen Runensplitter ----
+// ---- Schatzkammer: Kauf-Simulation. Es fließt kein Geld – die Preise sind erfunden, der „Kauf“ schreibt nur gut und zählt mit,
+// wie viel man im echten Spiel ausgegeben hätte (profile.sim.spent in Cent). Eingeführt am 2026-11-11.
+export const STORE = [
+  { id: 's80', name: 'Handvoll Runensplitter', cents: 99, give: [{ t: 'gems', n: 80 }] },
+  { id: 's500', name: 'Beutel Runensplitter', cents: 499, give: [{ t: 'gems', n: 500 }] },
+  { id: 's1200', name: 'Kiste Runensplitter', cents: 999, give: [{ t: 'gems', n: 1200 }], tag: 'beliebt' },
+  { id: 's2500', name: 'Fass Runensplitter', cents: 1999, give: [{ t: 'gems', n: 2500 }] },
+  { id: 's6500', name: 'Wagen Runensplitter', cents: 4999, give: [{ t: 'gems', n: 6500 }] },
+  { id: 's14000', name: 'Hort Runensplitter', cents: 9999, give: [{ t: 'gems', n: 14000 }], tag: 'bester Wert' },
+  { id: 'start', name: 'Starterpaket', cents: 299, give: [{ t: 'gems', n: 200 }, { t: 'gold', n: 1500 }, { t: 'lucky', s: 3 }], once: true, tag: 'einmalig', pack: true },
+  { id: 'rune', name: 'Runenpaket', cents: 799, give: [{ t: 'gems', n: 300, wild: 2 }, { t: 'runebox' }, { t: 'runebox' }], pack: true },
+  { id: 'held', name: 'Heldenpaket', cents: 999, give: [{ t: 'gems', n: 300 }, { t: 'hero', n: 200 }, { t: 'lucky', s: 4 }], pack: true },
+];
+// Kartenpakete gegen Runensplitter: Joker einer Seltenheit (passen auf jede Karte dieser Seltenheit), Gold oder alles zusammen
+export const PACKS = [
+  { id: 'p1', name: 'Kartenpaket', gems: 40, give: [{ t: 'jk', r: 'gewoehnlich', n: 120 }] },
+  { id: 'p2', name: 'Seltenes Paket', gems: 80, give: [{ t: 'jk', r: 'selten', n: 40 }] },
+  { id: 'p3', name: 'Episches Paket', gems: 160, give: [{ t: 'jk', r: 'episch', n: 12 }] },
+  { id: 'p4', name: 'Goldsack', gems: 100, give: [{ t: 'gold', n: 1500 }] },
+  { id: 'p5', name: 'Großes Paket', gems: 400, give: [{ t: 'gold', n: 2000 }, { t: 'jk', r: 'legendaer', n: 2 }, { t: 'lucky', s: 5 }] },
+];
+export const euro = cents => `${(cents / 100).toFixed(2).replace('.', ',')} €`;
+// Mehrere Belohnungen gutschreiben: einfache Dinge (Gold, Splitter, Joker, Münzen, Scherben) zusammengezählt in sum, Truhen einzeln in boxes
+function giveAll(p, list, rnd) {
+  const sum = { cards: [] }, boxes = [];
+  for (const r of list) {
+    const l = grantReward(p, r, rnd);
+    if (l.box) { boxes.push(l); continue; }
+    for (const [k, v] of Object.entries(l)) { if (k === 'cards') continue; if (typeof v === 'number') sum[k] = (sum[k] || 0) + v; else if (v && typeof v === 'object') { sum[k] = sum[k] || {}; for (const [a, b] of Object.entries(v)) sum[k][a] = (sum[k][a] || 0) + b; } }
+  }
+  return { sum, boxes };
+}
+export const storeInfo = p => STORE.map(o => ({ ...o, sold: !!o.once && p.sim.once.includes(o.id) }));
+export function buySim(p, id, rnd = Math.random) {
+  const o = STORE.find(x => x.id === id);
+  if (!o || (o.once && p.sim.once.includes(id))) return null;
+  p.sim.spent += o.cents; p.sim.n++;
+  if (o.once) p.sim.once.push(id);
+  return giveAll(p, o.give, rnd);
+}
+export function buyPack(p, id, rnd = Math.random) {
+  const o = PACKS.find(x => x.id === id);
+  if (!o || p.gems < o.gems) return null;
+  p.gems -= o.gems;
+  return giveAll(p, o.give, rnd);
+}
+
 export const SHOP_BOXES = [{ t: 'lucky', s: 2, gems: 8 }, { t: 'lucky', s: 3, gems: 18 }, { t: 'lucky', s: 4, gems: 40 }, { t: 'runebox', gems: 45 }];
 export const GOLD_PACK = { gems: 20, gold: 250 };
 export function shopOffers(p) {
