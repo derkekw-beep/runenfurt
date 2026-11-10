@@ -46,9 +46,17 @@ if (renderer.ready) await renderer.ready; // neue Bildfolgen und 3D-Teile (engin
 const field = $('#arena');
 const stage = createStage($('#stageCv')); // Bild der eigenen Arena im Hauptmenü
 
+// Grafikgüte, die dieses Gerät flüssig schafft – höchstens die eingestellte. Sie wird im Kampf gemessen (frame) und für das Gerät gemerkt.
+let fit = 0;
+try {
+  const kept = localStorage.getItem('runenfurt-guete');
+  // Handys mit dreifacher Bildschirmauflösung fangen eine Stufe tiefer an: dreifache Auflösung mit vierfacher Kantenglättung überfordert sie, zu sehen ist der Unterschied kaum
+  fit = kept != null ? Math.min(2, Math.max(0, Number(kept) || 0)) : matchMedia('(pointer: coarse)').matches && devicePixelRatio > 2 ? 1 : 0;
+} catch { /* ohne Speicher: jedes Mal neu messen */ }
+const fitted = () => P.QUALITIES[Math.max(fit, P.QUALITIES.indexOf(profile.set.quality))];
 function applySettings() {
   setSound(profile.sound); setVolume(profile.set.volume);
-  renderer.setOptions(profile.set);
+  renderer.setOptions({ ...profile.set, quality: fitted() });
   stage.setQuality(profile.set.quality);
   document.body.classList.toggle('calm', profile.set.quality === 'niedrig'); // Grafik „Niedrig“: keine Dauer-Animationen im Menü
   document.body.classList.toggle('lefty', profile.set.lefty);
@@ -1160,7 +1168,7 @@ function showSettings() {
   body.append(vol);
   const q = el('div', 'setRow col', '<span><b>Grafik</b><small>Niedrig spart Akku: geringere Auflösung, keine Schatten</small></span>');
   const seg = el('div', 'seg small');
-  for (const k of P.QUALITIES) { const b = el('button', s.quality === k ? 'on' : '', k[0].toUpperCase() + k.slice(1)); b.addEventListener('click', () => { s.quality = k; save(); applySettings(); layout(); sfx('click'); for (const o of seg.children) o.classList.toggle('on', o === b); }); seg.append(b); }
+  for (const k of P.QUALITIES) { const b = el('button', s.quality === k ? 'on' : '', k[0].toUpperCase() + k.slice(1)); b.addEventListener('click', () => { s.quality = k; fit = 0; try { localStorage.setItem('runenfurt-guete', '0'); } catch { /* egal */ } save(); applySettings(); layout(); sfx('click'); for (const o of seg.children) o.classList.toggle('on', o === b); }); seg.append(b); }
   q.append(seg); body.append(q);
   toggle('Bildschirmwackeln', 'bei schweren Treffern', () => s.shake, v => { s.shake = v; });
   toggle('Fähigkeitsknöpfe links', 'für Linkshänder', () => s.lefty, v => { s.lefty = v; });
@@ -1224,6 +1232,12 @@ function showModes() {
   for (const id of ids) row(id, P.MODES[id].name, P.MODES[id].text, id === today ? (P.modeBonusOpen(profile) ? `Heute +${P.MODE_BONUS} <span class="ico gem"></span>` : 'Modus des Tages') : '');
   row('uebung', 'Übungskampf', 'Ein normaler Kampf, der nicht zählt – zum Ausprobieren neuer Decks.', '');
   d.append(list);
+  // Überleben: Bestleistung und Meilensteine (einmalige Belohnungen, abzuholen sobald die Welle erreicht ist)
+  d.append(el('div', 'sub', `<b>Überleben</b><span>Bestleistung: Welle ${profile.surv.best}</span>`));
+  const miles = el('div', 'survList');
+  const shown = P.SURV.filter((m, i) => profile.surv.best >= m.at || i < 4 || P.SURV[i - 2].at <= profile.surv.best);   // erreichte und die nächsten zwei, mindestens vier
+  for (const m of shown) miles.append(mileRow(`Welle ${m.at}`, m, profile.surv.best >= m.at, profile.surv.got.includes(m.at), profile.arena, b => collected(b, P.claimSurv(profile, m.at), 'Meilenstein')));
+  d.append(miles);
   d.append(el('div', 'sub', `<b>Bosskämpfe</b><span>${profile.bosses.length} von ${P.BOSSES.length} besiegt</span>`));
   const bosses = el('div', 'list');
   P.BOSSES.forEach((b, i) => {
@@ -1314,7 +1328,7 @@ function startBattle(opts) {
     const even = () => [P.evenLevels(profile, profile.towerSel), P.evenLevels(profile, mode === 'spiegel' ? profile.towerSel : foeTower)];
     if (mode === 'spiegel') { decks[1] = [...profile.deck]; levels = even(); }
     if (mode === 'wahl') { decks = opts.decks; levels = even(); }
-    if (mode === 'ansturm') B.foe = 'Ansturm';
+    if (mode === 'ansturm') B.foe = 'Überleben';
   }
   // Deck-Plätze gelten für beide Seiten: Helden und Runenformen nur auf ihren Plätzen. Das eigene Deck ist schon geordnet,
   // gewürfelte und gewählte Decks werden es hier. Bosse sind ausgenommen.
@@ -1340,11 +1354,21 @@ function startBattle(opts) {
   renderer.reset();
   show('battle');
   layout();
-  if (renderer.prepare) renderer.prepare(B.g);
   updateHud(true);
-  banner(boss != null ? `Boss: ${B.foe}` : opts.training ? 'Übungskampf' : B.label || 'Kampf!');
-  toast(boss != null ? P.BOSSES[boss].text : mode === 'ansturm' ? 'Halte drei Minuten durch!' : `${B.foe} · Kartenstufe ${opp.lvl}`, boss != null ? 4500 : 2600);
-  sfx('horn');
+  // Erst laden, dann kämpfen: Die Uhr läuft los, wenn alle Figuren beider Decks auf der Grafikkarte liegen (sonst ruckelt jede bei ihrem ersten Auftritt).
+  const g0 = B.g, go = () => {
+    if (B.g !== g0 || !B.loading) return;
+    B.loading = false; B.last = performance.now(); B.fps = null;
+    banner(boss != null ? `Boss: ${B.foe}` : opts.training ? 'Übungskampf' : B.label || 'Kampf!');
+    toast(boss != null ? P.BOSSES[boss].text : mode === 'ansturm' ? `Überlebe so viele Wellen wie möglich – Bestleistung: Welle ${profile.surv.best}` : `${B.foe} · Kartenstufe ${opp.lvl}`, boss != null ? 4500 : 2600);
+    sfx('horn');
+  };
+  B.loading = true;
+  if (renderer.prepare) {
+    toast('Figuren werden geladen …', 20000);
+    Promise.resolve(renderer.prepare(B.g, (n, of) => { if (B.g === g0 && B.loading) toast(`Figuren werden geladen … ${Math.round(n / of * 100)} %`, 20000); })).then(go, go);
+    setTimeout(go, 20000);   // hängt das Netz, geht es trotzdem los; fehlende Figuren erscheinen dann, sobald sie da sind
+  } else go();
   wakeLock(true);
   if (!B.running) { B.running = true; requestAnimationFrame(frame); }
 }
@@ -1403,13 +1427,13 @@ function handleEvents() {
     else if (ev.t === 'shield' || ev.t === 'fuse') sfx(ev.t);
     else if (ev.t === 'kraft') { if (ev.side === 0) sfx('kraft'); }
     else if (ev.t === 'overtime') { sfx('horn'); banner('Verlängerung – der nächste Turm gewinnt!'); }
-    else if (ev.t === 'wave') { sfx('wake'); banner(`Welle ${ev.n}`); }
+    else if (ev.t === 'wave') { sfx('wake'); banner(ev.boss ? `Welle ${ev.n} · Anführer` : `Welle ${ev.n}`); if (B.g.endless) $('#foeName').textContent = `Welle ${ev.n} · Stufe ${ev.lvl}`; }
   }
   g.events.length = 0;
   if (!B.flags.double && !g.kraftFixed && g.phase === 'main' && g.time >= g.duration - 60) { B.flags.double = true; banner('Doppelte Kraft!'); sfx('horn'); }
   if (!B.flags.triple && g.phase === 'over' && g.time >= g.duration + g.overtime - 60) { B.flags.triple = true; banner('Dreifache Kraft!'); sfx('horn'); }
   const left = Math.ceil(sim.timeLeft(g));
-  if (left <= 10 && left > 0 && left !== B.flags.tick && !g.over) { B.flags.tick = left; sfx('tick'); }
+  if (left <= 10 && left > 0 && left !== B.flags.tick && !g.over && !g.endless) { B.flags.tick = left; sfx('tick'); }
 }
 
 const fpsBox = $('#fps');
@@ -1419,7 +1443,16 @@ function frame(now) {
   requestAnimationFrame(frame);
   const g = B.g;
   const dt = Math.min(0.1, (now - B.last) / 1000); B.last = now;
-  if (!B.paused && !g.over) {
+  if (!B.paused && !B.loading && !g.over && SPEED === 1 && !document.hidden) { // kommt das Gerät nicht mit, sinkt die Grafikgüte um eine Stufe
+    const f = B.fps || (B.fps = { n: 0, t: 0, max: 0, skip: 90 });
+    if (f.skip > 0) f.skip--; else { f.n++; f.t += dt; f.max = Math.max(f.max, dt); }
+    if (f.t >= 3) {
+      const fps = f.n / f.t, capped = fps > 27 && fps < 33 && f.max < 0.045;   // gleichmäßige 30 Bilder: der Stromsparmodus bremst, nicht die Grafik
+      B.fps = { n: 0, t: 0, max: 0, skip: 60 };
+      if (fps < 45 && !capped && P.QUALITIES.indexOf(fitted()) < 2) { fit = P.QUALITIES.indexOf(fitted()) + 1; try { localStorage.setItem('runenfurt-guete', String(fit)); } catch { /* egal */ } applySettings(); layout(); }
+    }
+  }
+  if (!B.paused && !B.loading && !g.over) {
     B.acc += dt * SPEED * (B.slowT > 0 ? 0.3 : 1); // kurze Zeitlupe, wenn ein Turm fällt
     if (B.slowT > 0) B.slowT -= dt;
     let n = 0;
@@ -1521,16 +1554,35 @@ $('#hand').addEventListener('pointerdown', e => {
   B.sel = i; B.ghost = null;
   sfx('click');
 });
+// Ziehen wie beim Vorbild: Die Karte hängt am Finger, solange er über der Kartenleiste ist. Über dem Feld wird sie zur Vorschau,
+// die auf Kacheln einrastet und ein Feld über dem Finger sitzt, damit man sie sieht. Loslassen über dem Feld spielt aus
+// (auf dem nächsten erlaubten Feld), Loslassen über der Leiste legt die Karte zurück – sie bleibt gewählt.
+let floatEl = null;
+const dragPos = e => renderer.toField(e.clientX, e.clientY - field.getBoundingClientRect().width / 19);
+function floatCard(e) {
+  const src = $('#hand').children[B.sel];
+  if (!e || !src) { if (floatEl) { floatEl.remove(); floatEl = null; } for (const c of $('#hand').querySelectorAll('.held')) c.classList.remove('held'); return; }
+  if (!floatEl) {
+    floatEl = src.cloneNode(true); floatEl.classList.remove('sel', 'new'); floatEl.classList.add('float');
+    const from = src.querySelector('canvas'), to = floatEl.querySelector('canvas'); if (from && to) to.getContext('2d').drawImage(from, 0, 0);   // das Bild einer Zeichenfläche wandert beim Klonen nicht mit
+    floatEl.style.width = `${src.offsetWidth}px`; floatEl.style.height = `${src.offsetHeight}px`;
+    document.body.append(floatEl);
+  }
+  src.classList.add('held');
+  floatEl.style.transform = `translate(${e.clientX}px, ${e.clientY}px) translate(-50%, -80%) scale(.85)`;
+}
 window.addEventListener('pointermove', e => {
   const d = B.drag; if (!d || d.id !== e.pointerId) return;
-  if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 12) d.moved = true;
-  if (d.moved) B.ghost = fieldPos(e);
+  if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) d.moved = true;
+  if (!d.moved) return;
+  const pos = dragPos(e);
+  B.ghost = pos; floatCard(pos ? null : e);
 });
 const endDrag = e => {
   const d = B.drag; if (!d || d.id !== e.pointerId) return;
-  B.drag = null;
+  B.drag = null; floatCard(null);
   if (e.type === 'pointercancel') { B.ghost = null; return; }
-  if (d.moved) { const pos = fieldPos(e); if (pos) tryPlay(pos); B.ghost = null; }
+  if (d.moved) { const pos = dragPos(e); if (pos) tryPlay(pos); B.ghost = null; }
   else if (d.was) B.sel = null; // zweites Antippen hebt die Auswahl auf
 };
 window.addEventListener('pointerup', endDrag);
@@ -1570,7 +1622,7 @@ function finishBattle() {
   const timeout = !B.gaveUp && w !== 'draw' && g.sides[0].crowns === g.sides[1].crowns;
   const questsBefore = P.questsOpen(profile);
   const special = B.opts.mode || B.opts.boss != null;
-  const res = P.applyResult(profile, { winner: w, level: B.level, crowns: g.sides[0].crowns, foeCrowns: g.sides[1].crowns, foe: B.foe, when: Date.now(), training: B.training, mode: B.opts.mode, boss: B.opts.boss, ...B.count });
+  const res = P.applyResult(profile, { winner: w, level: B.level, crowns: g.sides[0].crowns, foeCrowns: g.sides[1].crowns, foe: B.foe, when: Date.now(), training: B.training, mode: B.opts.mode, boss: B.opts.boss, wave: g.waves ? g.waves.n : undefined, ...B.count });
   B.gaveUp = false;
   save();
   sfx(w === 0 ? 'win' : w === 1 ? 'lose' : 'draw');
@@ -1585,6 +1637,10 @@ function finishBattle() {
   if (B.training) d.append(el('p', 'center', 'Übungskampf – Trophäen, Kronen und Truhen bleiben unberührt.'));
   else if (special) {
     d.append(el('p', 'center', `${B.opts.boss != null ? `Bosskampf gegen ${B.foe}` : `Herausforderung „${P.MODES[B.opts.mode].name}“`} – ohne Trophäen.`));
+    if (res.surv) { // Überleben: erreichte Welle, Bestleistung, neu erreichte Meilensteine
+      d.append(el('p', 'center', `<b>Welle ${res.surv.wave}</b> erreicht${res.surv.record ? ' – neue Bestleistung!' : ` · Bestleistung: Welle ${res.surv.best}`}${res.surv.wave < P.SURV_GOAL ? `<br><small>Ab Welle ${P.SURV_GOAL} zählt der Lauf als Sieg.</small>` : ''}`));
+      if (res.surv.fresh.length) d.append(el('div', 'notice', `${res.surv.fresh.length === 1 ? 'Meilenstein' : 'Meilensteine'} erreicht: Welle ${res.surv.fresh.join(', ')}. Die Belohnung wartet unter „Modi“.`));
+    }
     if (res.bossFirst) d.append(el('div', 'notice', `Boss besiegt! +${P.BOSS_REWARD.gems} Runensplitter, ${P.BOSS_REWARD.wild} Wanderscherben und eine große Truhe`));
     if (res.bonus) d.append(el('div', 'notice', `Modus des Tages gewonnen: +${res.bonus} Runensplitter${res.shards && res.shards.shards[0] ? ` und eine Runenscherbe (${CARDS[res.shards.shards[0].id].name})` : res.shards && res.shards.wild ? ' und eine Wanderscherbe' : ''}`));
   } else {

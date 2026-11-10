@@ -1,6 +1,7 @@
 // Spiel-Logik von Runenfurt: reine Simulation ohne Browser-Abhängigkeiten (läuft auch unter node --test).
 // Seite 0 spielt von unten (großes y), Seite 1 von oben. Fester Zeitschritt DT.
 import { UNITS, CARDS, RUNES, FORMS, TOWER_SPELL_FACTOR, HASTE, SLOW_FACTOR, sanitizeDeck } from './cards.js';
+import { evoTick, evoWorld, evoShot, evoImpact, evoStrike, evoHurt, evoDeath } from './evo.js';
 import { HERO_FORMS, formUse, formTick, formWorld, formShot, formStrike, formTowerF, formHurt, formFloor, formDeath, bannerUse } from './helden.js';
 
 // Feldmaße wie im Genre üblich: 18 breit, 32 lang, der Fluss zwei Felder breit in der Mitte.
@@ -66,12 +67,16 @@ function spawn(g, type, side, x, y, extra, lvl = 1) {
 //   runeAlways: [bool, bool]                    Runenkarten kommen jedes Mal in Runenform
 //   passive: [null, { unit, count, every }]     am Hauptturm erscheinen regelmäßig Einheiten
 //   waves: { pool: [kartenIds], lvl }           Seite 1 schickt wachsende Wellen (kein Kartenspiel nötig)
+//          dazu endless: true, goal: n          Überleben: keine Zeitgrenze, alle zehn Wellen eine Stufe stärker, jede fünfte mit Anführer;
+//                                              die Türme der Wellenseite sind unverwundbar, Schluss ist, wenn der eigene Hauptturm fällt;
+//                                              als Sieg zählt der Lauf ab Welle goal
 export function createGame({ decks, levels, seed = 1, duration = 180, overtime = 120, rules = {} } = {}) {
   const g = {
     sudden: !!rules.sudden, kraftFixed: rules.kraftFixed || 0,
-    waves: rules.waves ? { t: 6, n: 0, pool: rules.waves.pool, lvl: rules.waves.lvl || 1 } : null,
+    waves: rules.waves ? { t: 6, n: 0, pool: rules.waves.pool, lvl: rules.waves.lvl || 1, endless: !!rules.waves.endless, goal: rules.waves.goal || 0 } : null,
+    endless: !!(rules.waves && rules.waves.endless),
     seed: seed >>> 0, time: 0, duration, overtime, phase: 'main', over: false, winner: null,
-    ents: [], projs: [], zones: [], events: [], dead: [], byId: new Map(), nextId: 1, sides: [], banners: [], whirls: [], nextGroup: 1,
+    ents: [], projs: [], zones: [], events: [], dead: [], byId: new Map(), nextId: 1, sides: [], banners: [], whirls: [], arcs: [], gusts: [], nextGroup: 1,
   };
   for (let s = 0; s < 2; s++) {
     const deck = sanitizeDeck(decks && decks[s]);
@@ -101,7 +106,7 @@ export const outerTower = (g, side, lane) => g.ents.find(e => e.kind === 'tower'
 export const mainTower = (g, side) => g.ents.find(e => e.main && e.side === side) || null;
 // doppelt in der letzten Minute und in der Verlängerung, dreifach in deren letzter Minute
 export const kraftRate = g => KRAFT_RATE * (g.kraftFixed ? g.kraftFixed : g.time >= g.duration + g.overtime - 60 && g.phase !== 'main' ? 3 : g.phase === 'over' || g.time >= g.duration - 60 ? 2 : 1);
-export const timeLeft = g => (g.phase === 'main' ? g.duration - g.time : g.duration + g.overtime - g.time);
+export const timeLeft = g => (g.endless ? g.time : g.phase === 'main' ? g.duration - g.time : g.duration + g.overtime - g.time);   // Überleben: die Uhr zählt hoch
 
 // ---- Karten ausspielen -------------------------------------------------------------------------
 // Raster, Sperrflächen, nächstes freies Feld, Aufstellung und Auftrittstakt folgen den Regeln des Vorbilds.
@@ -251,10 +256,29 @@ export function cardCost(g, side, id) {
   return last ? CARDS[last].cost + 1 : Infinity;
 }
 
-function castZone(g, id, side, x, y, lvl, delay) {
-  const c = CARDS[id];
-  g.zones.push({ spell: c.spell, card: id, side, x, y, r: c.radius, delay, dur: c.dur || (c.waves ? (c.waves.n - 1) * c.waves.every + 0.01 : c.vines ? c.vines.dur : 0), tickT: c.dot ? c.tick : 0, done: false, mult: cardMult(lvl), lvl,
+// def (freiwillig): eigene Regel statt der Karte – Runenform eines Zaubers oder eine Fläche, die eine Einheit hinterlässt
+function castZone(g, id, side, x, y, lvl, delay, def) {
+  const c = def || CARDS[id];
+  g.zones.push({ spell: c.spell || '', card: id, def: def || null, side, x, y, r: c.radius, delay, dur: c.dur || (c.waves ? (c.waves.n - 1) * c.waves.every + 0.01 : c.vines ? c.vines.dur : 0), tickT: c.dot ? c.tick : 0, done: false, mult: cardMult(lvl), lvl,
     n: 0, t2: c.summonOver ? c.summonOver.first : c.pulses ? c.pulses.first : 0 });
+}
+
+// Fläche einer Einheit (Funken, Gift, Frost, Sog, Antrieb – siehe evo.js): wirkt wie die Zone eines Zaubers
+function zoneAt(g, side, x, y, def, lvl, delay = 0) {
+  castZone(g, '', side, x, y, lvl, delay, def);
+  emit(g, { t: 'aura', x, y, r: def.radius, dur: (def.dur || 0.4) + delay, kind: def.fx || '' });
+}
+// Einschlag mit Lunte an beliebiger Stelle
+function blastAt(g, side, x, y, r, delay, blast) {
+  g.zones.push({ blast, side, x, y, r, delay, dur: 0, done: false });
+  emit(g, { t: 'fuse', x, y, r, delay });
+}
+// Welche Runenform gilt für diese Ausspielung? Der Widerhall in Runenform bringt die Runenform der wiederholten Karte.
+function runeFor(g, side, hid) {
+  const hc = CARDS[hid], S = g.sides[side];
+  if (!hc.mirror) return runeReady(g, side, hid) ? RUNES[hid] : null;
+  const R = S.last && runeReady(g, side, hid) ? RUNES[S.last] : null;
+  return R && !R.mirror ? R : null;
 }
 
 // Was passiert, wenn die Karte bei (x, y) losgelassen wird? Grundlage für playCard und für die Vorschau beim Ziehen.
@@ -269,13 +293,15 @@ export function deployPlan(g, side, cardId, x, y) {
   const hc = CARDS[cardId], S = g.sides[side];
   if (!hc || (hc.mirror && !S.last)) return null;
   const id = hc.mirror ? S.last : cardId, c = CARDS[id];
-  const R = !hc.mirror && runeReady(g, side, id) ? RUNES[id] : null;
+  const R = runeFor(g, side, cardId);
   const p = clampDeploy(g, side, cardId, x, y);
   const out = { x: p.x, y: p.y, ok: !p.blocked, kind: c.type === 'spell' ? 'spell' : c.type === 'building' ? 'building' : 'troop', radius: c.type === 'spell' ? c.radius || 0 : 0, tiles: null, spots: [] };
   if (c.type === 'spell') return out;
   const mixed = c.mix && !R; // gemischter Trupp: die zuerst genannten Einheiten stehen vorn
   const list = mixed ? c.mix.flatMap(([u, n]) => Array(n).fill(u)) : Array((R && R.count) || c.count).fill(R ? R.unit : c.unit);
-  const n1 = mixed ? c.mix[0][1] : list.length, n2 = list.length - n1;
+  const main = list.length;
+  if (R && R.extra) for (const [u, n] of R.extra) for (let i = 0; i < n; i++) list.push(u);   // Begleiter der Runenform stehen hinten
+  const n1 = mixed ? c.mix[0][1] : main, n2 = list.length - n1;
   const f = FORMS[id] || {}, first = UNITS[list[0]];
   if (first.building) { const fp = footprint(first); out.tiles = { x0: p.x - fp / 2, y0: p.y - fp / 2, w: fp, h: fp }; }
   const radius = Math.round((f.r || first.r) * 1000), width = Math.round((f.w || 0) * 1000), col = columnSpan(g, side, cardId, p.x);
@@ -298,12 +324,12 @@ export function playCard(g, side, handIdx, x, y) {
   if (S.kraft < cost || !canDeploy(g, side, hid, x, y)) return false;
   const id = hc.mirror ? S.last : hid, c = CARDS[id]; // Widerhall: die zuletzt gespielte Karte noch einmal
   const lvl = hc.mirror ? (S.levels[hid] || 1) + 1 : S.levels[id] || 1; // … auf der Stufe des Widerhalls plus eins
-  const R = !hc.mirror && runeReady(g, side, id) ? RUNES[id] : null;
+  const R = runeFor(g, side, hid), pack = g.nextGroup++;
   const plan = deployPlan(g, side, hid, x, y); // vor dem Weiterzählen des Runenzyklus: der Plan fragt selbst nach der Runenform
   const form = !hc.mirror && S.forms.has(id) ? { id, group: g.nextGroup++ } : null; // Heldenform: die Figuren dieser Ausspielung gehören zusammen
   if (form) S.formLast[id] = form.group;
   x = plan.x; y = plan.y;                      // die Karte landet auf ihrer Kachel
-  if (!hc.mirror && S.runes.has(id) && RUNES[id]) S.cycle[id] = R ? 0 : (S.cycle[id] || 0) + 1;
+  if (S.runes.has(hid) && RUNES[hid]) S.cycle[hid] = runeReady(g, side, hid) ? 0 : (S.cycle[hid] || 0) + 1;
   S.kraft -= cost;
   S.spent += cost;
   if (hc.hero) S.away.push(hid); else S.queue.push(hid); // ein Held kommt erst zurück in den Stapel, wenn er gefallen ist
@@ -311,14 +337,19 @@ export function playCard(g, side, handIdx, x, y) {
   S.next = S.queue.shift();
   if (!hc.mirror && !hc.hero) S.last = hid;
   if (c.type === 'spell') {
-    castZone(g, id, side, x, y, lvl, c.delay);
+    const rc = R && R.spell ? { ...c, ...R.spell } : null;   // Runenform eines Zaubers: die Karte mit geänderten Regeln
+    castZone(g, id, side, x, y, lvl, c.delay, rc);
     if (form) g.zones[g.zones.length - 1].form = form;
+    if (rc && rc.twin) { // zweiter Sack spiegelbildlich auf der anderen Feldseite, mit Lockvögeln
+      castZone(g, id, side, W - x, y, lvl, c.delay, { ...c, summon: { ...c.summon, unit: rc.twin } });
+      emit(g, { t: 'cast', spell: c.spell, side, x: W - x, y, r: c.radius, delay: c.delay, echo: !!hc.mirror });
+    }
     emit(g, { t: 'cast', spell: c.spell, side, x, y, r: c.radius, delay: c.delay, echo: !!hc.mirror });
   } else {
     const home = mainTower(g, side);
     for (const s of plan.spots) { // die Figuren eines Trupps erscheinen kurz nacheinander
       const d = UNITS[s.unit], dig = d.tunnel && home ? Math.hypot(s.x - home.x, s.y - home.y) / d.tunnel : 0; // wer gräbt, braucht vom eigenen Hauptturm bis zum Ziel seine Zeit
-      spawn(g, s.unit, side, s.x, s.y, { deployT: (d.deploy || 1) + s.wait, cardId: c.hero ? id : '', ...(dig ? { digT: dig, hidden: true } : {}), ...(form ? { formId: form.id, formGroup: form.group, hero: true } : {}) }, lvl);
+      spawn(g, s.unit, side, s.x, s.y, { deployT: (d.deploy || 1) + s.wait, cardId: c.hero ? id : '', ...(dig ? { digT: dig, hidden: true } : {}), ...(form ? { formId: form.id, formGroup: form.group, hero: true } : {}), pack }, lvl);
     }
     emit(g, { t: 'deploy', side, x, y, card: id, rune: !!R, hero: !!c.hero || !!form, echo: !!hc.mirror });
   }
@@ -442,7 +473,9 @@ function die(g, e) {
 // src: die angreifende Einheit (fehlt bei Zaubern) – nur sie kann einen Rückschlag abbekommen
 function damage(g, e, amount, bySide, src) {
   if (e.digT > 0) return; // unter der Erde trifft nichts
+  if (g.endless && e.kind === 'tower' && e.side === 1) return;   // Überleben: die Türme der Wellenseite sind unverwundbar
   if (e.hp <= 0 || g.over) return;
+  if ((e.ghost || e.veilT > 0 || e.d.veil) && !(amount = evoHurt(EVO_API, g, e, amount))) return;   // Geister, Schatten und der Schleier der Krähen
   if ((e.buried && !g.deep) || (e.charging && e.d.dashGuard)) return; // vergraben oder mitten im Sprung: nichts trifft (g.deep: Frost und Beben reichen auch unter die Erde)
   const rf = e.d.reflect;
   if (rf && src && src.hp > 0 && src.side !== e.side && edgeDist(src, e) <= rf.r) { // Dornen schlagen auf nahe Angreifer zurück
@@ -485,6 +518,7 @@ function processDeaths(g) {
     const e = g.dead.shift(), d = e.d;
     if (e.cardId) { const S = g.sides[e.side], i = S.away.indexOf(e.cardId); if (i >= 0) { S.away.splice(i, 1); S.queue.push(e.cardId); } }
     if (g.over) continue;
+    evoDeath(EVO_API, g, e);
     // Seelen (Wurzelkönig): jede gefallene Truppe in ihrer letzten Gestalt zählt, gleich von welcher Seite – keine Abbilder, keine Gebäude
     if (e.kind === 'unit' && !e.clone && (!d.deathSpawn || d.second)) for (const k of g.ents) if (k.hp > 0 && k.cardId && CARDS[k.cardId].ability.souls) k.souls = Math.min(CARDS[k.cardId].ability.souls, k.souls + 1);
     if (e.reborn) continue;   // der wiedergeschlüpfte Glutfalke verbrennt nichts mehr und legt kein Ei
@@ -576,6 +610,7 @@ function morph(g, u) {
 
 function finish(g, winner) {
   if (g.over) return;
+  if (g.endless) winner = g.waves.n >= g.waves.goal ? 0 : 1;   // Überleben: gewonnen hat, wer das Ziel erreicht hat, bevor sein Hauptturm fiel
   g.over = true;
   g.winner = winner;
   g.phase = 'end';
@@ -600,6 +635,7 @@ function areaDamage(g, side, x, y, radius, dmg, hitsAir, towerFactor = 1, slow =
   for (const e of g.ents) {
     if (e.side === side || e.hp <= 0 || (e.air && !hitsAir)) continue;
     if (Math.hypot(e.x - x, e.y - y) > radius + e.r) continue; // getroffen ist, wessen Trefferfläche den Kreis berührt
+    if (o && o.skip) { if (o.skip.has(e.id)) continue; o.skip.add(e.id); }   // skip: wen dieses Geschoss schon getroffen hat
     if (slow && e.kind === 'unit') e.slowT = Math.max(e.slowT, slow);
     if (o && o.knock && canKnock(e)) push(e, o.kx === undefined ? e.x - x : o.kx, o.kx === undefined ? e.y - y : o.ky, o.knock);
     damage(g, e, e.kind === 'tower' ? dmg * towerFactor : e.kind === 'building' && o && o.buildF ? dmg * o.buildF : dmg, side, o ? o.src : undefined);
@@ -618,6 +654,7 @@ function shoot(g, u, t, dmg) {
   g.projs.push({ x: u.x, y: u.y, ox: u.x, oy: u.y, sx: u.x, sy: u.y, tx: t.x, ty: t.y, targetId: t.id, speed: u.proj, dmg, splash: u.splash, slow: u.d.slow || 0, stun: u.d.stunHit || 0, root: 0,
     curse: u.d.curse ? { ...u.d.curse, side: u.side, lvl: u.lvl } : null, burst: u.d.burst || null, hitSpawn: u.d.hitSpawn ? { ...u.d.hitSpawn, lvl: u.lvl } : null,
     side: u.side, hitsAir: u.hitsAir, from: u.model, rune: u.rune, air: u.air || t.air, srcId: u.id });
+  if (u.d.rune) { const p = g.projs[g.projs.length - 1]; p.evo = evoShot(u); p.lvl = u.lvl; if (p.evo && p.evo.bounce) p.skip = new Set(); }
 }
 
 // Blitz, der vom Ziel aus auf die jeweils nächsten Gegner überspringt
@@ -625,7 +662,7 @@ function chainHit(g, u, t, dmg) {
   const c = u.d.chain, hits = [], seen = new Set();
   let cur = t;
   while (cur && hits.length < c.n) {
-    seen.add(cur.id); hits.push({ x: cur.x, y: cur.y, air: cur.air });
+    seen.add(cur.id); hits.push({ x: cur.x, y: cur.y, air: cur.air }); u.chainLast = cur.id; u.chainN = hits.length;
     if (u.d.stunHit && cur.kind !== 'tower') stun(cur, u.d.stunHit);
     damage(g, cur, dmg, u.side, u);
     let best = null, bd = c.r;
@@ -680,6 +717,7 @@ function strike(g, u, t) {
   if (u.formMode === 'wirbel') return;                      // im Klingenwirbel schlägt sie nicht einzeln zu – der Wirbel trifft
   u.anim = 0.3;
   if (u.formMode && formShot(FORM_API, g, u, t)) return;    // Standwurf
+  const cloaked = !!d.stealth && u.revealT <= 0;            // schlägt aus der Unsichtbarkeit zu
   let dmg = u.dmg, knock = 0;
   if (u.formMode && t.kind === 'tower') dmg = Math.round(dmg * formTowerF(u));
   const melee = !!d.melee && !t.air && edgeDist(u, t) <= d.melee.range;   // Schützenbund: aus der Nähe wird mit dem Bajonett zugestochen
@@ -751,6 +789,7 @@ function strike(g, u, t) {
   if (d.leech) { u.leechN = d.leech.pulses; u.leechT = 0; }
   if (d.rageTrail) u.trailN = (u.trailN || 0) + 1;
   if (u.formId) formStrike(FORM_API, g, u, t);
+  if (d.rune) evoStrike(EVO_API, g, u, t, cloaked);
   u.rampIdle = 0;
 }
 
@@ -785,6 +824,8 @@ const bankOf = y => (y < RIVER_TOP ? -1 : y > RIVER_BOT ? 1 : 0);
 const offRiver = y => (y > RIVER_TOP - 0.4 && y < RIVER_BOT + 0.4 ? (y < (RIVER_TOP + RIVER_BOT) / 2 ? RIVER_TOP - 0.4 : RIVER_BOT + 0.4) : y);
 // Was die Heldenformen (helden.js) vom Spielkern brauchen
 const FORM_API = { spawn, damage, areaDamage, stun, emit, cardMult, offRiver, W, H };
+// … und die Runenformen der zweiten Gruppe (evo.js)
+const EVO_API = { spawn, damage, areaDamage, stun, emit, cardMult, offRiver, W, H, RIVER_TOP, RIVER_BOT, die, push, snare, zoneAt, blastAt, canKnock: e => canKnock(e) };
 
 // Nächster Wegpunkt für Bodentruppen: über die Brücke, wenn das Ziel auf der anderen Flussseite liegt.
 export function waypoint(u, tx, ty) {
@@ -941,6 +982,7 @@ function updateEnt(g, u, dt) {
     return;
   }
   if (u.formId) formTick(FORM_API, g, u, dt);
+  if (evoTick(EVO_API, g, u, dt)) return;
   if (u.hotN > 0) { // Heilung in Schüben
     u.hotT -= dt;
     if (u.hotT <= 0) {
@@ -949,7 +991,7 @@ function updateEnt(g, u, dt) {
       if (u.hp < u.maxHp) { u.hp = Math.min(u.maxHp, u.hp + amt); emit(g, { t: 'heal', x: u.x, y: u.y }); }
     }
   }
-  if (u.groundT > 0) { u.groundT -= dt; if (u.groundT <= 0) u.air = !!d.air; }   // von Ranken heruntergeholt: danach wieder in der Luft
+  if (u.groundT > 0) { u.groundT -= dt; if (u.groundT <= 0) u.air = !!d.air && !u.landed; }   // von Ranken heruntergeholt: danach wieder in der Luft
   if (u.snareT > 0) u.snareT -= dt;
   if (u.summonN > 0) { // Seelenruf: einer nach dem anderen steigt aus dem Boden
     u.summonT -= dt;
@@ -972,7 +1014,7 @@ function updateEnt(g, u, dt) {
     if (u.pulseCd > 0) u.pulseCd -= dt;
     if (was && !u.buried && d.surfaceDmg && !(u.pulseCd > 0)) groundPulse(g, u, d.surfaceDmg);   // Evolution: Stoß bei jedem Auftauchen
   }
-  u.hidden = u.cloakT > 0 || (!!d.stealth && u.revealT <= 0) || u.buried;
+  u.hidden = u.cloakT > 0 || (!!d.stealth && u.revealT <= 0) || u.buried || !!u.ghost || !!u.cagedBy;
   if (u.rootT > 0) u.rootT -= dt;
   if (u.slowT > 0) u.slowT -= dt;
   if (u.dropNow) { // Evolution: lässt bei dieser Lebensschwelle eine erste Fracht fallen (mit Todesschaden)
@@ -1145,7 +1187,7 @@ function updateEnt(g, u, dt) {
          if (!u.charging && u.runT >= d.charge.after) { u.charging = true; emit(g, { t: 'charge', x: u.x, y: u.y }); } }
       const [wx, wy] = routePoint(g, u, t);
       const dx = wx - u.x, dy = wy - u.y, len = Math.hypot(dx, dy) || 1;
-      const stepLen = Math.min(u.speed * rate * (u.snareT > 0 ? u.snareF : 1) * (u.cloakT > 0 ? u.cloakSlow || 1 : 1) * (u.charging ? (d.charge || d.leap).speed : 1) * dt, len);
+      const stepLen = Math.min(u.speed * rate * (u.snareT > 0 ? u.snareF : 1) * (u.cloakT > 0 ? u.cloakSlow || 1 : 1) * (u.gustT > 0 ? u.gustF : 1) * (u.charging ? (d.charge || d.leap).speed : 1) * dt, len);
       u.vx = dx / len; u.vy = dy / len;
       u.x += u.vx * stepLen; u.y += u.vy * stepLen;
       if (Math.abs(dx) > 0.05) u.face = dx > 0 ? 1 : -1;
@@ -1212,15 +1254,15 @@ function updateZones(g, dt) {
         z.done = true;
         emit(g, { t: 'burst', x: z.x, y: z.y, r: z.r, side: z.side, big: !z.blast.stun, frost: !!z.blast.ice });
         if (z.blast.stun) for (const e of g.ents) if (e.side !== z.side && e.hp > 0 && Math.hypot(e.x - z.x, e.y - z.y) <= z.r + e.r) { stun(e, z.blast.stun); if (z.blast.ice) e.iceT = z.blast.stun; }
-        areaDamage(g, z.side, z.x, z.y, z.r, z.blast.dmg, true, z.blast.tf || 1, z.blast.slow);
+        areaDamage(g, z.side, z.x, z.y, z.r, z.blast.dmg, true, z.blast.tf || 1, z.blast.slow, z.blast.knock ? { knock: z.blast.knock } : null);
       }
       continue;
     }
-    const c = CARDS[z.card];
+    const c = z.def || CARDS[z.card];
     if (z.delay > 0) { z.delay -= dt; if (z.delay > 0) continue; }
     if (!z.hit) {
       z.hit = true;
-      emit(g, { t: 'spell', spell: z.spell, side: z.side, x: z.x, y: z.y, r: z.r });
+      if (z.spell) emit(g, { t: 'spell', spell: z.spell, side: z.side, x: z.x, y: z.y, r: z.r });
       const dmg = Math.round((c.dmg || 0) * z.mult);
       if (c.strikes) { // Blitze auf die zähesten Gegner im Kreis
         const top = g.ents.filter(e => e.side !== z.side && e.hp > 0 && inZone(z, e)).sort((p, q) => q.hp - p.hp || p.id - q.id).slice(0, c.strikes);
@@ -1239,6 +1281,7 @@ function updateZones(g, dt) {
         if (dmg) areaDamage(g, z.side, z.x, z.y, z.r, dmg, true, c.towerF ?? TOWER_SPELL_FACTOR, c.slow || 0, c.knock ? (c.knockOut ? { knock: c.knock } : { knock: c.knock, kx: 0, ky: z.side === 0 ? -1 : 1 }) : null);
         g.deep = false;
         if (c.waves) { z.n = 1; z.t2 = c.waves.every; }
+        if (c.carry) g.projs.push({ line: true, carry: true, x: z.x, y: z.y, ox: z.x, oy: z.y, vx: 0, vy: z.side === 0 ? -1 : 1, left: c.carry.len, w: z.r * 2, speed: c.carry.speed, dmg: 0, knock: 0, side: z.side, hitsAir: true, from: z.spell, hit: new Set(), towerFactor: 0 });   // Runenform: die Kugel rollt weiter und schleppt mit
       }
       if (c.clone) for (const e of [...g.ents]) { // Trugbild: jede eigene Truppe im Kreis bekommt ein Abbild
         if (e.side !== z.side || e.kind !== 'unit' || e.hp <= 0 || e.hero || e.clone || !e.speed || !inZone(z, e)) continue;
@@ -1256,6 +1299,7 @@ function updateZones(g, dt) {
       z.t2 -= dt;
       if (z.t2 <= 1e-9) {
         z.t2 += c.waves.every; z.n++;
+        if (c.waves.grow) { z.r += c.waves.grow; if (c.stun) for (const e of g.ents) if (e.side !== z.side && e.kind !== 'tower' && e.hp > 0 && inZone(z, e)) stun(e, c.stun); }   // Runenform: der Kreis wächst und betäubt erneut
         emit(g, { t: 'spell', spell: z.spell, side: z.side, x: z.x, y: z.y, r: z.r, wave: z.n });
         areaDamage(g, z.side, z.x, z.y, z.r, Math.round(c.dmg * z.mult), true, c.towerF ?? TOWER_SPELL_FACTOR);
       }
@@ -1325,6 +1369,14 @@ function updateProjs(g, dt) {
     if (p.line) {
       const stepLen = Math.min(p.speed * dt, p.left);
       p.x += p.vx * stepLen; p.y += p.vy * stepLen; p.left -= stepLen;
+      if (p.carry) { // rollende Eiskugel: schleppt jede gegnerische Truppe in ihrer Bahn mit und gibt sie am Ende frei
+        for (const e of g.ents) {
+          if (e.side === p.side || e.kind !== 'unit' || e.hp <= 0 || e.ghost || Math.hypot(e.x - p.x, e.y - p.y) > p.w / 2 + e.r) continue;
+          p.hit.add(e.id); e.x = clamp(e.x + p.vx * stepLen, 0.4, W - 0.4); e.y = clamp(e.y + p.vy * stepLen, 0.4, H - 0.4); stun(e, 0.15);
+        }
+        if (p.left <= 1e-6) { p.done = true; for (const id of p.hit) { const e = g.byId.get(id); if (e && e.hp > 0) { if (!e.air) e.y = offRiver(e.y); e.ox = e.x; e.oy = e.y; e.rt = null; } } }
+        continue;
+      }
       for (const e of g.ents) {
         if (e.side === p.side || e.hp <= 0 || p.hit.has(e.id) || (e.air && !p.hitsAir)) continue;
         const rx = e.x - p.x, ry = e.y - p.y, along = rx * p.vx + ry * p.vy, across = Math.abs(rx * p.vy - ry * p.vx);
@@ -1360,6 +1412,7 @@ function updateProjs(g, dt) {
         continue;
       }
       p.done = true;
+      if (p.evo) evoImpact(EVO_API, g, p, alive ? t : null);
       if (p.hitSpawn) for (let i = 0; i < p.hitSpawn.count; i++) spawn(g, p.hitSpawn.unit, p.side, clamp(p.tx + (i - (p.hitSpawn.count - 1) / 2) * 0.6, 0.4, W - 0.4), offRiver(clamp(p.ty, 0.4, H - 0.4)), { deployT: p.hitSpawn.deploy ?? 0.3 }, p.hitSpawn.lvl);   // Evolution: mit dem Geschoss landet jemand
       if (p.burst) { // zerspringt am Ziel; die Kerne fliegen in der Schussrichtung weiter
         // jeder Splitter ist ein eigenes Geschoss und trifft für sich: nah am Einschlag treffen alle, weiter hinten nur einzelne
@@ -1369,7 +1422,7 @@ function updateProjs(g, dt) {
           g.projs.push({ line: true, x: p.tx - (bx / L) * 0.5, y: p.ty - (by / L) * 0.5, ox: p.tx, oy: p.ty, vx, vy, left: p.burst.len, len: p.burst.len, back: false, w: p.burst.w, speed: p.burst.speed || 13, dmg: p.dmg, knock: 0,
             side: p.side, hitsAir: p.hitsAir, from: p.from + '_kern', hit: new Set(), towerFactor: 1, srcId: p.srcId });
         }
-      } else if (p.splash) areaDamage(g, p.side, p.tx, p.ty, p.splash, p.dmg, p.hitsAir, p.towerF ?? 1, p.slow, { src });
+      } else if (p.splash) areaDamage(g, p.side, p.tx, p.ty, p.splash, p.dmg, p.hitsAir, p.towerF ?? 1, p.slow, { src, skip: p.skip });
       else if (alive) {
         if (p.slow && t.kind === 'unit') t.slowT = Math.max(t.slowT, p.slow);
         if (p.stun && t.kind !== 'tower') stun(t, p.stun);
@@ -1421,17 +1474,24 @@ export function step(g, dt = DT) {
     const wv = g.waves;
     wv.t -= dt;
     if (wv.t <= 0) {
-      wv.n++; wv.t = Math.max(7, 12 - wv.n * 0.4);
-      let budget = 4 + wv.n * 1.3;
+      wv.n++; wv.t = wv.endless ? Math.max(8, 11 - wv.n * 0.1) : Math.max(7, 12 - wv.n * 0.4);
+      let budget = wv.endless ? 3 + wv.n * 0.45 : 4 + wv.n * 1.3;   // Überleben wächst langsamer, dafür ohne Ende
       const lanes = wv.n % 4 === 0 ? [0, 1] : [wv.n % 2];
-      emit(g, { t: 'wave', n: wv.n });
+      const boss = wv.endless && wv.n % 5 === 0, lvl = wv.lvl + (wv.endless ? Math.floor(wv.n / 10) : 0);   // Überleben: alle zehn Wellen eine Stufe stärker
+      if (wv.endless) g.kraftFixed = wv.n >= 20 ? 3 : wv.n >= 10 ? 2 : 1;                                   // … dafür fließt die Kraft ab Welle 10 doppelt, ab Welle 20 dreifach
+      emit(g, { t: 'wave', n: wv.n, boss, lvl });
+      if (boss) { // jede fünfte Welle führt die teuerste Truppe aus dem Vorrat an
+        const id = wv.pool.reduce((a, b) => (CARDS[b].cost > CARDS[a].cost ? b : a)), c = CARDS[id], x = BRIDGES[wv.n % 2], units = c.mix ? c.mix.flatMap(([u, n]) => Array(n).fill(u)) : Array(c.count).fill(c.unit);
+        formation(units.length, 0.5, 1).forEach(([dx, dy], i) => spawn(g, units[i], 1, clamp(x + dx, 0.4, W - 0.4), clamp(5 + dy, 0.4, RIVER_TOP - 0.5), { deployT: 1 }, lvl + 1));
+        emit(g, { t: 'deploy', side: 1, x, y: 5, card: id, hero: true });
+      }
       for (let k = 0; budget >= 1 && k < 14; k++) {
         const id = wv.pool[Math.floor(rnd(g) * wv.pool.length)], c = CARDS[id];
         if (c.cost > budget + 0.5 && k < 9) continue;
         budget -= c.cost;
         const x = BRIDGES[lanes[k % lanes.length]] + (rnd(g) - 0.5) * 3, y = 4 + rnd(g) * 5;
         const units = c.mix ? c.mix.flatMap(([u, n]) => Array(n).fill(u)) : Array(c.count).fill(c.unit);
-        formation(units.length, 0.5, 1).forEach(([dx, dy], i) => spawn(g, units[i], 1, clamp(x + dx, 0.4, W - 0.4), clamp(y + dy, 0.4, RIVER_TOP - 0.5), { deployT: 1 }, wv.lvl));
+        formation(units.length, 0.5, 1).forEach(([dx, dy], i) => spawn(g, units[i], 1, clamp(x + dx, 0.4, W - 0.4), clamp(y + dy, 0.4, RIVER_TOP - 0.5), { deployT: 1 }, lvl));
         emit(g, { t: 'deploy', side: 1, x, y, card: id });
       }
     }
@@ -1439,6 +1499,7 @@ export function step(g, dt = DT) {
   for (const e of g.ents) { e.ox = e.x; e.oy = e.y; }
   updateZones(g, dt);
   formWorld(FORM_API, g, dt);
+  evoWorld(EVO_API, g, dt);
   for (let i = 0, n = g.ents.length; i < n; i++) { const e = g.ents[i]; if (e.hp > 0) updateEnt(g, e, dt); }
   separate(g);
   updateProjs(g, dt);
@@ -1449,6 +1510,7 @@ export function step(g, dt = DT) {
   }
   if (g.over) return;
   const [a, b] = g.sides;
+  if (g.endless) return;   // Überleben endet nur mit dem eigenen Hauptturm
   if (g.phase === 'main' && g.time >= g.duration) {
     if (a.crowns !== b.crowns) finish(g, a.crowns > b.crowns ? 0 : 1);
     else if (g.waves) finish(g, 0); // durchgehalten

@@ -31,14 +31,23 @@ export async function unitIndex() {
   return index;
 }
 const ver = name => (stand[name] ? '?v=' + stand[name] : '');
+// Wie groß die Bildtafeln auf die Grafikkarte kommen. Sie sind für 80 Bildpunkte je Feld gezeichnet; ein Handy zeigt 40 bis 60.
+// Voll aufgelöst und mit Mipmaps braucht eine Figur rund 29 MB Grafikspeicher – zwei Decks sprengen damit jedes Handy.
+//   scale: Maßstab der Farbtafel · mask: Maßstab der Teamfarben-Tafel · mips: Verkleinerungsstufen (nur für sehr kleine Fenster)
+let texMode = { scale: 1, mask: 1, mips: false };
+export function setTexMode(m) { texMode = { ...texMode, ...m }; }
+const shrink = (img, k) => { const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(img.width * k)); cv.height = Math.max(1, Math.round(img.height * k)); const c = cv.getContext('2d'); c.imageSmoothingQuality = 'high'; c.drawImage(img, 0, 0, cv.width, cv.height); return cv; };
 export function loadUnit(name) {
   if (!defs.has(name)) defs.set(name, (async () => {
     const info = await (await fetch(`${ASSETS}units/${name}.json${ver(name)}`)).json();
     if (!info) throw new Error('Bildfolge nicht gespeichert: ' + name);   // Antwort des Service Workers ohne Netz
     const L = new THREE.TextureLoader();
-    const [tex, mask] = await Promise.all([L.loadAsync(`${ASSETS}units/${name}.webp${ver(name)}`), L.loadAsync(`${ASSETS}units/${name}_m.webp${ver(name)}`)]);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    for (const t of [tex, mask]) { t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = 2; }
+    const raw = await Promise.all([L.loadAsync(`${ASSETS}units/${name}.webp${ver(name)}`), L.loadAsync(`${ASSETS}units/${name}_m.webp${ver(name)}`)]);
+    await Promise.all(raw.map(t => (t.image && t.image.decode ? t.image.decode().catch(() => {}) : null)));   // entpacken, bevor die Figur gebraucht wird – nicht erst beim ersten Zeichnen
+    const mode = texMode, fit = (t, k) => { if (k >= 1) return t; const c = new THREE.CanvasTexture(shrink(t.image, k)); t.dispose(); return c; };
+    const tex = fit(raw[0], mode.scale), mask = fit(raw[1], mode.mask);
+    tex.colorSpace = THREE.SRGBColorSpace; tex.premultiplyAlpha = true;   // vormultipliziert: keine dunklen Säume an den Rändern, auch verkleinert
+    for (const t of [tex, mask]) { t.generateMipmaps = mode.mips; t.minFilter = mode.mips ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = mode.mips ? 2 : 1; }
     const [AW, AH] = info.size, k = SCALE / info.ppu;
     info.h *= SCALE; info.stride = (info.stride || 0.85) * SCALE;
     info.rect = info.frames.map(f => [f[0] / AW, 1 - (f[1] + f[3]) / AH, (f[0] + f[2]) / AW, 1 - f[1] / AH]);
@@ -116,6 +125,7 @@ const FRAG = `
     vec4 c = texture2D(map, vUv);
     if (uSolid > 0.5) { if (c.a < 0.5) discard; gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0); return; }   // nur für die Verdeckungsprüfung
     if (c.a < 0.004) discard;
+    c.rgb /= c.a;                                             // die Farbtafel ist vormultipliziert
     vec3 m = texture2D(mask, vUv).rgb;
     vec3 col = c.rgb, k = c.rgb / 0.693;                      // Teamflächen sind neutral grau gerendert: Helligkeit mal Teamfarbe
     col = mix(col, k * uMain, m.r); col = mix(col, k * uDark, m.g);

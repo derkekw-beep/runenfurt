@@ -116,7 +116,7 @@ function cardOfGroup(counts) {
       const key = c.mix ? c.mix.map(([k, n]) => `${k}*${n}`).sort().join('+') : `${c.unit}*${c.count || 1}`;
       if (!REV.has(key)) REV.set(key, id);
       const R = RUNES[id];
-      if (R) REV.set(`${R.unit}*${R.count || c.count || 1}`, id);
+      if (R && R.unit) REV.set(`${R.unit}*${R.count || c.count || 1}`, id);
     }
   }
   return REV.get([...counts].map(([k, n]) => `${k}*${n}`).sort().join('+')) || '';

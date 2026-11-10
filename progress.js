@@ -117,7 +117,7 @@ export function newProfile() {
     v: 2, trophies: 0, best: 0, arena: 0, gold: 0, gems: 0, xp: 0, cards, decks, slot: 0, deck: decks[0], level: 'leicht', sound: true,
     wins: 0, losses: 0, draws: 0, seenHelp: false, name: 'Runenwächter', set: newSet(), stats: newStats(), log: [],
     runes: {}, wild: 0, road: [], day: '', quests: [], shop: { bought: [], gift: false }, wish: '', bosses: [], modeDay: '', towerSel: DEFAULT_TOWER,
-    jk: newJokers(), potions: 0, boosts: {}, stash: [], dayWins: 0, modeWins: 0, season: newSeason(), coll: [], mast: {}, note: null, slots: 1, heroCoins: 0, forms: {},
+    jk: newJokers(), potions: 0, boosts: {}, stash: [], dayWins: 0, modeWins: 0, season: newSeason(), coll: [], mast: {}, note: null, slots: 1, heroCoins: 0, forms: {}, surv: { best: 0, got: [], runs: 0 },
   };
 }
 
@@ -202,6 +202,7 @@ export function loadProfile(raw) {
   if (typeof d.modeDay === 'string') p.modeDay = d.modeDay.slice(0, 10);
   if (TOWER_IDS.includes(d.towerSel) && p.cards[d.towerSel]) p.towerSel = d.towerSel;
   if (Array.isArray(d.road)) p.road = [...new Set(d.road.filter(a => ROAD.some(r => r.at === a)))];
+  if (d.surv && typeof d.surv === 'object') p.surv = { best: Math.max(0, Math.floor(num(d.surv.best, 0))), got: Array.isArray(d.surv.got) ? [...new Set(d.surv.got.filter(a => SURV.some(m => m.at === a)))] : [], runs: num(d.surv.runs, 0) };
   if (typeof d.day === 'string') p.day = d.day.slice(0, 10);
   if (Array.isArray(d.quests)) p.quests = d.quests.filter(q => q && QUESTS[q.id]).slice(0, 3).map(q => ({ id: q.id, need: Math.max(1, num(q.need, 1)), have: num(q.have, 0), claimed: !!q.claimed }));
   if (d.shop && typeof d.shop === 'object') p.shop = { bought: Array.isArray(d.shop.bought) ? d.shop.bought.filter(i => Number.isInteger(i) && i >= 0 && i < 8) : [], gift: !!d.shop.gift, ...(d.shop.wild ? { wild: true } : {}) };
@@ -715,6 +716,7 @@ export function applyResult(p, res, rnd = Math.random) {
   // out.crowns = Kronen für den Runenpfad (mit Bonuskronen), out.tiers = dadurch abgeschlossene Stufen, out.marks = Furtmarken
   const out = { delta: 0, chest: null, lucky: null, prize: null, crowns: 0, bonusCrowns: 0, tiers: 0, marks: 0, arenaUp: null, newCards: [], gems: 0, bonus: 0, bossFirst: false };
   if (res.training) return out; // Übungskampf: zählt nicht
+  if (res.mode === 'ansturm' && res.wave != null) out.surv = survRun(p, res.wave);   // Überleben: erreichte Welle und Bestleistung
   const ranked = !res.mode && res.boss == null; // nur der normale Kampf zählt für Trophäen
   const st = p.stats;
   for (const [id, n] of Object.entries(res.played || {})) if (CARDS[id]) { st.played[id] = (st.played[id] || 0) + n; st.cards += n; }
@@ -775,14 +777,14 @@ export function applyResult(p, res, rnd = Math.random) {
 }
 
 // ---- Trophäenweg: alle 100 Trophäen eine Belohnung, abzuholen sobald die Bestmarke reicht -----------
-// Sechs Arten im Wechsel: Gold, Kartenwahl (eine von zwei Karten der Arena), Schicksalstruhe, Runensplitter, Joker,
+// Sechs Arten im Wechsel: Gold, Kartenwahl (eine von zwei Karten der Arena), Schicksalstruhe, Runensplitter oder Heldenmünzen, Joker,
 // und als sechstes abwechselnd Runensplitter mit Wanderscherbe oder eine Runenkiste.
 export const ROAD = Array.from({ length: 50 }, (_, i) => {
   const at = (i + 1) * 100, a = arenaIndex(at), k = i % 6;
   if (k === 0) return { at, t: 'gold', n: 80 + a * 30 };
   if (k === 1) return { at, t: 'choice', units: 16 + a * 6 };
   if (k === 2) return { at, t: 'lucky', s: 2 };
-  if (k === 3) return { at, t: 'gems', n: 10 };
+  if (k === 3) return i % 12 === 9 ? { at, t: 'hero', n: 25 } : { at, t: 'gems', n: 10 };   // jeder zweite dieser Meilensteine bringt Heldenmünzen (1 000, 2 200, 3 400, 4 600)
   if (k === 4) return i % 12 === 4 ? { at, t: 'jk', r: 'gewoehnlich', n: 10 + a * 4 } : { at, t: 'jk', r: 'selten', n: 4 + a * 2 };
   return i % 12 === 5 ? { at, t: 'gems', n: 10, wild: 1 } : { at, t: 'runebox' };
 });
@@ -947,12 +949,33 @@ export const MODES = {
   dreifach: { name: 'Dreifache Kraft',  text: 'Die Kraft fließt von Anfang an dreimal so schnell. Teure Karten, volles Feld.' },
   tod:      { name: 'Plötzlicher Tod',  text: 'Der erste zerstörte Turm entscheidet das Spiel sofort.' },
   spiegel:  { name: 'Spiegelkampf',     text: 'Der Gegner spielt genau dein Deck – auf gleicher Stufe.' },
-  ansturm:  { name: 'Ansturm',          text: 'Kein Gegner mit Karten, sondern immer stärkere Wellen. Halte drei Minuten durch, ohne mehr Türme zu verlieren als du zerstörst.' },
+  ansturm:  { name: 'Überleben',        text: 'Wellen ohne Ende: alle zehn eine Stufe stärker, jede fünfte mit Anführer. Schluss ist, wenn dein Hauptturm fällt. Ab Welle 10 zählt der Lauf als Sieg; Meilensteine bringen einmalige Belohnungen.' },
 };
 export const MODE_IDS = Object.keys(MODES);
 export const MODE_BONUS = 5; // Runensplitter für den ersten Sieg des Tages im Modus des Tages
 export const modeOfDay = day => MODE_IDS[hashStr('m' + day) % MODE_IDS.length];
 export const modeBonusOpen = p => p.modeDay !== p.day;
+
+// ---- Überleben (Modus „ansturm“): die erreichte Welle zählt. Meilensteine bringen einmalige Belohnungen. ---------
+export const SURV_GOAL = 10;   // ab dieser Welle zählt ein Lauf als Sieg (Tagessieg, Furtmarken, Modus des Tages)
+export const SURV = [
+  { at: 5, t: 'gold', n: 150 }, { at: 10, t: 'lucky', s: 2 }, { at: 15, t: 'gems', n: 10 }, { at: 20, t: 'jk', r: 'selten', n: 6, grow: true },
+  { at: 25, t: 'hero', n: 20 }, { at: 30, t: 'runebox' }, { at: 35, t: 'lucky', s: 3 }, { at: 40, t: 'gems', n: 15, wild: 1 },
+  { at: 50, t: 'hero', n: 40 }, { at: 60, t: 'lucky', s: 5 },
+];   // der Computer als Spieler kommt mit dem Startdeck auf Welle 13 bis 20
+export const survOpen = p => SURV.filter(m => p.surv.best >= m.at && !p.surv.got.includes(m.at));
+export function claimSurv(p, at, rnd = Math.random) {
+  const m = SURV.find(x => x.at === at);
+  if (!m || p.surv.best < at || p.surv.got.includes(at)) return null;
+  p.surv.got.push(at);
+  return grantReward(p, m, rnd);
+}
+// Einen Lauf verbuchen: Bestleistung und Zahl der Läufe. Gibt zurück, was neu erreicht wurde.
+export function survRun(p, wave) {
+  const before = p.surv.best;
+  p.surv.runs++; p.surv.best = Math.max(before, Math.floor(wave) || 0);
+  return { wave, best: p.surv.best, record: p.surv.best > before, fresh: SURV.filter(m => m.at > before && m.at <= p.surv.best).map(m => m.at) };
+}
 
 // Sonderregeln eines Modus für createGame
 export function modeRules(p, mode) {
@@ -960,7 +983,7 @@ export function modeRules(p, mode) {
   if (mode === 'tod') return { sudden: true };
   if (mode === 'ansturm') {
     const pool = unlockedIds(p).filter(id => CARDS[id].type === 'troop' && !CARDS[id].hero && !CARDS[id].anywhere);
-    return { waves: { pool, lvl: opponentLevels(p, 'mittel').lvl } };
+    return { waves: { pool, lvl: opponentLevels(p, 'mittel').lvl, endless: true, goal: SURV_GOAL } };
   }
   return {};
 }

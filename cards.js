@@ -172,6 +172,34 @@ Object.assign(UNITS, {
   glutofen_r:      rune('glutofen', { spawn: { unit: 'glutling', every: 5, count: 1, first: 5, busy: 2.4 } }),
   funkenpfahl_r:   rune('funkenpfahl', { deployDmg: { dmg: 148, r: 6.0, stun: 0.5, air: true }, surfaceDmg: { dmg: 148, r: 6.0, stun: 0.5, air: true } }),
 });
+// Zweite Gruppe (2026-11-10): die übrigen Evolutionen des Vorbilds. Was die Felder tun, steht in evo.js.
+Object.assign(UNITS, {
+  trugwicht:        { ...UNITS.wicht, hp: 81, dmg: 89, model: 'wicht' },                                   // Lockvögel aus dem zweiten Sack des Wichtwurfs
+  nebelknecht:      { ...UNITS.nebelschleicher, hp: 81, dmg: 81, stealth: 0, rune: true, model: 'nebelschleicher' },
+  kieselschatten:   { ...UNITS.kiesel, speed: MEDIUM, rune: true, model: 'kiesel' },                        // unverwundbar, solange der Feldherr lebt
+  kieselfeldherr:   { ...UNITS.kiesel, shield: 81, atk: 1.0, range: 1.6, lord: true, rune: true, model: 'kiesel' },
+  trommelgeist:     { ...UNITS.trommelschlaeger, deathZone: undefined, towerDmg: 0.5, life: 5.5, rune: true, model: 'trommelschlaeger' },
+  knallfrosch_r:    rune('knallfrosch', { spark: { big: { r: 2.5, dur: 3 }, small: { r: 1.2, dur: 2.5 }, zone: { dot: 48, tick: 0.25, snare: 0.85, towerF: 0.31, fx: 'funken' } } }),
+  kiesel_r:         rune('kiesel', { multiply: { max: 8, wait: 0.5 } }),
+  klingentaenzerin_r: rune('klingentaenzerin', { strikeZone: { radius: 5.5, dur: 0.5, pull: 7, dmg: 84, towerF: 0.44, fx: 'sog' } }),
+  zuendler_r:       rune('zuendler', { bounce: { n: 2, step: 2.5 } }),
+  stammlaeufer_r:   rune('stammlaeufer', { kamikaze: false, charge: { after: 3.5, speed: 2, dmg: 2 }, chargeHit: { dmg: 212, knock: 2 }, ramBack: 2, deathSpawn: { unit: 'raeuber_r', count: 2, wait: 1.0 } }),
+  maulwurfshuegel_r: rune('maulwurfshuegel', { hop: [{ at: 0.66, leave: 2 }, { at: 0.33, leave: 1 }] }),
+  wolfszwinger_r:   rune('wolfszwinger', { cage: { r: 3, atk: 1, dmg: 337 } }),
+  gewitterrochen_r: rune('gewitterrochen', { arc: { after: 3, dmg: 64, r: 4.0, every: 0.3, max: 60 } }),
+  steinschleuder_r: rune('steinschleuder', { barrage: { dmg: 304, r: 2, towerF: 0.29, knock: 1, delay: 1, off: 3 } }),
+  blasrohrwicht_r:  rune('blasrohrwicht', { venom: { levels: [[1, 51], [4, 115], [7, 307]], r: 1.5, towerF: 0.25, dur: 1 } }),
+  trommelschlaeger_r: rune('trommelschlaeger', { ghostAfter: { unit: 'trommelgeist', r: 3 } }),
+  splitterjaeger_r: rune('splitterjaeger', { net: { range: 4, dur: 3, every: 5 } }),
+  rochen_r:         rune('rochen', { gust: { w: 8, h: 9, slow: 0.7, fast: 1.3, linger: 2 } }),
+  kiesel_s:         rune('kiesel', { shade: 'kieselschatten' }),
+  nebelschleicher_r: rune('nebelschleicher', { ambush: { unit: 'nebelknecht', count: 2, dmg: 81, r: 1.0 } }),
+  keiler_r:         rune('keiler', { air: true, glide: { dmg: 115, r: 1.2 } }),
+  kraehe_r:         rune('kraehe', { veil: { dur: 3, rate: 0.67, slow: 0.67 } }),
+  weitschuetzin_r:  rune('weitschuetzin', { frostShot: { every: 2, r: 3, slow: 5.5 }, deathField: { radius: 3, dur: 5.5, dot: 34, tick: 1, slow: 1.2, towerF: 0.25, fx: 'frost' } }),
+  sturmbruder_r:    rune('sturmbruder', { spear: { min: 3.5, max: 5, dmg: 384, cd: 5, trail: { radius: 1, dur: 3, haste: 1, linger: 0.3, fx: 'wut' } } }),
+  dornenkoloss_r:   rune('dornenkoloss', { drain: { every: 6, first: 3.5, r: 6 } }),
+});
 
 export const RUNES = {
   raufbold:      { cycles: 2, unit: 'raufbold_r',      desc: '20 % mehr Leben. Jeder Treffer macht seine Schläge schneller (bis zu dreimal).' },
@@ -197,6 +225,31 @@ export const RUNES = {
   flugsamen:     { cycles: 2, unit: 'flugsamen_r',     desc: 'Ein Viertel mehr Leben und zwei Frachten: die erste fällt bei drei Vierteln Leben, die zweite am Ende.' },
   glutofen:      { cycles: 2, unit: 'glutofen_r',      desc: 'Solange er schießt, hüpft alle 2,4 Sekunden ein Glutling heraus.' },
   funkenpfahl:   { cycles: 2, unit: 'funkenpfahl_r',   desc: 'Beim Aufstellen und bei jedem Auftauchen jagt ein Stromstoß durch sechs Felder Umkreis: Schaden und kurze Betäubung.' },
+  // zweite Gruppe (2026-11-10). Zauber tragen statt einer Einheit ihre geänderten Regeln unter `spell`.
+  knallfrosch:   { cycles: 2, unit: 'knallfrosch_r',   desc: 'Wo der Knaller zerplatzt und wo seine Kerne enden, sprühen sekundenlang Funken: Schaden im Vierteltakt, und wer darin steht, läuft langsamer.' },
+  kieseltrio:    { cycles: 2, unit: 'kiesel_r',        desc: 'Jeder Schlag ruft einen weiteren Kiesel herbei – bis acht beisammen sind.' },
+  klingentaenzerin: { cycles: 2, unit: 'klingentaenzerin_r', desc: 'Jeder Hieb reißt einen halben Atemzug lang alles im weiten Umkreis zu ihr hin und zaust es – am Boden wie in der Luft.' },
+  zuendler:      { cycles: 2, unit: 'zuendler_r',      desc: 'Seine Bombe springt zweimal weiter, je zweieinhalb Felder in gerader Linie, und trifft dort erneut – niemanden zweimal.' },
+  funkenschlag:  { cycles: 2, spell: { waves: { n: 2, every: 0.7, grow: 0.5 } }, desc: 'Der Kreis bleibt stehen, wächst um ein halbes Feld und schlägt ein zweites Mal zu: wieder voller Schaden, wieder betäubt.' },
+  stammlaeufer:  { cycles: 2, unit: 'stammlaeufer_r',  desc: 'Im Anlauf rammt er alles aus dem Weg. Am Ziel zerbricht er nicht, sondern prallt zurück und rammt wieder und wieder – bis er fällt und zwei Flussräuber in Runenform freigibt.' },
+  wichtwurf:     { cycles: 2, spell: { twin: 'trugwicht' }, desc: 'Ein zweiter Sack landet spiegelbildlich auf der anderen Feldseite – voller Lockvögel, die schwächer sind, aber genauso aussehen.' },
+  maulwurfshuegel: { cycles: 2, unit: 'maulwurfshuegel_r', desc: 'Bei zwei Dritteln und einem Drittel Leben taucht er ab, lässt Wichte zurück und kommt eine Vierteldrehung weiter am Turm wieder hoch.' },
+  wolfszwinger:  { cycles: 2, unit: 'wolfszwinger_r',  desc: 'Zieht die nächste Bodentruppe aus drei Feldern in den Käfig. Dort kann sie nichts tun, und der Wolf beißt jede Sekunde zu.' },
+  gewitterrochen: { cycles: 1, unit: 'gewitterrochen_r', desc: 'Nach dem dritten Ziel springt der Blitz schwächer immer weiter – so lange, wie zwei Gegner näher als vier Felder beieinander stehen.' },
+  steinschleuder: { cycles: 2, unit: 'steinschleuder_r', desc: 'Beim Aufstellen regnet es neun Kugeln in zwei Reihen quer übers Feld: Schaden und Rückstoß, am Boden wie in der Luft.' },
+  eiswurf:       { cycles: 2, spell: { knock: 0, carry: { len: 4.5, speed: 5 } }, desc: 'Statt zu stoßen rollt die Kugel viereinhalb Felder weiter und schleppt alle Getroffenen mit.' },
+  blasrohrwicht: { cycles: 2, unit: 'blasrohrwicht_r', desc: 'Seine Pfeile vergiften: Um den Getroffenen liegt Gift, das allem ringsum schadet – ab dem vierten und dem siebten Pfeil deutlich stärker.' },
+  trommelschlaeger: { cycles: 2, unit: 'trommelschlaeger_r', desc: 'Fällt er, kämpft sein Geist im Kreis seiner Trommel weiter: unverwundbar und für Truppen kein Ziel, bis die Trommel verklingt.' },
+  splitterjaeger: { cycles: 2, unit: 'splitterjaeger_r', desc: 'Wirft alle fünf Sekunden ein Netz auf die nächste Truppe: drei Sekunden lang kann sie nichts tun, Flieger liegen so lange am Boden.' },
+  nebelrochen:   { cycles: 2, unit: 'rochen_r',        desc: 'Um ihn weht ein breites Windfeld: Gegner darin laufen 30 % langsamer, Eigene 30 % schneller. Es hält noch zwei Sekunden, wenn er fällt.' },
+  kieselbande:   { cycles: 2, unit: 'kiesel_s', extra: [['kieselfeldherr', 1]], desc: 'Ein Feldherr mit Schild zieht mit. Solange er lebt, kämpft jeder gefallene Kiesel als Schatten weiter – unverwundbar und für Truppen kein Ziel.' },
+  nebelschleicher: { cycles: 2, unit: 'nebelschleicher_r', desc: 'Schlägt er aus dem Nebel zu, stehen zwei Nebelknechte neben dem Ziel und treffen beim Auftauchen alles ringsum.' },
+  keilerrotte:   { cycles: 2, unit: 'keiler_r',        desc: 'Die Keiler kommen geflogen. Erst wenn sie zuschlagen oder getroffen werden, fallen sie zu Boden – und schlagen dabei ein.' },
+  kraehenschwarm: { cycles: 1, unit: 'kraehe_r',       desc: 'Der erste Treffer auf jede Krähe verpufft: Sie verschwindet drei Sekunden lang, ist unverwundbar und in dieser Zeit etwas träger.' },
+  weitschuetzin: { cycles: 2, unit: 'weitschuetzin_r', desc: 'Ihr erster und danach jeder zweite Pfeil bremst alles in drei Feldern Umkreis. Fällt sie, bleibt dort ein Frostfeld zurück, das schadet und bremst.' },
+  sturmbrueder:  { cycles: 1, unit: 'sturmbruder_r',   desc: 'Jeder trägt einen Speer: Auf Bodentruppen in mittlerer Entfernung fliegt er los und hinterlässt eine Spur, die Eigene antreibt. Nach fünf Sekunden ist ein neuer da.' },
+  dornenkoloss:  { cycles: 1, unit: 'dornenkoloss_r',  desc: 'Alle sechs Sekunden geht eine Welle von ihm aus, die jede gegnerische Truppe in sechs Feldern Umkreis eine Stufe kostet.' },
+  widerhall:     { cycles: 2, mirror: true, desc: 'Wiederholt die letzte Karte in ihrer Runenform, wenn sie eine hat.' },
 };
 export const RUNE_LEVEL = 3; // ab dieser Kartenstufe ist die Runenform verfügbar
 

@@ -217,6 +217,12 @@ Object.assign(EVENTS, {
       for (const h of hits) { link(fx, [ev.x, 1.9, ev.y], [h.x, h.air ? 1.5 : 0.5, h.y], '#fff9b0', 3, 0.35, 0.05, 0.28); HITS.magic(fx, { x: h.x, y: h.y, air: h.air }, C, { color: '#fffbd0', glow: '#ffe45a' }); } C.shake(0.12);
     }
   },
+  // Fläche, die eine Einheit hinterlässt (Runenformen der zweiten Gruppe): Funken, Gift, Frost, Sog, Antrieb – Rand und zarte Füllung für die Dauer
+  aura(fx, ev) {
+    const col = { funken: '#ffb347', gift: '#b6e34a', frost: '#9fe3ff', sog: '#e8f1ff', wut: '#ff7a59' }[ev.kind] || '#ffffff', dur = Math.max(0.3, ev.dur || 0.4);
+    fx.zone({ x: ev.x, z: ev.y, r: ev.r, dur, color: col, hdr: 1.3, fill: 0.2 });
+    fx.ring({ x: ev.x, z: ev.y, r0: ev.r * 0.4, r: ev.r, dur: Math.min(0.4, dur), color: col, hdr: 1.6, width: 0.12 });
+  },
   // Banner der gefallenen Wichte (Heldenform): steht fünf Sekunden, solange lässt sich der Bannerruf auslösen
   banner(fx, ev) {
     fx.zone({ x: ev.x, z: ev.y, r: 0.8, dur: 5, color: '#ffd45a', hdr: 1.4, fill: 0.25 });

@@ -105,6 +105,8 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
 #hand { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
 #hand .card { transition: transform .12s, filter .12s; touch-action: none; }
 #hand .card.poor { filter: saturate(.35) brightness(.6); }
+#hand .card.held { opacity: .3; transform: none; box-shadow: none; }   /* die Karte hängt gerade am Finger */
+.card.float { position: fixed; left: 0; top: 0; z-index: 80; margin: 0; pointer-events: none; transition: none; animation: none; box-shadow: 0 12px 26px rgba(0,0,0,.55); will-change: transform; }
 #hand .card.sel { transform: translateY(-10px); border-color: var(--gold); box-shadow: 0 0 14px rgba(246,196,83,.7); }
 #hand .card.new { animation: draw .25s; }
 @keyframes draw { from { transform: translateX(-30px) scale(.6); opacity: 0; } }
@@ -425,6 +427,9 @@ body.lefty #abilities { right: auto; left: 6px; }
 /* Spielmodi, Bosskämpfe, Kartenwahl */
 .btn.side { position: relative; }
 .modes .sub { margin-top: 18px; }
+.survList .mile { grid-template-columns: 66px minmax(0, 1fr) 84px; margin-left: 4px; }   /* Meilensteine des Überlebensmodus im Blatt der Spielmodi */
+.survList .mile .what { min-width: 0; font-size: 13px; line-height: 1.25; }
+.survList .mile .btn { font-size: 13px; padding: 0 6px; }
 .modes .list { margin-top: 8px; }
 .btn.item.modeRow, .btn.item.bossRow { height: auto; min-height: 62px; padding: 9px 14px; gap: 10px; }
 .btn.item.modeRow > span, .btn.item.bossRow > span { min-width: 0; }

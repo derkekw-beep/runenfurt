@@ -10,7 +10,7 @@ import * as SIM from './sim.js'; // nur für deployTiles: wird benutzt, sobald e
 import { TEAM } from './render.js';
 import { getDef, merge, P, box, cyl, cone, sph, rock, FLY, USCALE, STONE, STONE_D, STONE_L, WOOD_D } from './models3d.js';
 import { createLook, PITCH } from './engine/look.js';
-import { createSprites, loadUnit, getUnit, unitIndex, loadPortraits, hasPortrait, releaseUnits, warmUnits, frontOf, setFront, portrait, SCALE } from './engine/sprites.js';
+import { createSprites, setTexMode, loadUnit, getUnit, unitIndex, loadPortraits, hasPortrait, releaseUnits, warmUnits, frontOf, setFront, portrait, SCALE } from './engine/sprites.js';
 import { createFx } from './engine/fx.js';
 import { createActors } from './engine/actors.js';
 
@@ -435,7 +435,9 @@ export function createRenderer3D(canvas, overlay) {
   }
 
   // Bildfolgen für alle Figuren dieses Spiels vormerken; gezeichnet wird eine je Bild, damit nichts ruckelt
-  function prepare(g) {
+  // onStep(n, von): Fortschritt für die Ladeanzeige. Das Versprechen ist erfüllt, wenn alle Bildtafeln auf der Grafikkarte liegen –
+  // erst dann beginnt der Kampf, sonst ruckelt jede Figur bei ihrem ersten Auftritt.
+  function prepare(g, onStep) {
     const add = (unit, side) => {
       const u = UNITS[unit]; if (!u || u.tower || done.has(unit + side)) return;
       done.add(unit + side);
@@ -453,7 +455,19 @@ export function createRenderer3D(canvas, overlay) {
       if (S.forms && S.forms.has(id) && HERO_FORMS[id].ability.unit) add(HERO_FORMS[id].ability.unit, side);   // was die Fähigkeit einer Heldenform aufs Feld bringt
     } });
     releaseUnits(want);                               // Bildfolgen des letzten Kampfs freigeben, die jetzt nicht vorkommen
-    return Promise.all([...want].map(n => loadUnit(n).catch(() => { fresh.delete(n); })));      // neue Bildfolgen dieses Kampfs laden (nicht ladbar: Figur wie bisher)
+    const px = renderer.domElement.width / 19.5;      // Bildpunkte je Feld auf diesem Gerät: danach richtet sich die Größe der Bildtafeln
+    setTexMode({ scale: px >= 72 ? 1 : px >= 54 ? 0.75 : 0.5, mask: px >= 72 ? 1 : 0.5, mips: px < 30 });
+    const names = [...want], all = names.length * 2;
+    let n = 0;
+    const step = () => { if (onStep) onStep(++n, all); };
+    const nextFrame = () => new Promise(res => { const t = setTimeout(res, 80); requestAnimationFrame(() => { clearTimeout(t); res(); }); });
+    return Promise.all(names.map(nm => loadUnit(nm).then(d => { step(); return d; }, () => { fresh.delete(nm); step(); return null; })))   // nicht ladbar: Figur wie bisher
+      .then(async defs => { // eine Figur je Bild auf die Grafikkarte, danach den Zwischenspeicher der verkleinerten Tafeln freigeben
+        for (const d of defs) {
+          if (d && !d.up) { d.up = true; for (const t of [d.tex, d.mask]) { renderer.initTexture(t); if (t.image && t.image.getContext) t.image.width = t.image.height = 0; } await nextFrame(); }
+          step();
+        }
+      });
   }
 
 
@@ -755,7 +769,7 @@ export function createRenderer3D(canvas, overlay) {
         }
       }
       if (inst.neu) {
-        if (e.formId && !!inst.formFly !== (e.formMode === 'flug')) { inst.formFly = e.formMode === 'flug'; inst.fly = inst.formFly ? 1.5 : 0; }   // Funkenflug: hebt ab und landet wieder
+        if (e.kind === 'unit' && (inst.airNow ?? !!e.d.air) !== !!e.air) { inst.airNow = !!e.air; inst.fly = e.air ? FLY[model] || 1.5 : 0; }   // hebt ab oder landet: Funkenflug, Netz und Ranken, fallende Keiler
         if (inst.tower) actors.updateTower(e, inst, dt, time); else if (inst.building) actors.updateBuilding(e, inst, g, dt, time); else { sprites.update(e, inst, g, dt, time, occ); if (e.clone) inst.u.uFrost.value = 0.8; }
         statusRing(e, inst, time);
         if (inst.aura) { inst.aura.position.set(e._x, 0.035, e._y); inst.aura.rotation.z = time * 1.5; }
@@ -810,7 +824,9 @@ export function createRenderer3D(canvas, overlay) {
     const troop = sel && (selCard.ownSide || (selCard.type !== 'spell' && !selCard.anywhere));
     for (const m of lock) m.visible = false;
     for (const m of grid) m.visible = false;
-    const tiles = sel && SIM.deployTiles ? SIM.deployTiles(g, 0, sel) : null;
+    const tKey = sel ? `${sel}|${Math.floor(g.time * 5)}|${g.ents.length}` : '';   // höchstens fünfmal je Sekunde neu rechnen
+    if (maskMesh.userData.key !== tKey) { maskMesh.userData.key = tKey; maskMesh.userData.tiles = sel && SIM.deployTiles ? SIM.deployTiles(g, 0, sel) : null; }
+    const tiles = maskMesh.userData.tiles;
     maskMesh.visible = !!tiles;
     border.visible = !!troop && !tiles;
     if (tiles) paintMask(tiles, !!troop);
