@@ -171,7 +171,7 @@ export const SPELLS = {
         const a = new THREE.Mesh(new THREE.OctahedronGeometry(0.42), new THREE.MeshBasicMaterial({ color: new THREE.Color(6, 4.6, 1.6) }));
         const b = new THREE.Mesh(new THREE.OctahedronGeometry(0.3), new THREE.MeshBasicMaterial({ color: new THREE.Color(9, 8, 5) })); b.rotation.y = 0.8; g.add(a, b); return g; };
       let acc = 0;
-      fx.fall({ make: core, dur: ev.delay, from: [ev.x - 4.5, 15, ev.y - 3], to: [ev.x, 0.4, ev.y],
+      fx.fall({ make: core, dur: ev.delay, arc: ev.arc, from: ev.src || [ev.x - 4.5, 15, ev.y - 3], to: [ev.x, 0.4, ev.y],
         trail(p, dt) { acc += dt; while (acc > 0.012) { acc -= 0.012;
           fx.burst({ x: p.x, y: p.y, z: p.z, n: 1, cell: CELL.glow, color: '#fff3a8', color2: '#ff9a2a', hdr: 3.2, size: [0.5, 0.75], size2: 0.08, life: [0.18, 0.3], spread: 0.1 });
           if (Math.random() < 0.5) fx.burst({ x: p.x, y: p.y, z: p.z, n: 1, cell: CELL.star, color: '#ffffff', hdr: 2.5, size: [0.12, 0.2], life: [0.3, 0.5], speed: [0.3, 1.2], up: [-0.5, 1], drag: 2, spin: 4 }); } } });
@@ -205,8 +205,9 @@ Object.assign(SPELLS, {
   hagelschauer: {
     cast(fx, ev, C) {
       fx.zone({ x: ev.x, z: ev.y, r: ev.r, dur: ev.delay, color: '#cfeaff', hdr: 1.3, fill: 0.22 });
-      const n = Math.max(4, Math.round((ev.delay + 0.25) / 0.07));
-      for (let i = 0; i < n; i++) fx.after(i * 0.07, () => {
+      const late = ev.src ? Math.max(0, ev.delay - 0.3) : 0, n = ev.src ? 6 : Math.max(4, Math.round((ev.delay + 0.25) / 0.07));
+      if (ev.src) fx.fall({ make: lump(0.2, '#f2fbff', 2.2), dur: ev.delay, arc: ev.arc, from: ev.src, to: [ev.x, 0.6, ev.y], trail(p) { fx.burst({ x: p.x, y: p.y, z: p.z, n: 2, cell: CELL.spark, color: '#f2fbff', color2: '#bfe6ff', hdr: 1.6, size: [0.25, 0.4], size2: 0.05, life: [0.12, 0.2], spread: 0.5 }); } });   // das Pfeilbündel fliegt vom Turm, erst über dem Ziel geht der Schauer nieder
+      for (let i = 0; i < n; i++) fx.after(late + i * 0.07, () => {
         fx.burst({ x: ev.x - 0.9, y: 5.2, z: ev.y - 0.45, n: 8, cell: CELL.spark, color: '#f2fbff', color2: '#bfe6ff', hdr: 1.5, alpha: 0.9, size: [0.5, 0.75], size2: [0.5, 0.7], life: [0.4, 0.45], fade: 0.2, rot: 0.17, dir: [0.17, -1, 0.09], cone: 0.03, speed: [11.5, 13], spread: ev.r * 0.95 });
         fx.burst({ x: ev.x - 0.9, y: 5.2, z: ev.y - 0.45, n: 4, cell: CELL.shard, add: 0, color: '#ffffff', size: [0.13, 0.2], size2: [0.13, 0.2], life: [0.4, 0.45], fade: 0.2, dir: [0.17, -1, 0.09], cone: 0.03, speed: [11.5, 13], spread: ev.r * 0.95, spin: [4, 9] });
       });
@@ -225,7 +226,7 @@ Object.assign(SPELLS, {
     cast(fx, ev, C) {
       fx.zone({ x: ev.x, z: ev.y, r: ev.r, dur: ev.delay, color: '#cfeaff', hdr: 1.3, fill: 0.25 });
       let acc = 0;
-      fx.fall({ make: lump(0.5, '#cfeeff', 1.5), dur: ev.delay, from: [ev.x + 3.5, 12, ev.y - 2.5], to: [ev.x, 0.4, ev.y],
+      fx.fall({ make: lump(0.5, '#cfeeff', 1.5), dur: ev.delay, arc: ev.arc, from: ev.src || [ev.x + 3.5, 12, ev.y - 2.5], to: [ev.x, 0.4, ev.y],
         trail(p, dt) { acc += dt; while (acc > 0.03) { acc -= 0.03; fx.burst({ x: p.x, y: p.y, z: p.z, n: 1, cell: CELL.glow, color: '#dff3ff', color2: '#8fd0ff', hdr: 1.4, alpha: 0.8, size: [0.3, 0.45], size2: 0.06, life: [0.16, 0.26], spread: 0.08 }); } } });
     },
     impact(fx, ev, C) {
@@ -272,7 +273,7 @@ Object.assign(SPELLS, {
       fx.zone({ x: ev.x, z: ev.y, r: ev.r, dur: ev.delay, color: C.team.light, hdr: 1.3, fill: 0.34 });
       fx.ring({ x: ev.x, z: ev.y, r0: ev.r * 1.3, r: ev.r * 0.3, dur: ev.delay, color: '#1c1f26', hdr: 0.5, width: 0.9, alpha: 0.5 });
       let acc = 0;
-      fx.after(Math.max(0, ev.delay - 0.75), () => fx.fall({ make: lump(1.05, '#8d939c'), dur: Math.min(0.75, ev.delay), from: [ev.x - 2.2, 17, ev.y - 1.6], to: [ev.x, 0.7, ev.y],
+      fx.after(ev.src ? 0 : Math.max(0, ev.delay - 0.75), () => fx.fall({ make: lump(1.05, '#8d939c'), dur: ev.src ? ev.delay : Math.min(0.75, ev.delay), arc: ev.arc, from: ev.src || [ev.x - 2.2, 17, ev.y - 1.6], to: [ev.x, 0.7, ev.y],
         trail(p, dt) { acc += dt; while (acc > 0.03) { acc -= 0.03; fx.burst({ x: p.x, y: p.y, z: p.z, n: 1, cell: CELL.dust, add: 0, color: '#d9d2c2', alpha: 0.5, size: [0.4, 0.6], size2: [0.9, 1.2], life: [0.25, 0.4], spread: 0.3 }); } } }));
     },
     impact(fx, ev, C) {

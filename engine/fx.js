@@ -172,7 +172,8 @@ export function createFx(look) {
   function fall(o) {
     const m = o.make(); m.renderOrder = 5600; world.add(m);
     const from = o.from, to = o.to;
-    live.push({ t: 0, d: o.dur, update(k, dt, time) { const e = k * k; m.position.set(from[0] + (to[0] - from[0]) * e, from[1] + (to[1] - from[1]) * e, from[2] + (to[2] - from[2]) * e); m.rotation.z += dt * 7; m.rotation.x += dt * 4; if (o.trail) o.trail(m.position, dt); },
+    live.push({ t: 0, d: o.dur, update(k, dt, time) { const e = o.arc != null ? k : k * k;   // arc: gleichmäßiger Flug im Bogen (Wurf vom Turm) statt beschleunigtem Fall
+      m.position.set(from[0] + (to[0] - from[0]) * e, from[1] + (to[1] - from[1]) * e + (o.arc || 0) * 4 * k * (1 - k), from[2] + (to[2] - from[2]) * e); m.rotation.z += dt * 7; m.rotation.x += dt * 4; if (o.trail) o.trail(m.position, dt); },
       end() { world.remove(m); if (o.done) o.done(); } });
   }
   // Dauerhafte Bodenmarke (Auswahl beim Setzen einer Karte): bleibt, bis sie versteckt wird

@@ -256,10 +256,16 @@ export function cardCost(g, side, id) {
   return last ? CARDS[last].cost + 1 : Infinity;
 }
 
+// Wie lange braucht dieser Zauber von der Hand bis zum Einschlag bei (x, y)? Wurfzauber (fly) fliegen vom eigenen Hauptturm los:
+// nah am Turm schlagen sie fast sofort ein, am anderen Ende des Felds deutlich später. Alle anderen wirken nach fester Zeit.
+export function spellDelay(g, side, id, x, y) {
+  const c = CARDS[id], t = c && c.fly ? mainTower(g, side) : null;
+  return t ? Math.max(0.2, Math.hypot(x - t.x, y - t.y) / c.fly) : c ? c.delay : 0;
+}
 // def (freiwillig): eigene Regel statt der Karte – Runenform eines Zaubers oder eine Fläche, die eine Einheit hinterlässt
 function castZone(g, id, side, x, y, lvl, delay, def) {
   const c = def || CARDS[id];
-  g.zones.push({ spell: c.spell || '', card: id, def: def || null, side, x, y, r: c.radius, delay, dur: c.dur || (c.waves ? (c.waves.n - 1) * c.waves.every + 0.01 : c.vines ? c.vines.dur : 0), tickT: c.dot ? c.tick : 0, done: false, mult: cardMult(lvl), lvl,
+  g.zones.push({ spell: c.spell || '', card: id, def: def || null, side, x, y, r: c.radius, delay, delay0: delay, dur: c.dur || (c.waves ? (c.waves.n - 1) * c.waves.every + 0.01 : c.vines ? c.vines.dur : 0), tickT: c.dot ? c.tick : 0, done: false, mult: cardMult(lvl), lvl,
     n: 0, t2: c.summonOver ? c.summonOver.first : c.pulses ? c.pulses.first : 0 });
 }
 
@@ -338,13 +344,16 @@ export function playCard(g, side, handIdx, x, y) {
   if (!hc.mirror && !hc.hero) S.last = hid;
   if (c.type === 'spell') {
     const rc = R && R.spell ? { ...c, ...R.spell } : null;   // Runenform eines Zaubers: die Karte mit geänderten Regeln
-    castZone(g, id, side, x, y, lvl, c.delay, rc);
+    const home = c.fly ? mainTower(g, side) : null, src = home ? { fx: home.x, fy: home.y } : {};   // Wurfzauber fliegen vom Hauptturm los
+    const delay = spellDelay(g, side, id, x, y);
+    castZone(g, id, side, x, y, lvl, delay, rc);
     if (form) g.zones[g.zones.length - 1].form = form;
     if (rc && rc.twin) { // zweiter Sack spiegelbildlich auf der anderen Feldseite, mit Lockvögeln
-      castZone(g, id, side, W - x, y, lvl, c.delay, { ...c, summon: { ...c.summon, unit: rc.twin } });
-      emit(g, { t: 'cast', spell: c.spell, side, x: W - x, y, r: c.radius, delay: c.delay, echo: !!hc.mirror });
+      const d2 = spellDelay(g, side, id, W - x, y);
+      castZone(g, id, side, W - x, y, lvl, d2, { ...c, summon: { ...c.summon, unit: rc.twin } });
+      emit(g, { t: 'cast', spell: c.spell, side, x: W - x, y, r: c.radius, delay: d2, echo: !!hc.mirror, ...src });
     }
-    emit(g, { t: 'cast', spell: c.spell, side, x, y, r: c.radius, delay: c.delay, echo: !!hc.mirror });
+    emit(g, { t: 'cast', spell: c.spell, side, x, y, r: c.radius, delay, echo: !!hc.mirror, ...src });
   } else {
     const home = mainTower(g, side);
     for (const s of plan.spots) { // die Figuren eines Trupps erscheinen kurz nacheinander

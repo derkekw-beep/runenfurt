@@ -891,7 +891,7 @@ export function createRenderer3D(canvas, overlay) {
       const inst = insts.get(e.id); if (!inst) continue;
       if (inst.bar == null) inst.bar = e.hp;
       inst.bar += (e.hp - inst.bar) * Math.min(1, dt * 5);
-      const top = inst.def.h * inst.scale + (e.air ? FLY[inst.model] || 1.5 : 0) + 0.15;
+      const top = inst.def.h * inst.scale + (e.air ? FLY[inst.model] || 1.5 : 0) + (tower ? 0.15 : 0.85);   // Stufenschild und Balken schweben wie beim Vorbild deutlich über dem Kopf der Figur
       const [sx, sy] = project(e._x, top, e._y), [sx2] = project(e._x + 1, top, e._y);
       const ppt = sx2 - sx; // Pixel je Feld in dieser Tiefe
       const w = (tower ? 1.9 : e.hero ? 1.5 : Math.max(0.8, e.r * 2.2)) * ppt, h = Math.max(4, (tower ? 0.34 : e.hero ? 0.22 : 0.17) * ppt);

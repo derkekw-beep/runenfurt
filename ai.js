@@ -4,7 +4,7 @@
 //   aiUpdate  – läuft im Regeltakt: beobachten, im Takt der Stufe entscheiden, Karte spielen, Heldenfähigkeit auslösen
 // Die KI liest nie Hand, Nachziehkarte, Stapel oder Kraft des Gegners; ihr Gedächtnis liegt in ai.mem.
 import { CARDS, UNITS, RUNES, TOWER_SPELL_FACTOR } from './cards.js';
-import { W, H, RIVER_TOP, RIVER_BOT, POCKET, MAX_KRAFT, KRAFT_RATE, playCard, clampDeploy, cardCost, rnd, kraftRate, timeLeft, abilities, useAbility } from './sim.js';
+import { W, H, RIVER_TOP, RIVER_BOT, POCKET, MAX_KRAFT, KRAFT_RATE, playCard, clampDeploy, cardCost, rnd, kraftRate, timeLeft, abilities, useAbility, mainTower } from './sim.js';
 
 // think: Sekunden zwischen zwei Überlegungen · react: Reaktionszeit auf Neues · minAttack: Kraft für einen Angriff aus der Ruhe
 // defend/spells: Anteil der Gelegenheiten, die erkannt werden · smart: 0 reagiert nur, 0,5 plant, 1 zählt mit und bestraft
@@ -166,7 +166,7 @@ function observe(g, side, ai, live) {
     if (!z.card || z.side === side || m.seen.has(z)) continue;
     m.seen.add(z);
     const c = CARDS[z.card];
-    if (c && z.delay > c.delay - 0.04 && !z.hit) { notePlay(g, m, z.card, z.x, z.y, 0); played = true; } // (Zonen aus dem Tod einer Einheit zählen nicht)
+    if (c && z.delay > (z.delay0 ?? c.delay) - 0.04 && !z.hit) { notePlay(g, m, z.card, z.x, z.y, 0); played = true; } // (Zonen aus dem Tod einer Einheit zählen nicht)
   }
   if (g.nextId !== m.lastId) {
     const E = g.ents;
@@ -297,12 +297,14 @@ export function aiChoose(g, side, ai) {
     return v;
   };
   // bester Punkt: auf jedem Gegner (mit Vorhalt in Laufrichtung) und zwischen Turm und Truppen daneben
+  // Zeit bis zum Einschlag bei diesem Ziel: Wurfzauber fliegen vom eigenen Hauptturm, je weiter, desto länger
+  const home = mainTower(g, side), flight = (c, e) => (c.fly && home ? Math.max(0.2, Math.hypot(e.x - home.x, e.y - home.y) / c.fly) : c.delay);
   const bestSpell = (c, cands) => {
     let best = null;
     const tryAt = (x, y) => { const v = spellValue(c, x, y); if (!best || v > best.v) best = { v, x, y }; };
     for (const e of cands || targets) {
       if (c.ownSide && my(e.y) > RIVER_TOP - 0.4) continue; // fällt nur aufs eigene Feld
-      const lead = c.roll ? -1.2 * fwd : e.kind === 'unit' && !c.dot && !e.inRange && e.stunT <= 0 && e.rootT <= 0 ? (e.vy || 0) * e.speed * c.delay * (L.smart ? 1 : 0.4) : 0;
+      const lead = c.roll ? -1.2 * fwd : e.kind === 'unit' && !c.dot && !e.inRange && e.stunT <= 0 && e.rootT <= 0 ? (e.vy || 0) * e.speed * flight(c, e) * (L.smart ? 1 : 0.4) : 0;
       tryAt(e.x, e.y + lead);
       if (e.kind === 'tower' && L.smart && !c.roll && !cands) for (const o of foes) {
         const d = Math.hypot(o.x - e.x, o.y - e.y);

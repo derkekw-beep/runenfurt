@@ -1059,3 +1059,34 @@ body.calm .slot, body.calm .slot.next, body.calm .slot.next .chestIco, body.calm
 .slotLegend .formMark, .slotLegend .runeMark { position: relative; display: inline-block; left: auto; bottom: auto; vertical-align: -2px; margin: 0 4px 0 0; }
 /* das nächste Sieg-Feld leuchtet, ohne sich zu verschieben (sonst gilt es beim Antippen als „in Bewegung“) */
 @keyframes fieldBreath { 0%, 100% { box-shadow: 0 0 0 0 rgba(246,196,83,0), 0 3px 0 rgba(0,0,0,.35); } 50% { box-shadow: 0 0 18px 2px rgba(246,196,83,.5), 0 3px 0 rgba(0,0,0,.35); } }
+
+/* ===== 2026-11-11 (vierte Runde): Werteliste kompakt, farbige Tasten im Kartenblatt, volle Höhe als Startbildschirm-App ===== */
+html { min-height: calc(100% + env(safe-area-inset-top, 0px)); }   /* iPhone als Startbildschirm-App: sonst bleibt unten ein Streifen in Höhe des oberen Rands leer */
+
+/* Werteliste: zwei Spalten, eine Zeile je Wert, links ein Farbstreifen nach Art (Leben grün, Schaden rot, Takt gelb, Weite blau, Ziele violett) */
+.statlist.compact { gap: 5px; margin-top: 8px; grid-auto-flow: row; }
+.statlist.compact > .st, .statlist.compact > .st.chg { grid-column: auto; display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 36px; padding: 5px 9px; border-radius: 9px; background: #12222d; border-left: 3px solid var(--k, #4a6276); font-size: 11.5px; line-height: 1.15; color: var(--dim); }
+.statlist.compact > .st.wide { grid-column: 1 / -1; }
+.statlist.compact > .st > span { min-width: 0; }
+.statlist.compact > .st b { display: flex; align-items: baseline; gap: 5px; flex: none; color: var(--text); font-size: 13.5px; white-space: nowrap; }
+.statlist.compact > .st.wide b { white-space: normal; text-align: right; flex: 0 1 auto; }
+.statlist.compact .chg s { color: var(--text); font-weight: 800; }
+.statlist.compact .chg:has(em) i, .statlist.compact .chg:has(em) u { display: none; }   /* „325 +33“ statt „325 → 358 +33“ */
+.statlist.compact .chg em { min-width: 0; margin: 0; padding: 1px 5px; border-radius: 6px; background: rgba(88,214,141,.16); color: #6fe06a; font-size: 11px; font-weight: 800; }
+.statlist.compact h5 { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; margin: 6px 2px 0; font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: #8fb3c7; }
+.statlist.compact h5::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.st.hp { --k: #58d68d; }
+.st.dmg { --k: #ff6b5e; }
+.st.spd { --k: #ffd45a; }
+.st.rng { --k: #5ec8ff; }
+.st.tgt { --k: #c98bff; }
+.lvlLine { margin-top: 10px; padding: 6px 10px; font-size: 13px; }
+
+/* Tasten im Kartenblatt in Farbe: Aufwerten grün, Joker blau, Wunschkarte gold, Wanderscherbe violett, Heldenform gold */
+.btn.up { background: linear-gradient(#7be398, #2fa45c); color: #05240f; border-color: transparent; box-shadow: inset 0 1px 0 rgba(255,255,255,.4), 0 2px 0 #1c6b3a; }
+.btn.jokerBtn { background: linear-gradient(#6f8cff, #3d55c9); color: #fff; border-color: transparent; box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 2px 0 #263a94; }
+.btn.wishBtn { background: linear-gradient(#ffdf8a, #f0a92e); color: #3a2500; border-color: transparent; box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 2px 0 #a86f12; }
+.btn.wishBtn.wished { background: linear-gradient(#fff6d0, #ffd45a); }
+.btn.wildBtn { background: linear-gradient(#b98bff, #7a4bd0); color: #fff; border-color: transparent; box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 2px 0 #4b2a8f; }
+.formBox .btn { background: linear-gradient(#ffdf8a, #e9a01f); color: #3a2500; border-color: transparent; box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 2px 0 #8a5a10; }
+.btn.up:disabled, .btn.jokerBtn:disabled, .btn.wildBtn:disabled, .formBox .btn:disabled { filter: saturate(.25) brightness(.8); opacity: .6; box-shadow: none; }

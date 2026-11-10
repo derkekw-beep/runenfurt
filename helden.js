@@ -19,7 +19,7 @@ export const HERO_FORMS = {
   sternschuetzin:   { ability: A('sternentrug', 'Sternentrug', 2, { back: 3.5, unit: 'trugbildnis', shots: 3, dmg: 48, len: 13.5, w: 0.5, delay: 0 }, 'Springt 3,5 Felder zurück, lässt ein Trugbild stehen und schießt drei Pfeile, die alles in ihrer Bahn durchschlagen.') },
   donnerkaefer:     { ability: A('kieselspringer', 'Kieselspringer', 2, { radius: 6.5, unit: 'sargspringer', dmg: 263, towerF: 0.1, delay: 0 }, 'Ein Kiesel springt aus dem Korb auf den nächsten Bodengegner in 6,5 Feldern, schlägt beim Landen ein und kämpft weiter.') },
   distelritter:     { ability: A('absprung', 'Absprung', 3, { unit: 'sturmkeiler', dmg: 307, radius: 2, delay: 1 }, 'Springt vom Reittier und schlägt beim Aufprall ein. Das Tier stürmt allein auf Gebäude los; er kämpft zu Fuß weiter, ohne Anlauf.') },
-  kegler:           { ability: A('standwurf', 'Standwurf', 2, { delay: 2.5, dur: 7.3, atk: 1.9, range: 11.5, dmg: 508, towerF: 0.5, splash: 2, proj: 5 }, 'Stellt sich fest hin und wirft 7,3 Sekunden lang schwere Brocken im hohen Bogen – bis zu 11,5 Felder weit.') },
+  kegler:           { ability: A('standwurf', 'Standwurf', 2, { delay: 2.5, dur: 7.3, atk: 1.9, range: 11.5, dmg: 508, towerF: 0.5, splash: 2, proj: 6 }, 'Stellt sich fest hin und wirft 7,3 Sekunden lang schwere Brocken im hohen Bogen – bis zu 11,5 Felder weit.') },
   kieselhaufen:     { ability: A('grabmutter', 'Grabmutter', 5, { unit: 'grabmutter', delay: 1 }, 'Aus dem Haufen erhebt sich die Grabmutter: ein Koloss, der nur Gebäude angreift.') },
   wueterich:        { ability: A('baerenzorn', 'Bärenzorn', 3, { dur: 4, atk: 0.2, speed: 2.7, dmg: 167, towerF: 0.25, delay: 0 }, 'Vier Sekunden Raserei: rasend schnelle Hiebe, rasender Lauf – und sein Leben fällt in dieser Zeit nicht unter eins.') },
   klingentaenzerin: { ability: A('klingenwirbel', 'Klingenwirbel', 3, { dur: 3.5, every: 0.25, dmg: 97, radius: 2.5, towerF: 0.5, ward: 0.85, dash: 5.5, delay: 0 }, 'Wirbelt 3,5 Sekunden lang voran: trifft viermal je Sekunde alles um sich und nimmt dabei 15 % weniger Schaden.') },
@@ -28,7 +28,7 @@ export const HERO_FORM_IDS = Object.keys(HERO_FORMS);
 
 // Was die Fähigkeiten aufs Feld bringen (gleiche Figuren wie verwandte Einheiten, bis sie eigene bekommen)
 Object.assign(UNITS, {
-  heldengeschuetz: { building: true, hp: 1536, life: 10, dmg: 140, atk: 0.5, range: 4.0, r: 0.5, hitsAir: true, proj: 16, deployDmg: { dmg: 204, r: 1.5 }, model: 'ballista' },
+  heldengeschuetz: { building: true, hp: 1536, life: 10, dmg: 140, atk: 0.5, range: 4.0, r: 0.5, hitsAir: true, proj: 19.2, deployDmg: { dmg: 204, r: 1.5 }, model: 'ballista' },
   sargspringer:    { hp: 473, dmg: 204, atk: 1.1, range: 0.5, speed: 2.4, r: 0.5, mass: 1, first: 0.5, model: 'kiesel' },
   sturmkeiler:     { hp: 1356, dmg: 179, atk: 1.6, range: 0.8, speed: 1.2, r: 0.75, mass: 10, targets: 'buildings', charge: { after: 2.5, speed: 2, dmg: 2 }, first: 0.5, model: 'keiler' },
   grabmutter:      { hp: 4224, dmg: 422, atk: 1.5, range: 1.2, speed: 0.9, r: 0.75, mass: 18, sight: 7, targets: 'buildings', first: 0.5, model: 'wurzelmutter' },

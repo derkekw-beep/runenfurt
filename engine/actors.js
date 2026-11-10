@@ -187,7 +187,10 @@ export function createActors(look, fx) {
       return true;
     }
     if (ev.t === 'deploy') { EVENTS.deploy(fx, ev, C); return true; }
-    if (ev.t === 'cast' && SPELLS[ev.spell]) { SPELLS[ev.spell].cast(fx, ev, C); return true; }
+    if (ev.t === 'cast' && SPELLS[ev.spell]) {
+      if (ev.fx != null) { ev.src = [ev.fx, 3.4, ev.fy]; ev.arc = Math.min(6, 1.2 + Math.hypot(ev.x - ev.fx, ev.y - ev.fy) * 0.2); }   // Wurfzauber: Abwurf am Hauptturm, Bogenhöhe nach Entfernung
+      SPELLS[ev.spell].cast(fx, ev, C); return true;
+    }
     if (ev.t === 'spell' && SPELLS[ev.spell]) { SPELLS[ev.spell].impact(fx, ev, C); return true; }
     if (ev.t === 'wake') { EVENTS.wake(fx, ev, C); return true; }
     if (MORE.has(ev.t)) { EVENTS[ev.t](fx, ev, C); return true; }

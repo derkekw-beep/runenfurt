@@ -60,7 +60,8 @@ function appHeight(sat) {
   let h = Math.max(window.innerHeight, document.documentElement.clientHeight);
   const alone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   const full = matchMedia('(orientation: portrait)').matches ? Math.max(screen.height, screen.width) : Math.min(screen.height, screen.width);
-  if (alone && full > h && full - h <= Math.max(70, sat + 8)) h = full;
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (alone && full > h && (ios || full - h <= Math.max(70, sat + 8))) h = full;   // auf dem iPhone füllt die Startbildschirm-App immer den ganzen Schirm
   document.documentElement.style.setProperty('--app-h', `${Math.round(h)}px`);
   return h;
 }
@@ -669,6 +670,7 @@ function statRows(id, lvl) {
     if (c.knock) rows.push(['Rückstoß', `${dec(c.knock)} Felder${c.knockOut ? ' von der Mitte weg' : ''}`, '']);
     if (c.pull) rows.push(['Zieht', 'Truppen zur Mitte', '']);
     if (!c.roll && c.radius) rows.push(['Radius', `${dec(c.radius)} Felder`, '']);
+    if (c.fly) rows.push(['Fliegt vom Hauptturm', `${dec(c.fly)} Felder je Sekunde`, '']);
     return rows;
   }
   const u = UNITS[c.unit], s = u.spawn ? UNITS[u.spawn.unit] : null;
@@ -747,10 +749,15 @@ function showCard(id) {
   // Werte: bei einer eigenen Karte unter der Höchststufe steht in jeder Zeile, die wächst, „alt → neu“ mit dem Zuwachs
   const rows = statRows(id, lvl), nextRows = own && lvl < P.MAX_LEVEL ? statRows(id, lvl + 1) : null;
   if (nextRows) panes.werte.append(el('div', 'lvlLine', `<span>Stufe ${lvl}</span><i>→</i><b>Stufe ${lvl + 1}</b><small>Vorschau der Aufwertung</small>`));
-  panes.werte.append(el('div', 'statlist', rows.map(([k, v, plus], i) => {
-    const nv = nextRows && nextRows[i] && nextRows[i][0] === k ? nextRows[i][1] : v;
-    return nv !== v ? `<div class="chg"><span>${k}</span><b><s>${v}</s><i>→</i><u>${nv}</u>${plus ? `<em>${plus}</em>` : ''}</b></div>` : `<div>${k}<b>${v}</b></div>`;
-  }).join('')));
+  // Werteliste: kompakt in zwei Spalten, farbig nach Art des Werts; die Werte einer zweiten Einheit („Dornwerfer: …“) stehen als eigene Gruppe darunter
+  const KINDS = [[/Leben|Schild/, 'hp'], [/Schaden|Stich|Stoß|Heil|Blitz|Rückschlag|Splitter/, 'dmg'], [/tempo|Takt|schneller/i, 'spd'], [/Reichweite|Radius|Weite|Rollt|Breite|Fliegt/, 'rng'], [/Ziele|Trifft|Anzahl|Bringt/, 'tgt']];
+  const cellOf = ([k, v, plus], i, label) => {
+    const nv = nextRows && nextRows[i] && nextRows[i][0] === k ? nextRows[i][1] : v, kind = (KINDS.find(([re]) => re.test(label)) || [0, 'misc'])[1], wide = String(v).replace(/<[^>]+>/g, '').length > 15 ? ' wide' : '';
+    return nv !== v ? `<div class="st ${kind} chg${wide}"><span>${label}</span><b><s>${v}</s><i>→</i><u>${nv}</u>${plus ? `<em>${plus}</em>` : ''}</b></div>` : `<div class="st ${kind}${wide}"><span>${label}</span><b>${v}</b></div>`;
+  };
+  const mainCells = [], groups = new Map();
+  rows.forEach((r, i) => { const m = /^([^:·]{3,24}): (.+)$/.exec(r[0]); if (m) { if (!groups.has(m[1])) groups.set(m[1], []); groups.get(m[1]).push(cellOf(r, i, m[2])); } else mainCells.push(cellOf(r, i, r[0])); });
+  panes.werte.append(el('div', 'statlist compact', mainCells.join('') + [...groups].map(([name, cells]) => `<h5>${name}</h5>${cells.join('')}`).join('')));
   if (c.hero) panes.werte.append(el('div', 'extra heroBox', `<b>Fähigkeit: ${c.ability.name}</b><small>${c.ability.cost} Kraft · ${c.ability.once ? 'einmal je Einsatz' : `alle ${c.ability.cd} s`}</small><p>${c.ability.desc}</p>`));
   if (RUNES[id]) {
     const R = RUNES[id], ri = own ? P.runeInfo(profile, id) : { have: 0, need: P.RUNE_SHARDS, done: false };
@@ -808,7 +815,7 @@ function showCard(id) {
     if (u.max) d.append(el('div', 'notice', 'Höchste Stufe erreicht'));
     else {
       d.append(el('div', 'upline', `<div class="meterBig${own.n >= u.copies ? ' ok' : ''}"><i style="width:${Math.min(100, 100 * own.n / u.copies)}%"></i><span>${own.n} / ${u.copies} Karten</span></div>`));
-      const ub = el('button', 'btn primary', `Aufwerten <span class="ico coin"></span>${fmt(u.gold)}`);
+      const ub = el('button', 'btn primary up', `Aufwerten <span class="ico coin"></span>${fmt(u.gold)}`);
       ub.disabled = !u.can;
       ub.addEventListener('click', () => doUpgrade(id, true));
       btns.append(ub);
@@ -818,11 +825,11 @@ function showCard(id) {
       if (profile.gold < u.gold) lack.push(`${fmt(u.gold - profile.gold)} Gold`);
       if (lack.length) d.append(el('p', 'center small lack', `Es fehlen noch ${lack.join(' und ')}.`));
       const tools = el('div', 'tools');
-      const jb = el('button', 'btn', `<span class="ico joker r-${rar}"></span>${j.use ? `${j.use} Joker einsetzen` : 'Joker einsetzen'}`);
+      const jb = el('button', 'btn jokerBtn', `<span class="ico joker r-${rar}"></span>${j.use ? `${j.use} Joker einsetzen` : 'Joker einsetzen'}`);
       if (j.missing) d.append(el('p', 'center small', `${P.JOKER_NAME[rar]}: du hast ${fmt(j.have)} – einer ersetzt eine Kopie.`));
       jb.disabled = !j.use;
       jb.addEventListener('click', () => { if (P.useJokers(profile, id)) { save(); sfx('buy'); render(); showCard(id); } });
-      const wb = el('button', `btn${profile.wish === id ? ' wished' : ''}`, `<span class="ico star"></span>${profile.wish === id ? 'Wunschkarte ✓' : 'Als Wunschkarte'}`);
+      const wb = el('button', `btn wishBtn${profile.wish === id ? ' wished' : ''}`, `<span class="ico star"></span>${profile.wish === id ? 'Wunschkarte ✓' : 'Als Wunschkarte'}`);
       wb.addEventListener('click', () => { P.setWish(profile, id); save(); sfx('click'); render(); showCard(id); });
       tools.append(jb, wb);
       d.append(tools);

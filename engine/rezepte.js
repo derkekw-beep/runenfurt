@@ -263,7 +263,7 @@ Object.assign(SPELLS, {
     cast(fx, ev, C) {
       fx.zone({ x: ev.x, z: ev.y, r: ev.r, dur: ev.delay, color: C.team.light, hdr: 1.3, fill: 0.3 });
       const back = ev.side === 1 ? -9 : 9;
-      fx.fall({ make: keg(0.34, '#9a6634'), dur: ev.delay, from: [ev.x, 9, ev.y + back], to: [ev.x, 0.4, ev.y] });
+      fx.fall({ make: keg(0.34, '#9a6634'), dur: ev.delay, arc: ev.arc, from: ev.src || [ev.x, 9, ev.y + back], to: [ev.x, 0.4, ev.y] });
     },
     impact(fx, ev, C) {
       const { x, y: z, r } = ev;
