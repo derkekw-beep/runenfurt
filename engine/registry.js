@@ -13,11 +13,12 @@ export const PROJECTILES = {
   aussenturm: { kind: 'orb', y0: 3.1, arc: 0.25, size: 0.2, color: 'team', hit: 'orb' },
   hauptturm: { kind: 'orb', y0: 4.6, arc: 0.3, size: 0.26, color: 'team', hit: 'orb' },
   ballista: { kind: 'arrow', y0: 0.95, arc: 0.15, scale: 1.5, hit: 'arrow' },
+  dornwerfer: { kind: 'arrow', y0: 0.45, arc: 0.35, scale: 0.55, hit: 'bite' },
   funkenweberin: { kind: 'orb', y0: 1.45, arc: 0.7, size: 0.2, color: '#ffd45a', glow: '#ffb347', hit: 'spark' },
   _: { kind: 'orb', y0: 1.0, arc: 0.4, size: 0.16, color: '#fff3c4', hit: 'orb' },
 };
 // ---- Nahkampf-Treffer je Angreifer (sonst 'punch')
-export const MELEE = { raufbold: 'punch', steinhueter: 'slam', wicht: 'bite', kraehe: 'bite' };
+export const MELEE = { raufbold: 'punch', steinhueter: 'slam', wicht: 'bite', kraehe: 'bite', raeuber: 'punch', wueterich: 'slash', eisenwaechter: 'slash', kiesel: 'bite' };
 
 export const HITS = {
   punch(fx, ev, C) {
@@ -32,6 +33,11 @@ export const HITS = {
     for (let i = 0; i < 8; i++) { const a = i / 8 * 6.283; fx.burst({ x: ev.x + Math.cos(a) * 0.3, y: 0.15, z: ev.y + Math.sin(a) * 0.3, n: 1, cell: CELL.dust, add: 0, color: '#e9dfc8', alpha: 0.6, size: [0.4, 0.55], size2: [0.9, 1.2], life: [0.4, 0.6], dir: [Math.cos(a), 0.15, Math.sin(a)], cone: 0.2, speed: [2, 3.2], drag: 4 }); }
     fx.burst({ x: ev.x, y: 0.4, z: ev.y, n: 8, cell: CELL.shard, add: 0, color: '#b4bac6', size: [0.1, 0.18], life: [0.4, 0.7], speed: [1.5, 4], up: [2.5, 5], gravity: -16, spin: [5, 12], floor: true });
     C.shake(0.3);
+  },
+  // Klinge (Schwert, Beil): heller Schnitt, Funken zur Seite
+  slash(fx, ev) {
+    fx.burst({ x: ev.x, y: 0.9, z: ev.y, n: 1, cell: CELL.spark, color: '#ffffff', hdr: 2.6, size: [1.3, 1.5], size2: 0.5, life: 0.12, rot: 0.6 + Math.random() * 1.2 });
+    fx.burst({ x: ev.x, y: 0.9, z: ev.y, n: 6, cell: CELL.spark, color: '#ffffff', color2: '#cfd8e3', hdr: 2.2, size: [0.08, 0.16], life: [0.16, 0.3], speed: [2.5, 5.5], up: [0.5, 2.2], gravity: -9, drag: 3 });
   },
   // kleiner Biss oder Schnabelhieb (Wurzelwicht, Sturmkrähe)
   bite(fx, ev) {

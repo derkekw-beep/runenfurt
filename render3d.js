@@ -8,11 +8,12 @@ import { W, H, RIVER_TOP, RIVER_BOT, BRIDGES, BRIDGE_HALF, OUTER_Y, MAIN_Y, POCK
 import { TEAM } from './render.js';
 import { getDef, merge, P, box, cyl, cone, sph, rock, FLY, USCALE, STONE, STONE_D, STONE_L, WOOD_D } from './models3d.js';
 import { createLook, PITCH } from './engine/look.js';
-import { createSprites, loadUnit, getUnit, unitIndex, frontOf, setFront, portrait, SCALE } from './engine/sprites.js';
+import { createSprites, loadUnit, getUnit, unitIndex, loadPortraits, hasPortrait, releaseUnits, frontOf, setFront, portrait, SCALE } from './engine/sprites.js';
 import { createFx } from './engine/fx.js';
 import { createActors } from './engine/actors.js';
 
 const PI = Math.PI;
+const BUILDING_ART = ['ballista']; // Gebäude mit eigenem Kartenbild aus Blender (engine/assets/units/<modell>_k.webp)
 const RUNE_COLOR = '#c98bff', GOLD = '#f5c542';
 const ease = t => 1 - (1 - t) * (1 - t);
 const LEAN = -0.3; // Figuren leicht zur Kamera kippen, damit man Gesichter statt Scheitel sieht
@@ -30,9 +31,11 @@ export function createRenderer3D(canvas, overlay) {
   const o2 = overlay.getContext('2d');
   const efx = createFx(look), actors = createActors(look, efx);
   const sprites = createSprites(look, { onLand: e => actors.land(e) });
-  // Figuren mit neuen Bildfolgen (engine/assets/units/index.json) gleich zu Beginn laden: Kampf und Kartenbilder brauchen sie
+  // Welche Figuren neue Bildfolgen haben, steht in engine/assets/units/index.json. Zu Beginn werden nur ihre kleinen
+  // Kartenbilder geladen; die großen Bildfolgen holt prepare() für die Karten des jeweiligen Kampfs.
+  const fresh = new Set();
   const ready = Promise.race([
-    Promise.allSettled([look.ready, unitIndex().then(list => Promise.all(list.map(loadUnit)))]),
+    Promise.allSettled([look.ready, unitIndex().then(list => { for (const n of list) fresh.add(n); return loadPortraits([...list, ...BUILDING_ART]); })]),
     new Promise(r => setTimeout(r, 6000)),
   ]);
   const UNIT = SCALE;   // Größe der Figuren im Feld – gilt auch für die bisherigen
@@ -434,10 +437,10 @@ export function createRenderer3D(canvas, overlay) {
     const add = (unit, side) => {
       const u = UNITS[unit]; if (!u || u.tower || done.has(unit + side)) return;
       done.add(unit + side);
-      if (!u.building && !u.hero && !u.rune && !getUnit(u.model || unit)) bakeQueue.push([u.model || unit, side]);
+      if (!u.building && !u.hero && !u.rune) { if (fresh.has(u.model || unit)) want.add(u.model || unit); else bakeQueue.push([u.model || unit, side]); }
       for (const k of ['spawn', 'deathSpawn', 'morph', 'hatch', 'curse']) if (u[k] && !done.has(u[k].unit + side)) add(u[k].unit, side);
     };
-    const done = new Set();
+    const done = new Set(), want = new Set();
     bakeQueue = [];
     g.sides.forEach((S, side) => { for (const id of [...S.hand, S.next, ...S.queue]) {
       const c = CARDS[id];
@@ -446,6 +449,8 @@ export function createRenderer3D(canvas, overlay) {
       if (RUNES[id]) add(RUNES[id].unit, side);
       if (c.ability && c.ability.unit) add(c.ability.unit, side);
     } });
+    releaseUnits(want);                               // Bildfolgen des letzten Kampfs freigeben, die jetzt nicht vorkommen
+    return Promise.all([...want].map(loadUnit));      // neue Bildfolgen dieses Kampfs laden
   }
 
 
@@ -696,7 +701,8 @@ export function createRenderer3D(canvas, overlay) {
       e._x = e.ox + (e.x - e.ox) * a; e._y = e.oy + (e.y - e.oy) * a;
       const moving = e.kind === 'unit' && !e.inRange && e.deployT <= 0 && e.rootT <= 0 && !(e.stunT > 0);
       const model = e.model || e.type;
-      const neu = e.kind === 'tower' ? actors.hasTower(model) : e.kind === 'building' ? actors.hasBuilding(model) : isFlat(e) && !!getUnit(model); // neu gebaut? sonst wie bisher
+      const neu = e.kind === 'tower' ? actors.hasTower(model) : e.kind === 'building' ? actors.hasBuilding(model) : isFlat(e) && fresh.has(model); // neu gebaut? sonst wie bisher
+      if (neu && e.kind === 'unit' && !getUnit(model)) { loadUnit(model); continue; } // Bildfolge lädt noch (kam nicht über prepare): gleich da
       let inst = insts.get(e.id);
       if (inst && (inst.model !== model || !!inst.sprite !== isFlat(e) || !!inst.neu !== neu)) { dropInst(e.id, false); inst = null; } // verwandelt (oder neue Teile sind eben fertig geladen)
       if (!inst) {
@@ -843,7 +849,7 @@ export function createRenderer3D(canvas, overlay) {
     const card = CARDS[id];
     if (card.type === 'spell') return null;
     const u = UNITS[card.unit], model = u.model || card.unit;
-    if (!u.building && !u.tower && !u.hero && !card.mix && getUnit(model)) return portrait(getUnit(model), 0, w, h, Math.min(card.count, 5));
+    if (!u.tower && !u.hero && !card.mix && hasPortrait(model)) return portrait(model, w, h, u.building ? 1 : Math.min(card.count, 5));
     const def = getDef(model, 0);
     const solid = u.building || u.tower;
     const holder = new THREE.Group(), cel = !u.hero && !solid, stage = cel ? celScene : snapScene;

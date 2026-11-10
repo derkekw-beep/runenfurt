@@ -44,27 +44,27 @@ export function loadUnit(name) {
 }
 export const getUnit = name => ready.get(name) || null;
 
-// Bild der Figur für Karten und Menüs: Blick schräg nach vorn, in der Farbe der Seite; n Figuren nebeneinander
-const tinted = new Map();
-export function portrait(def, side, w, h, n = 1) {
-  const info = def.info, f = info.frames[info.anims.idle.start + info.per], key = def.name + side;
-  let fig = tinted.get(key);
-  if (!fig) {
-    fig = document.createElement('canvas'); fig.width = f[2]; fig.height = f[3];
-    const t = fig.getContext('2d', { willReadFrequently: true });
-    t.drawImage(def.mask.image, f[0], f[1], f[2], f[3], 0, 0, f[2], f[3]); const msk = t.getImageData(0, 0, f[2], f[3]).data;
-    t.clearRect(0, 0, f[2], f[3]); t.drawImage(def.tex.image, f[0], f[1], f[2], f[3], 0, 0, f[2], f[3]); const col = t.getImageData(0, 0, f[2], f[3]), d = col.data;
-    const hex = hx => [1, 3, 5].map(i => parseInt(hx.slice(i, i + 2), 16)), M = hex(TEAM[side].main), D = hex(TEAM[side].dark);
-    for (let i = 0; i < d.length; i += 4) { const m = msk[i] / 255, k = msk[i + 1] / 255; if (m + k < 0.01) continue; for (let j = 0; j < 3; j++) { const sh = d[i + j] / 217; d[i + j] = Math.min(255, d[i + j] * (1 - m - k) + sh * (M[j] * m + D[j] * k)); } }
-    t.putImageData(col, 0, 0); tinted.set(key, fig);
-  }
+// Kleine Kartenbilder aller neuen Figuren (eine Datei je Figur): werden beim Start geladen, die großen Bildfolgen
+// dagegen erst für die Karten eines Kampfs (loadUnit) – und danach wieder freigegeben (releaseUnits).
+const ports = new Map();
+export function loadPortraits(names) {
+  return Promise.all(names.map(n => new Promise(res => { const im = new Image(); im.onload = () => { ports.set(n, im); res(); }; im.onerror = () => res(); im.src = `${ASSETS}units/${n}_k.webp`; })));
+}
+export const hasPortrait = name => ports.has(name);
+// Bild für Karten und Menüs: n Figuren nebeneinander, mit hellem Schein (dunkle Figuren heben sich vom Kartengrund ab)
+export function portrait(name, w, h, n = 1) {
+  const fig = ports.get(name); if (!fig) return null;
   const out = document.createElement('canvas'); out.width = w; out.height = h;
   const c = out.getContext('2d'); c.imageSmoothingQuality = 'high';
-  const s = Math.min(h * 0.6 / f[3], w * 0.72 / f[2]) * (n > 2 ? 0.66 : n > 1 ? 0.8 : 1), fw = f[2] * s, fh = f[3] * s;
+  const s = Math.min(h * 0.7 / fig.height, w * 0.84 / fig.width) * (n > 2 ? 0.62 : n > 1 ? 0.74 : 1), fw = fig.width * s, fh = fig.height * s;
   const spots = n === 1 ? [[0, 0]] : n === 2 ? [[-0.2, -0.04], [0.2, 0.03]] : n === 3 ? [[0, -0.1], [-0.22, 0.04], [0.22, 0.05]] : n === 4 ? [[-0.2, -0.1], [0.2, -0.09], [-0.22, 0.05], [0.21, 0.06]] : [[-0.28, -0.1], [0, -0.12], [0.28, -0.09], [-0.16, 0.05], [0.17, 0.06]];
-  c.shadowColor = 'rgba(210,235,255,.5)'; c.shadowBlur = Math.max(4, w * 0.045);   // heller Schein: dunkle Figuren heben sich vom Kartengrund ab
-  for (const [x, y] of spots) c.drawImage(fig, w / 2 + x * w - fw / 2, h * 0.8 + y * h - fh, fw, fh);
+  c.shadowColor = 'rgba(210,235,255,.5)'; c.shadowBlur = Math.max(4, w * 0.045);
+  for (const [x, y] of spots) c.drawImage(fig, w / 2 + x * w - fw / 2, h * 0.84 + y * h - fh, fw, fh);
   return out;
+}
+// Bildfolgen freigeben, die im nächsten Kampf nicht vorkommen (keep: Menge der Namen, die bleiben)
+export function releaseUnits(keep) {
+  for (const [name, def] of ready) if (!keep.has(name)) { def.tex.dispose(); def.mask.dispose(); ready.delete(name); defs.delete(name); }
 }
 
 const VERT = `
