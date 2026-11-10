@@ -12,16 +12,37 @@ export const PROJECTILES = {
   waldlaeufer: { kind: 'arrow', y0: 1.15, arc: 0.5, hit: 'arrow' },
   aussenturm: { kind: 'orb', y0: 3.1, arc: 0.25, size: 0.2, color: 'team', hit: 'orb' },
   hauptturm: { kind: 'orb', y0: 4.6, arc: 0.3, size: 0.26, color: 'team', hit: 'orb' },
+  ballista: { kind: 'arrow', y0: 0.95, arc: 0.15, scale: 1.5, hit: 'arrow' },
+  funkenweberin: { kind: 'orb', y0: 1.45, arc: 0.7, size: 0.2, color: '#ffd45a', glow: '#ffb347', hit: 'spark' },
   _: { kind: 'orb', y0: 1.0, arc: 0.4, size: 0.16, color: '#fff3c4', hit: 'orb' },
 };
 // ---- Nahkampf-Treffer je Angreifer (sonst 'punch')
-export const MELEE = { raufbold: 'punch' };
+export const MELEE = { raufbold: 'punch', steinhueter: 'slam', wicht: 'bite', kraehe: 'bite' };
 
 export const HITS = {
   punch(fx, ev, C) {
     fx.burst({ x: ev.x, y: 0.9, z: ev.y, n: 1, cell: CELL.star, color: '#ffffff', hdr: 2.2, size: [0.75, 0.9], size2: 0.2, life: 0.13, spin: 3 });
     fx.burst({ x: ev.x, y: 0.9, z: ev.y, n: 7, cell: CELL.spark, color: '#fff1b8', color2: '#ffb347', hdr: 2.4, size: [0.1, 0.2], life: [0.16, 0.3], speed: [2.5, 5.5], up: [0.5, 2.5], gravity: -9, drag: 3 });
     fx.burst({ x: ev.x, y: 0.5, z: ev.y, n: 3, cell: CELL.dust, add: 0, color: '#e9dfc8', alpha: 0.55, size: [0.25, 0.4], size2: [0.6, 0.8], life: [0.3, 0.45], speed: [0.4, 1.2], up: 0.5, drag: 3 });
+  },
+  // schwerer Schlag (Steinhüter): Staubwelle, Brocken, die Kamera wackelt
+  slam(fx, ev, C) {
+    fx.burst({ x: ev.x, y: 0.6, z: ev.y, n: 1, cell: CELL.star, color: '#ffffff', hdr: 2.4, size: [1.3, 1.5], size2: 0.3, life: 0.15, spin: 2 });
+    fx.ring({ x: ev.x, z: ev.y, r0: 0.3, r: 1.7, dur: 0.32, color: '#fff3d6', hdr: 1.6, width: 0.2 });
+    for (let i = 0; i < 8; i++) { const a = i / 8 * 6.283; fx.burst({ x: ev.x + Math.cos(a) * 0.3, y: 0.15, z: ev.y + Math.sin(a) * 0.3, n: 1, cell: CELL.dust, add: 0, color: '#e9dfc8', alpha: 0.6, size: [0.4, 0.55], size2: [0.9, 1.2], life: [0.4, 0.6], dir: [Math.cos(a), 0.15, Math.sin(a)], cone: 0.2, speed: [2, 3.2], drag: 4 }); }
+    fx.burst({ x: ev.x, y: 0.4, z: ev.y, n: 8, cell: CELL.shard, add: 0, color: '#b4bac6', size: [0.1, 0.18], life: [0.4, 0.7], speed: [1.5, 4], up: [2.5, 5], gravity: -16, spin: [5, 12], floor: true });
+    C.shake(0.3);
+  },
+  // kleiner Biss oder Schnabelhieb (Wurzelwicht, Sturmkrähe)
+  bite(fx, ev) {
+    fx.burst({ x: ev.x, y: 0.8, z: ev.y, n: 1, cell: CELL.star, color: '#ffffff', hdr: 2, size: [0.42, 0.5], size2: 0.1, life: 0.1, spin: 3 });
+    fx.burst({ x: ev.x, y: 0.8, z: ev.y, n: 3, cell: CELL.spark, color: '#fff1b8', color2: '#ffb347', hdr: 2.2, size: [0.07, 0.12], life: [0.14, 0.24], speed: [2, 4], up: [0.5, 2], gravity: -9, drag: 3 });
+  },
+  // Funkenball schlägt ein (Funkenweberin): gelber Blitz, Funkenregen
+  spark(fx, ev) {
+    fx.burst({ x: ev.x, y: 0.8, z: ev.y, n: 1, cell: CELL.glow, color: '#fff3a8', hdr: 3.2, size: 2.0, size2: 0.4, life: 0.2 });
+    fx.burst({ x: ev.x, y: 0.7, z: ev.y, n: 14, cell: CELL.spark, color: '#ffffff', color2: '#ffb347', hdr: 2.8, size: [0.09, 0.2], life: [0.3, 0.6], speed: [2, 6], up: [1, 4.5], gravity: -11, drag: 2, floor: true });
+    fx.burst({ x: ev.x, y: 0.5, z: ev.y, n: 6, cell: CELL.star, color: '#fff3a8', hdr: 2.4, size: [0.12, 0.2], size2: 0.02, life: [0.4, 0.7], speed: [0.6, 2], up: [1.5, 3.5], drag: 1.5, spin: [3, 8] });
   },
   arrow(fx, ev) {
     fx.burst({ x: ev.x, y: 0.9, z: ev.y, n: 1, cell: CELL.star, color: '#ffffff', hdr: 1.8, size: 0.5, size2: 0.12, life: 0.1 });

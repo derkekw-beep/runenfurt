@@ -122,7 +122,7 @@ export function createRenderer3D(canvas, overlay) {
   function dropInst(id, animated) {
     const i = insts.get(id); if (!i) return;
     insts.delete(id); dropBeam(i);
-    if (i.neu) { if (i.status) { world.remove(i.status); i.status.material.dispose(); i.status = null; } if (i.tower) actors.removeTower(i); else sprites.remove(i); return; }
+    if (i.neu) { if (i.status) { world.remove(i.status); i.status.material.dispose(); i.status = null; } if (i.tower) actors.removeTower(i); else if (i.building) actors.removeBuilding(i); else sprites.remove(i); return; }
     if (i.sprite) {
       if (i.status) { world.remove(i.status); i.status.material.dispose(); i.status = null; }
       if (i.blob) world.remove(i.blob);
@@ -696,12 +696,15 @@ export function createRenderer3D(canvas, overlay) {
       e._x = e.ox + (e.x - e.ox) * a; e._y = e.oy + (e.y - e.oy) * a;
       const moving = e.kind === 'unit' && !e.inRange && e.deployT <= 0 && e.rootT <= 0 && !(e.stunT > 0);
       const model = e.model || e.type;
-      const neu = e.kind === 'tower' ? actors.hasTower(model) : isFlat(e) && !e.air && !!getUnit(model); // neu gebaut? sonst wie bisher
+      const neu = e.kind === 'tower' ? actors.hasTower(model) : e.kind === 'building' ? actors.hasBuilding(model) : isFlat(e) && !!getUnit(model); // neu gebaut? sonst wie bisher
       let inst = insts.get(e.id);
       if (inst && (inst.model !== model || !!inst.sprite !== isFlat(e) || !!inst.neu !== neu)) { dropInst(e.id, false); inst = null; } // verwandelt (oder neue Teile sind eben fertig geladen)
-      if (!inst) { inst = neu ? (e.kind === 'tower' ? actors.makeTower(e) : sprites.make(getUnit(model), e.side, e.id)) : isFlat(e) ? makeSprite(e) : makeInst(e); insts.set(e.id, inst); }
+      if (!inst) {
+        inst = neu ? (e.kind === 'tower' ? actors.makeTower(e) : e.kind === 'building' ? actors.makeBuilding(e) : sprites.make(getUnit(model), e.side, e.id)) : isFlat(e) ? makeSprite(e) : makeInst(e); insts.set(e.id, inst);
+        if (neu && e.air) sprites.setFlier(inst, FLY[model] || 1.5);
+      }
       if (inst.neu) {
-        if (inst.tower) actors.updateTower(e, inst, dt, time); else { sprites.update(e, inst, g, dt, time, occ); if (e.clone) inst.u.uFrost.value = 0.8; }
+        if (inst.tower) actors.updateTower(e, inst, dt, time); else if (inst.building) actors.updateBuilding(e, inst, g, dt, time); else { sprites.update(e, inst, g, dt, time, occ); if (e.clone) inst.u.uFrost.value = 0.8; }
         statusRing(e, inst, time);
       } else if (inst.sprite) animateSprite(e, inst, time, dt, g, moving); else animate(e, inst, time, dt, g, moving);
       if (e.d.ramp) rampBeam(e, inst, g, time);

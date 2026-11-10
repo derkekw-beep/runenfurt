@@ -62,6 +62,7 @@ export function portrait(def, side, w, h, n = 1) {
   const c = out.getContext('2d'); c.imageSmoothingQuality = 'high';
   const s = Math.min(h * 0.6 / f[3], w * 0.72 / f[2]) * (n > 2 ? 0.66 : n > 1 ? 0.8 : 1), fw = f[2] * s, fh = f[3] * s;
   const spots = n === 1 ? [[0, 0]] : n === 2 ? [[-0.2, -0.04], [0.2, 0.03]] : n === 3 ? [[0, -0.1], [-0.22, 0.04], [0.22, 0.05]] : n === 4 ? [[-0.2, -0.1], [0.2, -0.09], [-0.22, 0.05], [0.21, 0.06]] : [[-0.28, -0.1], [0, -0.12], [0.28, -0.09], [-0.16, 0.05], [0.17, 0.06]];
+  c.shadowColor = 'rgba(210,235,255,.5)'; c.shadowBlur = Math.max(4, w * 0.045);   // heller Schein: dunkle Figuren heben sich vom Kartengrund ab
   for (const [x, y] of spots) c.drawImage(fig, w / 2 + x * w - fw / 2, h * 0.8 + y * h - fh, fw, fh);
   return out;
 }
@@ -181,6 +182,7 @@ export function createSprites(look, hooks = {}) {
     if (e.stunT > 0 || e.iceT > 0) { anim = 'idle'; f = 0; }
     else if (striking) { anim = 'strike'; f = Math.min(A.strike.n - 1, Math.floor((1 - s) * A.strike.n)); }
     else if (wind > 0) { anim = 'windup'; f = Math.min(A.windup.n - 1, Math.floor(wind * A.windup.n)); }
+    else if (info.flap) { inst.phase += dt * info.flap; anim = moving ? 'walk' : 'idle'; f = Math.floor(inst.phase * A[anim].n) % A[anim].n; }   // Flieger schlagen immer mit den Flügeln
     else if (moving) { inst.phase += moved / info.stride; anim = 'walk'; f = Math.floor(inst.phase * A.walk.n) % A.walk.n; }
     else if (e.inRange && info.hold && info.hold !== 'idle') { anim = info.hold; f = 0; }
     else { inst.idle += dt * 1.15; f = Math.floor(inst.idle * A.idle.n) % A.idle.n; }
@@ -199,10 +201,11 @@ export function createSprites(look, hooks = {}) {
     if (inst.flash > 0) inst.flash -= dt;
     inst.kx *= Math.exp(-dt * 14); inst.kz *= Math.exp(-dt * 14);
     // Aufmarsch: fällt von oben, landet, staucht
-    let y = 0, sx = 1, sy = 1;
+    let y = inst.fly ? inst.fly + Math.sin(time * 2.5 + e.id) * 0.08 : 0, sx = 1, sy = 1;
+    const drop0 = y;
     const q = Math.min(1, inst.age / 0.26);
-    if (q < 1) { y = (1 - q) * (1 - q) * 5.5; sx = 0.88; sy = 1.14; }
-    else if (!inst.landed) { inst.landed = true; inst.sqv -= 5.2; if (hooks.onLand) hooks.onLand(e, inst); }
+    if (q < 1) { y += (1 - q) * (1 - q) * 5.5; sx = 0.88; sy = 1.14; }
+    else if (!inst.landed) { inst.landed = true; if (!inst.fly) { inst.sqv -= 5.2; if (hooks.onLand) hooks.onLand(e, inst); } }
     for (let i = 0; i < 2; i++) { const h = dt / 2; inst.sqv += (-inst.sq * 300 - inst.sqv * 17) * h; inst.sq += inst.sqv * h; }   // Feder: Stauchen und Nachschwingen
     inst.sq = Math.max(-0.4, Math.min(0.4, inst.sq));
     sy *= 1 + inst.sq; sx *= 1 - inst.sq * 0.55;
@@ -210,20 +213,25 @@ export function createSprites(look, hooks = {}) {
     u.uScale.value.set(sx, sy);
     const lx = Math.sin(inst.yaw) * inst.lunge, lz = Math.cos(inst.yaw) * inst.lunge;
     inst.mesh.position.set(e._x + inst.kx + lx, y, e._y + inst.kz + lz);
-    inst.mesh.renderOrder = 1000 + Math.round((e._y + inst.kz + lz) * 24);
+    inst.mesh.renderOrder = (inst.fly ? 3000 : 1000) + Math.round((e._y + inst.kz + lz) * 24);
     setFront(u, frontOf(e._x, e._y, occ));
     u.uTint.value.copy(look.lightTint); inst.su.uCol.value.copy(look.shadowTint);
     u.uFlash.value = inst.flash > 0 ? 0.7 * Math.min(1, inst.flash / 0.05) : 0;
     u.uAlpha.value = e.hidden ? 0.42 : 1;
     u.uFrost.value = e.iceT > 0 ? 1 : e.slowT > 0 ? 0.5 : 0;
     // Schatten bleibt am Boden; in der Luft kleiner und blasser
-    const air = Math.min(1, y / 5.5);
+    const air = Math.min(1, (y - drop0 * 0.6) / 5.5);
     inst.shadow.position.set(e._x + inst.kx + lx + y * 0.3, 0.025, e._y + inst.kz + lz - y * 0.22);
     inst.su.uScale.value.set(sx * (1 - air * 0.5), sy * (1 - air * 0.5));
     inst.su.uStrength.value = (e.hidden ? 0.3 : 0.95) * (1 - air * 0.75);
   }
 
+  // Flieger: schwebt in der Höhe h über dem Feld, liegt immer über allem am Boden, Schatten flach darunter
+  function setFlier(inst, h) {
+    inst.fly = h; inst.mesh.material.depthTest = false;
+    inst.su.uSh.value.set(0, 0, -1.15); inst.shadow.renderOrder = 6;
+  }
   function remove(inst) { look.world.remove(inst.mesh, inst.shadow); inst.mesh.material.dispose(); inst.shadow.material.dispose(); }
 
-  return { make, update, remove, setFrame, frameOf };
+  return { make, update, remove, setFrame, frameOf, setFlier };
 }

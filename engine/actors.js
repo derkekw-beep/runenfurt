@@ -6,6 +6,7 @@ import { CELL } from './fx.js';
 import { PROJECTILES, MELEE, HITS, EVENTS, SPELLS } from './registry.js';
 
 const TOWERS = { aussenturm: 'aussenturm', hauptturm: 'hauptturm' };   // Modell im Spiel -> Teil aus Blender
+const BUILDINGS = { ballista: 'ballista' };                              // Gebäude mit drehbarem Oberteil (Teile: body, top, bolt)
 
 export function createActors(look, fx) {
   let trauma = 0, flashV = 0;
@@ -44,6 +45,36 @@ export function createActors(look, fx) {
   }
   function removeTower(i) { look.world.remove(i.group); i.mat.dispose(); i.cmat.dispose(); }
 
+  // ---- Gebäude: fester Sockel, Oberteil dreht sich zum Ziel, der Bolzen fehlt kurz nach dem Schuss ----
+  const hasBuilding = model => !!look.props && !!BUILDINGS[model] && !!look.props[BUILDINGS[model]];
+  function makeBuilding(e) {
+    const model = e.model || e.type, P = look.props[BUILDINGS[model]], mat = propMaterial(e.side, 1);
+    const group = new THREE.Group(); group.position.set(e.x, 0, e.y);
+    const body = new THREE.Mesh(P.parts.body.geo, mat); body.castShadow = body.receiveShadow = true; group.add(body);
+    const top = new THREE.Group(), piv = P.parts.top.pivot; top.position.set(piv[0], piv[1], piv[2]); group.add(top);
+    const tm = new THREE.Mesh(P.parts.top.geo, mat); tm.castShadow = true; top.add(tm);
+    let bolt = null;
+    if (P.parts.bolt) { bolt = new THREE.Mesh(P.parts.bolt.geo, mat); bolt.castShadow = true; top.add(bolt); }
+    look.world.add(group);
+    return { neu: true, building: true, model, group, top, bolt, mat, def: { h: P.h, kind: 'building' }, scale: 1, hp: e.hp, flash: 0, age: 0, yaw: e.side === 0 ? Math.PI : 0, kick: 0, wasAnim: 0, status: null, statusKey: '', extras: [] };
+  }
+  function updateBuilding(e, i, g, dt, time) {
+    i.age += dt;
+    const t = e.targetId ? g.byId.get(e.targetId) : null;
+    if (t) { const want = Math.atan2(t.x - e.x, t.y - e.y), d = Math.atan2(Math.sin(want - i.yaw), Math.cos(want - i.yaw)); i.yaw += d * Math.min(1, dt * 10); }
+    if ((e.anim || 0) > i.wasAnim + 0.05) i.kick = 1;   // Schuss: Rückstoß
+    i.wasAnim = e.anim || 0; i.kick = Math.max(0, i.kick - dt * 5);
+    i.top.rotation.y = i.yaw; i.top.position.x = -Math.sin(i.yaw) * i.kick * 0.12; i.top.position.z = -Math.cos(i.yaw) * i.kick * 0.12;
+    if (i.bolt) i.bolt.visible = !(e.cd > e.atk * 0.45);   // nachgeladen wird in der zweiten Hälfte der Pause
+    const q = Math.min(1, i.age / 0.22), pop = q < 1 ? 0.5 + 0.5 * q + Math.sin(q * Math.PI) * 0.18 : 1;   // erscheint mit einem kleinen Sprung
+    i.group.scale.set(pop, q < 1 ? pop : 1 + i.kick * 0.03, pop);
+    if (e.hp < i.hp - 30) i.flash = 0.09;   // der stetige Verfall zählt nicht als Treffer
+    i.hp = e.hp;
+    if (i.flash > 0) i.flash -= dt;
+    i.mat.userData.u.uFlash.value = i.flash > 0 ? 0.55 : 0;
+  }
+  function removeBuilding(i) { look.world.remove(i.group); i.mat.dispose(); }
+
   // ---- Geschosse ----
   const orbGeo = new THREE.SphereGeometry(1, 12, 8);
   const arrow = (() => {
@@ -59,7 +90,7 @@ export function createActors(look, fx) {
   function makeProj(p) {
     const d = PROJECTILES[p.from];
     let m;
-    if (d.kind === 'arrow') m = arrow.clone();
+    if (d.kind === 'arrow') { m = arrow.clone(); if (d.scale) m.scale.setScalar(d.scale); }
     else {
       const c = new THREE.Color(d.color === 'team' ? TEAM[p.side].light : d.color || '#ffffff').multiplyScalar(d.kind === 'rock' ? 1 : 3.2);
       m = new THREE.Mesh(orbGeo, new THREE.MeshBasicMaterial({ color: c })); m.scale.setScalar(d.size || 0.18);
@@ -78,7 +109,7 @@ export function createActors(look, fx) {
     while (o.acc > 0.16) {   // Spur
       o.acc -= 0.16;
       if (o.d.kind === 'arrow') fx.burst({ x: pv.x, y: pv.y, z: pv.z, n: 1, cell: CELL.glow, color: '#ffffff', hdr: 1.1, alpha: 0.45, size: 0.16, size2: 0.02, life: 0.16 });
-      else fx.burst({ x: pv.x, y: pv.y, z: pv.z, n: 1, cell: CELL.glow, color: TEAM[p.side].light, color2: TEAM[p.side].main, hdr: 2.6, size: (o.d.size || 0.18) * 3.2, size2: 0.05, life: [0.16, 0.26], spread: 0.03 });
+      else fx.burst({ x: pv.x, y: pv.y, z: pv.z, n: 1, cell: CELL.glow, color: o.d.color === 'team' ? TEAM[p.side].light : o.d.color, color2: o.d.color === 'team' ? TEAM[p.side].main : o.d.glow || o.d.color, hdr: 2.6, size: (o.d.size || 0.18) * 3.2, size2: 0.05, life: [0.16, 0.26], spread: 0.03 });
     }
   }
   const removeProj = o => look.world.remove(o.m);
@@ -128,5 +159,5 @@ export function createActors(look, fx) {
   }
   function reset() { for (const m of ruins) look.world.remove(m); ruins.length = 0; fx.clear(); trauma = flashV = 0; }
 
-  return { hasTower, makeTower, updateTower, removeTower, hasProj, makeProj, updateProj, removeProj, onEvent, land, frame, reset, cardSpell: id => !!SPELLS[CARDS[id] && CARDS[id].spell] };
+  return { hasTower, makeTower, updateTower, removeTower, hasBuilding, makeBuilding, updateBuilding, removeBuilding, hasProj, makeProj, updateProj, removeProj, onEvent, land, frame, reset, cardSpell: id => !!SPELLS[CARDS[id] && CARDS[id].spell] };
 }
