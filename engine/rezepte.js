@@ -212,7 +212,16 @@ Object.assign(EVENTS, {
     else if (ev.id === 'stillewacht') { fx.ring({ x: ev.x, z: ev.y, r0: 0.2, r: 1.5, dur: 0.6, color: '#ffffff', hdr: 1.9, width: 0.12 }); fx.ring({ x: ev.x, z: ev.y, r0: 0.2, r: 1.0, dur: 0.45, color: '#8fe0ff', hdr: 1.7, width: 0.2 }); fx.burst({ x: ev.x, y: 0.9, z: ev.y, n: 1, cell: CELL.glow, color: '#dff3ff', hdr: 1.8, size: 1.6, size2: 0.6, life: 0.4 }); }
     else if (ev.id === 'leibwache') { for (const h of hits) EVENTS.deploy(fx, { x: h.x, y: h.y, hero: true }, C); }
     else if (ev.id === 'schlachtruf') { fx.ring({ x: ev.x, z: ev.y, r0: 0.3, r: ev.r, dur: 0.6, color: gold, hdr: 1.9, width: 0.14 }); fx.ring({ x: ev.x, z: ev.y, r0: 0.2, r: ev.r * 0.6, dur: 0.45, color: '#fff3c4', hdr: 1.6, width: 0.25 }); for (const h of hits) fx.burst({ x: h.x, y: 1.2, z: h.y, n: 4, cell: CELL.diamond, color: '#ffffff', color2: gold, hdr: 2.4, size: [0.1, 0.17], size2: 0.02, life: [0.5, 0.9], up: [1.2, 2.2], drag: 0.8, spin: [1, 3], spread: 0.25 }); }
-    else { for (const h of hits) { link(fx, [ev.x, 1.9, ev.y], [h.x, h.air ? 1.5 : 0.5, h.y], '#fff9b0', 3, 0.35, 0.05, 0.28); HITS.magic(fx, { x: h.x, y: h.y, air: h.air }, C, { color: '#fffbd0', glow: '#ffe45a' }); } C.shake(0.12); }
+    else {
+      if (ev.id === 'schildruf' || !hits.length) { fx.ring({ x: ev.x, z: ev.y, r0: 0.3, r: ev.id === 'schildruf' ? 6.5 : 1.8, dur: 0.55, color: gold, hdr: 1.9, width: 0.16 }); fx.burst({ x: ev.x, y: 1.1, z: ev.y, n: 6, cell: CELL.diamond, color: '#ffffff', color2: gold, hdr: 2.4, size: [0.1, 0.17], size2: 0.02, life: [0.5, 0.9], up: [1.2, 2.2], drag: 0.8, spin: [1, 3], spread: 0.3 }); }   // Heldenformen ohne Ziel: goldener Ring am Helden
+      for (const h of hits) { link(fx, [ev.x, 1.9, ev.y], [h.x, h.air ? 1.5 : 0.5, h.y], '#fff9b0', 3, 0.35, 0.05, 0.28); HITS.magic(fx, { x: h.x, y: h.y, air: h.air }, C, { color: '#fffbd0', glow: '#ffe45a' }); } C.shake(0.12);
+    }
+  },
+  // Banner der gefallenen Wichte (Heldenform): steht fünf Sekunden, solange lässt sich der Bannerruf auslösen
+  banner(fx, ev) {
+    fx.zone({ x: ev.x, z: ev.y, r: 0.8, dur: 5, color: '#ffd45a', hdr: 1.4, fill: 0.25 });
+    fx.beam({ from: [ev.x, 0.05, ev.y], to: [ev.x, 2.3, ev.y], color: '#ffe08a', hdr: 2.2, width: 0.09, dur: 5 });
+    fx.ring({ x: ev.x, z: ev.y, r0: 0.2, r: 1.2, dur: 0.5, color: '#ffd45a', hdr: 1.8, width: 0.14 });
   },
 });
 

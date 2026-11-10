@@ -3,11 +3,12 @@ import { CARDS, CARD_IDS, TOWER_IDS, UNITS, RUNES, RUNE_LEVEL, avgCost, TOWER_SP
 import * as sim from './sim.js';
 import { createAi, aiUpdate, LEVELS } from './ai.js';
 import * as P from './progress.js';
+import { HERO_FORMS } from './helden.js';
 import { createRenderer, drawCardArt } from './render.js';
 import { createRenderer3D } from './render3d.js';
 import { sfx, unlock, setSound, setVolume } from './audio.js';
 import { STORY, explain } from './lore.js';
-import { createStage } from './menu.js';
+import { createStage } from './arenabild.js';
 
 const $ = s => document.querySelector(s);
 const KEY = 'runenfurt-v1';
@@ -43,7 +44,7 @@ try {
 }
 if (renderer.ready) await renderer.ready; // neue Bildfolgen und 3D-Teile (engine/assets) – höchstens wenige Sekunden
 const field = $('#arena');
-const stage = createStage($('#stageCv')); // Figuren des Decks im Hauptmenü
+const stage = createStage($('#stageCv')); // Bild der eigenen Arena im Hauptmenü
 
 function applySettings() {
   setSound(profile.sound); setVolume(profile.set.volume);
@@ -84,6 +85,7 @@ function cardEl(id, opt = {}) {
   // Runenform: Zeichen unten links – blass mit Scherbenstand, solange sie noch nicht erweckt ist
   const rune = opt.rune === undefined ? (opt.locked == null && profile.cards[id] ? P.runeInfo(profile, id) : RUNES[id] ? { have: 0, need: P.RUNE_SHARDS, done: false } : null) : opt.rune;
   if (rune) e.append(el('span', rune.done ? 'runeMark' : 'runeMark off', rune.done ? '' : `<i>${rune.have}/${rune.need}</i>`));
+  if (HERO_FORMS[id] && opt.locked == null && opt.rune !== null && profile.cards[id] && P.hasForm(profile, id)) e.append(el('span', 'formMark', ''));
   if (opt.ability) e.append(el('span', 'abil', `<b>${opt.ability.cost}</b>${opt.ability.name}`)); // Held in der Hand: Fähigkeit und ihre Kosten
   if (opt.wish) e.append(el('span', 'wishMark', '★'));
   if (opt.pips) { // Zyklen bis zur Runenform
@@ -106,7 +108,7 @@ function show(name) {
   screen = battle ? 'battle' : 'menu';
   $('#battle').hidden = !battle; $('#menu').hidden = battle;
   if (battle) { stageSync(); return; }
-  dayCheck(); chestTick();
+  dayCheck();
   const from = tab;
   if (TABS[name]) tab = name;
   for (const [k, s] of Object.entries(TABS)) s.hidden = k !== tab;
@@ -118,11 +120,19 @@ function show(name) {
   }
   render();
   stageSync();
+  seasonNote();
 }
 // Die Bühne im Hauptmenü läuft nur, wenn man sie sieht: Reiter „Kampf“, kein Kampf, keine Einblendung, Seite im Vordergrund
 function stageSync() {
   const on = screen === 'menu' && tab === 'home' && overlay.hidden && fxLayer.hidden && !document.hidden;
   if (on) { stage.setDeck(profile.deck, profile.arena); stage.start(); } else stage.stop();
+}
+// Saisonwechsel: einmal sagen, was aus der alten Saison gutgeschrieben wurde
+function seasonNote() {
+  const n = profile.note;
+  if (!n || !overlay.hidden || !fxLayer.hidden) return;
+  profile.note = null; save();
+  simpleSheet(`${P.seasonName(n.id)} ist vorbei`, el('div', 'chestCard', `<span class="ico pfad huge"></span><p class="center">Eine neue Saison beginnt: <b>${P.seasonName(profile.season.id)}</b>. Der Runenpfad und der Saisonmarkt fangen von vorn an.</p>${n.n ? `<p class="center">${n.n} nicht abgeholte ${n.n === 1 ? 'Belohnung wurde' : 'Belohnungen wurden'} dir gutgeschrieben.</p>` : ''}${n.marks ? `<p class="center">${fmt(n.marks)} übrige Furtmarken wurden zu Gold.</p>` : ''}${n.gold ? `<div class="notice"><span class="ico coin"></span> +${fmt(n.gold)} Gold</div>` : ''}`));
 }
 function render() {
   renderTop();
@@ -163,9 +173,73 @@ function renderTop() {
   $('#xpFill').style.width = pl.need ? `${100 * pl.xp / pl.need}%` : '100%';
   $('#goldNum').textContent = fmt(profile.gold);
   $('#gemNum').textContent = fmt(profile.gems);
-  const now = Date.now();
-  const dots = { shop: !profile.shop.gift, cards: canUpgradeAny(), home: P.questsOpen(profile) > 0 || profile.crownBox >= P.CROWN_BOX || P.chestsReady(profile, now) > 0 || P.freeInfo(profile, now).n > 0, road: P.roadOpen(profile).length > 0, more: false };
+  const dots = { shop: !profile.shop.gift, cards: canUpgradeAny(), home: P.questsOpen(profile) > 0 || profile.stash.length > 0, road: wayOpen() > 0, more: false };
   for (const b of $('#nav').children) if (b.dataset.tab) b.lastElementChild.hidden = !dots[b.dataset.tab];
+}
+// Was auf den drei Wegen (Trophäenweg, Runenpfad, Sammlung) gerade abholbereit ist
+const passReady = () => P.passOpen(profile).length + (P.bankInfo(profile).can ? 1 : 0);
+const wayOpen = () => P.roadOpen(profile).length + passReady() + P.collOpen(profile).length;
+
+// Funken einer Schicksalstruhe als Rauten
+const fates = (s, of = 0) => `<span class="fz f${s}">${'◆'.repeat(s)}${of > s ? `<i>${'◆'.repeat(of - s)}</i>` : ''}</span>`;
+const JOKER_SHORT = { gewoehnlich: 'gewöhnliche Joker', selten: 'seltene Joker', episch: 'epische Joker', legendaer: 'legendäre Joker', held: 'Heldenjoker' };
+// Eine Belohnung beschreiben: Symbol, kurzer Name (für enge Felder) und ganzer Satz
+function rewardParts(r, arena = profile.arena) {
+  if (r.t === 'gold') return r.crate ? { ico: `<span class="chestIco goldkiste${r.crate > 1 ? ' voll' : ''}"></span>`, short: `${fmt(P.crateGold(arena, r.crate > 1))} Gold`, name: `${r.crate > 1 ? 'Volle Goldkiste' : 'Goldkiste'} · ${fmt(P.crateGold(arena, r.crate > 1))} Gold` } : { ico: '<span class="ico coin"></span>', short: `${fmt(r.n)} Gold`, name: `${fmt(r.n)} Gold` };
+  if (r.t === 'gems') return { ico: '<span class="ico gem"></span>', short: `${r.n} Splitter${r.wild ? ' + 1' : ''}`, name: `${r.n} Runensplitter${r.wild ? ' und eine Wanderscherbe' : ''}` };
+  if (r.t === 'lucky') return { ico: `<span class="chestIco los f${r.s}"></span>`, short: fates(r.s), name: `Schicksalstruhe ${fates(r.s)}` };
+  if (r.t === 'runebox') return { ico: '<span class="chestIco runenkiste"></span>', short: 'Runenkiste', name: 'Runenkiste' };
+  if (r.t === 'jk') return { ico: `<span class="ico joker r-${r.r}"></span>`, short: `${P.jokerCount(r, arena)} Joker`, name: `${P.jokerCount(r, arena)} ${JOKER_SHORT[r.r]}` };
+  if (r.t === 'hero') return { ico: '<span class="ico heldm"></span>', short: `${r.n} Heldenmünzen`, name: `${r.n} Heldenmünzen` };
+  if (r.t === 'wild') return { ico: '<span class="ico wild"></span>', short: r.n > 1 ? `${r.n} Wanderscherben` : 'Wanderscherbe', name: r.n > 1 ? `${r.n} Wanderscherben` : 'Wanderscherbe' };
+  if (r.t === 'potion') return { ico: '<span class="ico trank"></span>', short: r.n > 1 ? `${r.n} Tränke` : 'Stärkungstrank', name: r.n > 1 ? `${r.n} Stärkungstränke` : 'Stärkungstrank' };
+  if (r.t === 'rune') return { ico: '<span class="ico shard"></span>', short: `${r.n} Scherben`, name: `${r.n} Runenscherben · ${CARDS[r.id].name}` };
+  if (r.t === 'choice') return { ico: '<span class="ico ncards"></span>', short: 'Kartenwahl', name: 'Kartenwahl' };
+  return { ico: '', short: '', name: '' };
+}
+
+// Einsammeln: Münzen, Splitter, Joker … fliegen vom angetippten Feld in die Leiste, dort hüpft das Ziel
+const navBtn = t => $(`#nav [data-tab="${t}"]`);
+const calm = () => document.body.classList.contains('calm') || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+function bump(node) { node.classList.remove('bump'); void node.offsetWidth; node.classList.add('bump'); }
+function collectFx(src, loot) {
+  if (!loot) return;
+  const kinds = [];
+  if (loot.gold) kinds.push(['coin', $('#goldNum').parentElement, loot.gold]);
+  if (loot.gems) kinds.push(['gem', $('#gemNum').parentElement, loot.gems]);
+  for (const [rar, n] of Object.entries(loot.jk || {})) kinds.push([`joker r-${rar}`, navBtn('cards'), n]);
+  if (loot.wild) kinds.push(['wild', navBtn('cards'), loot.wild]);
+  if (loot.hero) kinds.push(['heldm', navBtn('cards'), loot.hero]);
+  for (const s of loot.shards || []) kinds.push(['shard', navBtn('cards'), s.n]);
+  for (const s of loot.cards || []) kinds.push(['ncards', navBtn('cards'), s.n]);
+  if (loot.potions) kinds.push(['trank', navBtn('cards'), loot.potions]);
+  if (loot.marks) kinds.push(['marke', navBtn('shop'), loot.marks]);
+  if (!kinds.length) return;
+  sfx('coin');
+  const r = src && src.isConnected ? src.getBoundingClientRect() : { left: innerWidth / 2, top: innerHeight / 2, width: 0, height: 0 };
+  const x0 = r.left + r.width / 2, y0 = r.top + r.height / 2;
+  kinds.forEach(([cls, target, n], k) => {
+    const pop = el('span', 'gainPop', `<span class="ico ${cls}"></span>+${fmt(n)}`);
+    pop.style.left = `${Math.max(48, Math.min(innerWidth - 48, x0))}px`; pop.style.top = `${y0 - 14 - k * 24}px`;
+    document.body.append(pop);
+    pop.animate([{ transform: 'translate(-50%, 8px) scale(.6)', opacity: 0 }, { transform: 'translate(-50%, -10px) scale(1.1)', opacity: 1, offset: 0.25 }, { transform: 'translate(-50%, -46px) scale(1)', opacity: 0 }], { duration: 1100, delay: k * 90, fill: 'backwards', easing: 'ease-out' }).onfinish = () => pop.remove();
+    const t = target.getBoundingClientRect(), tx = t.left + t.width / 2 - x0, ty = t.top + t.height / 2 - y0;
+    if (calm()) { bump(target); return; }
+    for (let i = 0, m = Math.min(7, Math.max(3, n)); i < m; i++) {
+      const c = el('span', `ico ${cls} flyItem`), sx = (Math.random() - 0.5) * 70, sy = (Math.random() - 0.5) * 50 - 12;
+      c.style.left = `${x0 - 13}px`; c.style.top = `${y0 - 13}px`;
+      document.body.append(c);
+      c.animate([{ transform: 'scale(.3)', opacity: 0 }, { transform: `translate(${sx}px, ${sy}px) scale(1.25)`, opacity: 1, offset: 0.3 }, { transform: `translate(${tx}px, ${ty}px) scale(.6)`, opacity: 1 }], { duration: 620 + i * 55, delay: k * 110 + i * 40, fill: 'backwards', easing: 'cubic-bezier(.5,0,.3,1)' }).onfinish = () => { c.remove(); if (i === 0) bump(target); };
+    }
+  });
+}
+// Nach dem Gutschreiben einer Belohnung: Truhen und Kisten öffnen sich, alles andere fliegt in die Leiste
+function collected(src, loot, title = 'Schicksalstruhe') {
+  if (!loot) return;
+  save();
+  if (loot.box) { lootSheet(loot.box === 'runenkiste' ? 'Runenkiste' : title, loot, '', loot.box); return; }
+  collectFx(src, loot);
+  render();
 }
 
 // Beute zeigen: Gold, Runensplitter, Karten
@@ -176,8 +250,11 @@ function lootBox(title, loot) {
   const row = el('div', 'loot');
   if (loot.gold) row.append(el('div', 'item goldItem', `<span class="ico coin"></span>+${fmt(loot.gold)}`));
   if (loot.gems) row.append(el('div', 'item goldItem', `<span class="ico gem"></span>+${loot.gems}`));
-  if (loot.jokers) row.append(el('div', 'item goldItem', `<span class="ico joker"></span>+${loot.jokers}`));
+  for (const r of P.RARITIES) if (loot.jk && loot.jk[r]) row.append(el('div', 'item goldItem', `<span class="ico joker r-${r}"></span>+${loot.jk[r]}`));
+  if (loot.potions) row.append(el('div', 'item goldItem', `<span class="ico trank"></span>+${loot.potions}`));
+  if (loot.marks) row.append(el('div', 'item goldItem', `<span class="ico marke"></span>+${loot.marks}`));
   if (loot.wild) row.append(el('div', 'item goldItem', `<span class="ico wild"></span>+${loot.wild}`));
+  if (loot.hero) row.append(el('div', 'item goldItem', `<span class="ico heldm"></span>+${loot.hero}`));
   for (const s of [...(loot.cards || [])].sort(byRarity)) { const it = el('div', 'item'); it.append(cardEl(s.id, { tag: 'div' }), document.createTextNode(`× ${s.n}`)); row.append(it); }
   for (const s of loot.shards || []) { const it = el('div', 'item shardItem'); it.append(cardEl(s.id, { tag: 'div' }), el('span', '', `<span class="ico shard"></span>+${s.n}`)); row.append(it); }
   [...row.children].forEach((it, i) => it.style.setProperty('--i', i)); // Stück für Stück einblenden
@@ -192,26 +269,55 @@ function lootSheet(title, loot, note, kind) {
     simpleSheet('', body);
     render();
   };
-  if (kind && (loot.cards || []).length) openChest(kind, title, loot, summary); else { sfx('chest'); summary(); }
+  if (kind && ((loot.cards || []).length || loot.path)) openChest(kind, title, loot, summary); else { sfx('chest'); summary(); }
 }
 
 // Truhe öffnen: Sie fällt herein, ein Antippen öffnet sie, dann kommt der Inhalt Stück für Stück heraus.
+// Schicksalstruhen und Runenkisten (loot.path) werfen zuerst ihre Schicksalswürfe: Jeder kann einen Funken dazugeben.
 function openChest(kind, title, loot, done) {
   const items = [];
   if (loot.gold) items.push({ t: 'gold', n: loot.gold });
-  if (loot.jokers) items.push({ t: 'joker', n: loot.jokers });
+  for (const r of P.RARITIES) if (loot.jk && loot.jk[r]) items.push({ t: 'joker', r, n: loot.jk[r] });
   for (const s of [...(loot.cards || [])].sort(byRarity)) items.push({ t: 'card', id: s.id, n: s.n }); // das Seltenste kommt zum Schluss
   if (loot.gems) items.push({ t: 'gem', n: loot.gems });
   for (const s of loot.shards || []) items.push({ t: 'shard', id: s.id, n: s.n });
   if (loot.wild) items.push({ t: 'wild', n: loot.wild });
-  const box = el('div', `chestfx ${kind}`, `<button class="skip">Überspringen</button><div class="ctitle">${title}</div><div class="cstage"><div class="rays"></div><div class="reveal"></div><div class="chestbox"><i class="glowin"></i><i class="lid"></i><i class="body"></i><i class="lock"></i><b class="ccount">${items.length}</b></div></div><div class="cinfo"></div><div class="uphint">Tippen zum Öffnen</div>`);
-  const reveal = box.querySelector('.reveal'), info = box.querySelector('.cinfo'), count = box.querySelector('.ccount'), hint = box.querySelector('.uphint');
+  if (loot.hero) items.push({ t: 'hero', n: loot.hero });
+  const path = loot.path || null;
+  let stars = loot.start || 0, rolled = !path;
+  const box = el('div', `chestfx ${kind}${path ? ` f${stars}` : ''}`, `<button class="skip">Überspringen</button><div class="ctitle">${title}</div>${path ? '<div class="fates"></div>' : ''}<div class="cstage"><div class="rays"></div><div class="reveal"></div><div class="chestbox"><i class="glowin"></i><i class="lid"></i><i class="body"></i><i class="lock"></i><b class="ccount">${items.length}</b></div></div><div class="cinfo"></div><div class="uphint">${path ? 'Tippen für die Schicksalswürfe' : 'Tippen zum Öffnen'}</div>`);
+  const reveal = box.querySelector('.reveal'), info = box.querySelector('.cinfo'), count = box.querySelector('.ccount'), hint = box.querySelector('.uphint'), fateRow = box.querySelector('.fates');
+  const showStars = pop => { // fünf Rauten, die gefüllten leuchten
+    if (!fateRow) return;
+    fateRow.replaceChildren(...Array.from({ length: 5 }, (_, k) => el('i', k < stars ? (pop && k === stars - 1 ? 'on pop' : 'on') : '')));
+    box.className = box.className.replace(/ f\d/, ` f${stars}`);
+  };
+  showStars(false);
   fxLayer.replaceChildren(box); fxLayer.hidden = false;
   sfx('deploy');
-  let i = -1, closed = false, timer = 0, last = performance.now();
+  let i = -1, closed = false, timer = 0, last = performance.now(), rolling = false;
   const close = () => { if (closed) return; closed = true; clearTimeout(timer); fxLayer.hidden = true; fxLayer.replaceChildren(); fxLayer.onclick = null; done(); };
+  const roll = k => { // ein Schicksalswurf nach dem anderen; ein Antippen kürzt ab
+    clearTimeout(timer);
+    if (closed) return;
+    if (k >= path.length) { rolled = true; rolling = false; hint.textContent = 'Tippen zum Öffnen'; timer = setTimeout(next, 900); return; }
+    rolling = true;
+    hint.textContent = `Schicksalswurf ${k + 1} von ${path.length}`;
+    box.classList.remove('roll'); void box.offsetWidth; box.classList.add('roll');
+    sfx('tick');
+    timer = setTimeout(() => {
+      if (path[k] > stars) { stars = path[k]; showStars(true); sfx('rune'); }
+      timer = setTimeout(() => roll(k + 1), path[k] === (k ? path[k - 1] : loot.start) ? 260 : 520);
+    }, 430);
+  };
   const next = () => {
     clearTimeout(timer);
+    if (!rolled) {
+      if (rolling) { stars = loot.stars; showStars(true); rolled = true; rolling = false; box.classList.remove('roll'); hint.textContent = 'Tippen zum Öffnen'; timer = setTimeout(next, 900); } // abkürzen
+      else roll(0);
+      last = performance.now();
+      return;
+    }
     if (i < 0) { box.classList.add('open'); sfx('chest'); hint.textContent = 'Tippen für das nächste Stück'; }
     i++;
     if (i >= items.length) { close(); return; }
@@ -228,13 +334,21 @@ function openChest(kind, title, loot, done) {
       const r = P.runeInfo(profile, it.id);
       info.innerHTML = `<small class="rword rune">Runenscherbe</small><b>${CARDS[it.id].name}</b><span>+ ${it.n} · ${r.have} / ${r.need}</span>${r.done ? '<em class="can">Runenform erweckt!</em>' : ''}`;
       sfx('rune');
+    } else if (it.t === 'hero') {
+      node.innerHTML = '<span class="ico heldm"></span>';
+      info.innerHTML = `<small class="rword">für Heldenformen</small><b>Heldenmünzen</b><span>+ ${it.n} · ${profile.heroCoins} / ${P.HERO_FORM_PRICE}</span>`;
+      sfx('rune');
     } else if (it.t === 'wild') {
       node.innerHTML = '<span class="ico wild"></span>';
       info.innerHTML = `<small class="rword rune">passt auf jede Karte</small><b>Wanderscherbe</b><span>+ ${it.n}</span>`;
       sfx('rune');
+    } else if (it.t === 'joker') {
+      node.innerHTML = `<span class="ico joker r-${it.r}"></span>`;
+      info.innerHTML = `<small class="rword ${it.r}">ersetzt fehlende Kopien</small><b>${P.JOKER_NAME[it.r]}</b><span>+ ${fmt(it.n)}</span>`;
+      sfx(RAR_ORDER[it.r] >= 2 ? 'rune' : 'coin');
     } else {
       node.innerHTML = `<span class="ico ${it.t === 'gold' ? 'coin' : it.t}"></span>`;
-      info.innerHTML = `<b>${it.t === 'gold' ? 'Gold' : it.t === 'gem' ? 'Runensplitter' : 'Joker'}</b><span>+ ${fmt(it.n)}</span>`;
+      info.innerHTML = `<b>${it.t === 'gold' ? 'Gold' : 'Runensplitter'}</b><span>+ ${fmt(it.n)}</span>`;
       sfx('coin');
     }
     reveal.replaceChildren(node);
@@ -245,52 +359,38 @@ function openChest(kind, title, loot, done) {
   };
   box.querySelector('.skip').addEventListener('click', e => { e.stopPropagation(); sfx('click'); close(); });
   fxLayer.onclick = () => { if (performance.now() - last > 320) next(); };
-  timer = setTimeout(next, 2800); // öffnet sich nach kurzem Warten von selbst
+  timer = setTimeout(next, path ? 1500 : 2800); // öffnet sich nach kurzem Warten von selbst
 }
 
 // ---- Reiter „Kampf“ ----------------------------------------------------------------------------
-const clock = ms => { const s = Math.max(0, Math.ceil(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? `${h} Std. ${String(m).padStart(2, '0')}` : `${m}:${String(s % 60).padStart(2, '0')}`; };
-const mins = ms => { const m = Math.round(ms / 60000); return m >= 60 ? `${dec(Math.round(m / 6) / 10)} Std.` : `${m} Min.`; };
-const chestTick = () => { if (P.tickChests(profile, Date.now())) save(); };
-// Was in einer Truhe steckt, in einem Satz
+// Was in einer alten Truhe steckt, in einem Satz
 function chestText(kind, arena = profile.arena) {
   const i = P.chestInfo(kind, arena);
   return `${i.cards} Karten · rund ${fmt(i.gold)} Gold · ${i.jokers} Joker${i.gems ? ` · ${i.gems} Runensplitter` : ''}`;
 }
-// Truhenplätze: fertig (antippen öffnet), läuft (Restzeit), wartet, frei (zeigt blass, was der nächste Sieg bringt)
-let slotKey = '';
-function renderChests(force) {
-  const now = Date.now(), slots = P.chestSlots(profile, now), key = slots.map(c => (c ? c.kind + c.state : '-')).join() + profile.cyc;
-  const row = $('#chestRow');
-  if (force || key !== slotKey || row.children.length !== slots.length) {
-    slotKey = key;
-    let free = 0;
-    row.replaceChildren(...slots.map((c, i) => {
-      if (!c) { const kind = P.cycleKind(profile.cyc + free), first = !free++; const b = el('button', 'slot vacant', `<span class="chestIco ${kind}"></span><b>${first ? 'Nächster Sieg' : 'Frei'}</b><small>${first ? P.CHESTS[kind].name : 'Truhenplatz'}</small>`); b.dataset.i = i; return b; }
-      const b = el('button', `slot ${c.state}`, `<span class="chestIco ${c.kind}"></span><b></b><small>${c.name}</small><i class="prog"><i></i></i>`);
-      b.dataset.i = i; return b;
-    }));
-  }
-  slots.forEach((c, i) => {
-    if (!c) return;
-    const b = row.children[i], txt = c.state === 'ready' ? 'Öffnen' : c.state === 'run' ? clock(c.left) : mins(c.total);
-    if (b.children[1].textContent !== txt) b.children[1].textContent = txt;
-    b.lastElementChild.firstElementChild.style.width = `${c.state === 'wait' ? 0 : 100 * (1 - c.left / c.total)}%`;
-  });
-  const fr = P.freeInfo(profile, now);
-  $('#freeInfo').textContent = fr.n ? (fr.n > 1 ? `${fr.n} bereit` : 'bereit') : `in ${clock(fr.next)}`;
-  $('#freeDot').hidden = !fr.n; $('#freeBtn').classList.toggle('go', fr.n > 0);
+// Tagessiege: vier Plätze für die Schicksalstruhen der ersten vier Siege des Tages (geholt, als Nächstes, offen)
+function renderDayRow() {
+  const n = profile.dayWins;
+  $('#chestRow').replaceChildren(...P.DAY_CHESTS.map((s, i) => {
+    const b = el('button', `slot ${i < n ? 'got' : i === n ? 'next' : 'vacant'}`, `<span class="chestIco los f${s}"></span><b>${i < n ? 'geholt ✓' : `${i + 1}. Sieg`}</b><small>${fates(s)}</small>`);
+    b.dataset.i = i;
+    return b;
+  }));
 }
 function renderHome() {
   const a = P.ARENAS[profile.arena], next = P.ARENAS[profile.arena + 1];
   $('#who').textContent = profile.name;
   $('#deckName').textContent = `Deck ${profile.slot + 1}`;
   $('#deckInfo').textContent = `Ø ${dec(avgCost(profile.deck).toFixed(1))} Kraft`;
-  renderChests(true);
-  const freeSlot = profile.chests.includes(null);
-  $('#playInfo').textContent = freeSlot ? `Sieg bringt: ${P.CHESTS[P.cycleKind(profile.cyc)].name}` : 'Alle Truhenplätze belegt';
-  $('#crownFill').style.width = `${Math.min(100, 100 * profile.crownBox / P.CROWN_BOX)}%`;
-  $('#crownBtn').classList.toggle('go', profile.crownBox >= P.CROWN_BOX);
+  renderDayRow();
+  const w = profile.dayWins;
+  $('#playInfo').innerHTML = w < P.DAY_CHESTS.length ? `Sieg bringt: Schicksalstruhe ${fates(P.DAY_CHESTS[w])}` : w < P.DAY_PRIZES ? `Sieg bringt: Siegprämie · heute ${w} von ${P.DAY_PRIZES}` : 'Heute alle Prämien geholt';
+  const pi = P.passInfo(profile), ready = passReady();
+  $('#passInfo').textContent = ready ? `${ready} bereit` : pi.done ? 'Stufe 90 ✓' : `Stufe ${pi.tier} · ${pi.into}/${pi.need}`;
+  $('#passFill').style.width = `${pi.done ? 100 : 100 * pi.into / pi.need}%`;
+  $('#passDot').hidden = !ready; $('#passBtn').classList.toggle('go', ready > 0);
+  $('#itemsInfo').textContent = profile.stash.length ? `${profile.stash.length} ${profile.stash.length === 1 ? 'Truhe' : 'Truhen'}` : `${fmt(P.jokerTotal(profile))} Joker`;
+  $('#itemsDot').hidden = !profile.stash.length; $('#itemsBtn').classList.toggle('go', profile.stash.length > 0);
   $('#questBtn').classList.toggle('go', P.questsOpen(profile) > 0);
   $('#arenaNo').textContent = `Arena ${profile.arena + 1}`;
   $('#arenaName').textContent = a.name;
@@ -301,8 +401,6 @@ function renderHome() {
   const open = P.questsOpen(profile), left = profile.quests.filter(q => !q.claimed).length;
   $('#questInfo').textContent = open ? `${open} bereit` : left ? `${left} offen` : 'erledigt';
   $('#questDot').hidden = !open;
-  $('#crownInfo').textContent = profile.crownBox >= P.CROWN_BOX ? 'bereit' : `${profile.crownBox} / ${P.CROWN_BOX}`;
-  $('#crownDot').hidden = profile.crownBox < P.CROWN_BOX;
   $('#modeDot').hidden = !(P.modeBonusOpen(profile) || P.bossNext(profile) >= 0);
   const n = profile.wins + profile.losses + profile.draws;
   $('#stats').textContent = n ? `${profile.wins} Siege · ${profile.losses} Niederlagen${profile.draws ? ` · ${profile.draws} Unentschieden` : ''}` : 'Zerstöre die Türme auf der anderen Seite der Furt.';
@@ -311,76 +409,63 @@ function renderHome() {
 $('#levelSeg').addEventListener('click', e => { const l = e.target.dataset.level; if (!l) return; profile.level = l; save(); sfx('click'); renderHome(); });
 $('#playBtn').addEventListener('click', () => { sfx('click'); if (!profile.seenHelp) showHelp(() => startBattle(false)); else startBattle(false); });
 $('#modeBtn').addEventListener('click', () => { sfx('click'); showModes(); });
-$('#arenaBox').addEventListener('click', () => { sfx('click'); show('road'); });
+$('#arenaBox').addEventListener('click', () => { sfx('click'); wayView = 'road'; roadSeen = false; show('road'); });
 $('#lvlPill').addEventListener('click', () => { sfx('click'); show('more'); });
 $('#questBtn').addEventListener('click', () => { sfx('click'); showQuests(); });
-$('#crownBtn').addEventListener('click', () => {
-  sfx('click');
-  const loot = P.claimCrownBox(profile);
-  if (loot) { save(); lootSheet('Kronentruhe', loot, '', 'kronen'); return; }
-  simpleSheet('Kronentruhe', el('div', 'chestCard', `<span class="chestIco kronen"></span><p class="center">Jede Krone aus einem Kampf zählt – auch bei einer Niederlage. Bei ${P.CROWN_BOX} Kronen öffnet sich die Kronentruhe.</p><p class="center small">${chestText('kronen')} · 5 Runensplitter</p><div class="meterBig"><i style="width:${100 * profile.crownBox / P.CROWN_BOX}%"></i><span>${profile.crownBox} / ${P.CROWN_BOX} Kronen</span></div>`));
-});
+$('#passBtn').addEventListener('click', () => { sfx('click'); wayView = 'pass'; roadSeen = false; show('road'); });
+$('#itemsBtn').addEventListener('click', () => { sfx('click'); showItems(); });
 $('#deckBtn').addEventListener('click', () => { sfx('click'); show('cards'); });
 $('#stageCv').addEventListener('pointerdown', e => { if (stage.poke(e.clientX, e.clientY)) sfx('click'); });
-// Freie Truhe: alle vier Stunden eine, höchstens zwei warten
-$('#freeBtn').addEventListener('click', () => {
-  sfx('click');
-  const now = Date.now(), loot = P.claimFree(profile, now);
-  if (loot) { save(); lootSheet('Freie Truhe', loot, '', 'frei'); return; }
-  simpleSheet('Freie Truhe', el('div', 'chestCard', `<span class="chestIco frei"></span><p class="center">Alle vier Stunden gibt es eine kleine Truhe geschenkt. Höchstens ${P.FREE_MAX} warten auf dich.</p><p class="center small">${chestText('frei')}</p><div class="notice">Die nächste kommt in ${clock(P.freeInfo(profile, now).next)}</div>`));
-});
-// Truhenplätze: fertige Truhe öffnen, sonst zeigen, was drin ist und wie lange sie noch braucht
-$('#chestRow').addEventListener('click', e => {
-  const b = e.target.closest('.slot'); if (!b) return;
-  sfx('click');
-  const i = Number(b.dataset.i), now = Date.now();
-  chestTick();
-  const c = P.chestSlots(profile, now)[i];
-  if (!c) { showCycle(); return; }
-  if (c.state === 'ready') { const loot = P.openSlot(profile, i, now); if (loot) { save(); lootSheet(c.name, loot, '', c.kind); } return; }
-  showSlot(i);
-});
-function showSlot(i) {
-  const now = Date.now(), c = P.chestSlots(profile, now)[i];
-  if (!c) return;
-  const cost = P.skipCost(profile, i, now), running = P.chestSlots(profile, now).find(x => x && x.state === 'run');
-  const d = el('div', 'chestCard', `<h3>${c.name}</h3><span class="chestIco ${c.kind}"></span><p class="center small">aus Arena ${c.arena + 1} · ${P.ARENAS[c.arena].name}</p><p class="center">${chestText(c.kind, c.arena)}</p>`);
-  d.append(el('div', 'notice', c.state === 'run' ? `Öffnet sich in <b class="left">${clock(c.left)}</b>` : `Wartet – braucht ${mins(c.total)}${running ? `, zuerst ist die ${running.name} dran` : ''}`));
-  d.append(el('p', 'center small', 'Truhen öffnen sich nacheinander von selbst – auch wenn das Spiel zu ist.'));
-  const row = el('div', 'btns'), skip = el('button', 'btn primary', `Sofort öffnen <span class="ico gem"></span>${cost}`);
-  skip.disabled = profile.gems < cost;
-  skip.addEventListener('click', () => {
-    const t = Date.now();
-    if (!P.skipChest(profile, i, t)) { sfx('error'); return; }
-    const loot = P.openSlot(profile, i, t);
-    save(); sfx('buy'); closeSheet(); sheetDismiss = null;
-    if (loot) lootSheet(c.name, loot, '', c.kind); else render();
-  });
-  row.append(closeBtn(), skip); d.append(row);
-  sheetDismiss = () => { closeSheet(); sheetDismiss = null; };
-  openSheet(d, true);
-}
-// Truhenfolge: was die nächsten Siege bringen
-function showCycle() {
-  const d = el('div', 'chestCard');
-  d.append(el('p', 'center', 'Jeder Sieg legt eine Truhe auf einen freien Truhenplatz. Welche es ist, steht fest – so sieht deine Reihe aus:'));
-  const row = el('div', 'cycle');
-  P.nextChests(profile, 8).forEach((kind, k) => row.append(el('div', k ? '' : 'next', `<span class="chestIco ${kind}"></span><small>${k ? `${k + 1}.` : 'als Nächstes'}</small>`)));
-  d.append(row);
+$('#chestRow').addEventListener('click', e => { if (e.target.closest('.slot')) { sfx('click'); showFate(); } });
+
+// Tagessiege und Schicksalstruhen erklärt: was heute noch wartet, wie die Würfe fallen, was in den Truhen steckt
+const pct = v => `${dec(Math.round(v * 10) / 10)} %`;
+function showFate() {
+  const d = el('div', 'chestCard'), w = profile.dayWins;
+  d.append(el('p', 'center', `Die ersten ${P.DAY_CHESTS.length} Siege des Tages bringen je eine <b>Schicksalstruhe</b>, die ersten ${P.DAY_PRIZES} eine Siegprämie (Gold oder Karten), die ersten ${P.BONUS_WINS} dazu ${P.BONUS_CROWNS} Bonuskronen für den Runenpfad.`));
+  const row = el('div', 'cycle four');
+  P.DAY_CHESTS.forEach((s, i) => row.append(el('div', i < w ? 'got' : i === w ? 'next' : '', `<span class="chestIco los f${s}"></span><small>${i < w ? 'geholt' : `${i + 1}. Sieg`}</small>${fates(s)}`)));
+  d.append(row, el('div', 'notice', `Heute: ${w} ${w === 1 ? 'Sieg' : 'Siege'} · Siegprämien ${Math.min(w, P.DAY_PRIZES)} von ${P.DAY_PRIZES}<br><small>Neuer Tag in ${untilMidnight()}</small>`));
+  d.append(el('p', 'center', 'Beim Öffnen fallen vier <b>Schicksalswürfe</b>. Jeder kann der Truhe einen Funken dazugeben – je mehr Funken, desto wertvoller die eine Belohnung darin.'));
+  const odds = el('div', 'oddsTable', `<div class="oh"><span>Beginn</span>${[1, 2, 3, 4, 5].map(s => `<b>${fates(s)}</b>`).join('')}</div>` + [1, 2, 3].map(s => `<div><span>${fates(s)}</span>${P.LUCKY_ODDS[s].map(v => `<i>${v ? pct(v) : '–'}</i>`).join('')}</div>`).join(''));
+  d.append(odds);
   const list = el('div', 'kinds');
-  for (const kind of ['sieg', 'eisen', 'riesen', 'runen']) list.append(el('div', '', `<span class="chestIco ${kind}"></span><span><b>${P.CHESTS[kind].name} <em>${mins(P.chestTime(kind))}</em></b><small>${chestText(kind)}</small></span>`));
-  d.append(list, el('p', 'center small', 'Sind alle vier Plätze belegt, bringt ein Sieg nur Trophäen und die Siegprämie.'));
-  simpleSheet('Truhenfolge', d);
+  const what = { 1: 'Gold oder ein Stapel einer gewöhnlichen oder seltenen Karte', 2: 'größer – auch epische Karten', 3: 'groß – auch legendäre Karten und Helden', 4: 'ein großer Kartenstapel, Joker oder eine Wanderscherbe', 5: 'ein riesiger Stapel, viele Joker oder eine ganze Runenform' };
+  for (const s of [1, 2, 3, 4, 5]) list.append(el('div', '', `<span class="chestIco los f${s}"></span><span><b>${fates(s)}</b><small>${what[s]}</small></span>`));
+  d.append(list, el('p', 'center small', 'Schicksalstruhen gibt es außerdem auf dem Runenpfad, dem Trophäenweg, für die Sammlungsstufe, im Tagesgeschenk und im Laden. Sie wachsen mit deiner Arena.'));
+  simpleSheet('Tagessiege', d);
 }
-// Uhren im Hauptmenü: einmal je Sekunde, nur solange der Reiter „Kampf“ zu sehen ist
-setInterval(() => {
-  if (screen !== 'menu' || tab !== 'home' || document.hidden) return;
-  const ready = P.chestsReady(profile, Date.now());
-  chestTick(); renderChests(false);
-  if (P.chestsReady(profile, Date.now()) !== ready) renderTop();
-  const left = sheet.querySelector('.chestCard .left'); // offenes Truhenblatt läuft mit
-  if (left) { const run = P.chestSlots(profile, Date.now()).find(x => x && x.state === 'run'); if (run) left.textContent = clock(run.left); }
-}, 1000);
+
+// Sonderdinge: alles, was man außer Gold und Runensplittern sammelt – mit Vorrat, Zweck und Fundort
+function showItems() {
+  const d = el('div', 'items');
+  const row = (ico, name, count, text) => { const r = el('div', 'itemRow', `${ico}<span><b>${name}</b><small>${text}</small></span><em>${count}</em>`); d.append(r); return r; };
+  d.append(el('div', 'sub', '<b>Joker</b><span>ersetzen fehlende Kopien beim Aufwerten</span>'));
+  for (const r of P.RARITIES) if (r === 'gewoehnlich' || profile.jk[r] || Object.keys(profile.cards).some(id => P.rarity(id) === r)) row(`<span class="ico joker r-${r}"></span>`, P.JOKER_NAME[r], `${fmt(profile.jk[r])}<small>/ ${fmt(P.jokerCap(profile, r))}</small>`, `für jede ${r === 'held' ? 'Heldenkarte' : `${P.RARITY_NAME[r].toLowerCase()}e Karte`}`);
+  d.append(el('p', 'small hintLine', 'Karte antippen und „Joker einsetzen“ wählen. Ist ein Vorrat voll, wird aus neuen Jokern ein Kartenstapel. Fundorte: Runenpfad, Schicksalstruhen ab vier Funken, Trophäenweg, Sammlungsstufe, Saisonmarkt, Bosse.'));
+  d.append(el('div', 'sub', '<b>Runenformen</b><span></span>'));
+  const done = Object.keys(RUNES).filter(id => P.hasRune(profile, id)).length, shards = Object.keys(RUNES).reduce((s, id) => s + (profile.cards[id] && !P.hasRune(profile, id) ? profile.runes[id] || 0 : 0), 0);
+  row('<span class="ico shard"></span>', 'Runenscherben', `${done}<small>/ ${Object.keys(RUNES).length}</small>`, `Runenformen erweckt · ${shards} Scherben in Arbeit · ${P.RUNE_SHARDS} je Karte`);
+  row('<span class="ico heldm"></span>', 'Heldenmünzen', `${profile.heroCoins}<small>/ ${P.HERO_FORM_PRICE}</small>`, 'schalten die Heldenform einer Karte frei (im Kartenblatt) · Runenpfad und Saisonmarkt');
+  row('<span class="ico wild"></span>', 'Wanderscherben', `${profile.wild}<small>/ ${P.WILD_CAP}</small>`, 'passen auf jede Karte mit Runenform (im Kartenblatt einsetzen)');
+  d.append(el('p', 'small hintLine', 'Fundorte: Runenkisten, Runenpfad, Schicksalstruhen mit vier und fünf Funken, Modus des Tages, Bosse, Laden und Saisonmarkt.'));
+  d.append(el('div', 'sub', '<b>Weitere</b><span></span>'));
+  const active = Object.keys(profile.boosts).filter(id => P.boosted(profile, id, Date.now()));
+  row('<span class="ico trank"></span>', 'Stärkungstränke', `${profile.potions}<small>/ ${P.POTION_CAP}</small>`, `heben eine Karte ${P.POTION_HOURS} Stunden auf die Stufe deines Hauptturms${active.length ? ` · gerade gestärkt: ${active.map(id => CARDS[id].name).join(', ')}` : ''}`);
+  row('<span class="ico marke"></span>', 'Furtmarken', fmt(profile.season.marks), 'aus Spielmodi und Bosskämpfen · im Saisonmarkt (Laden) eintauschen · verfallen am Saisonende zu Gold');
+  if (profile.stash.length) {
+    d.append(el('div', 'sub', `<b>Truhenlager</b><span>${profile.stash.length} aus der Zeit der Truhenplätze</span>`));
+    const grid = el('div', 'stash');
+    profile.stash.forEach((c, i) => {
+      const b = el('button', 'slot ready', `<span class="chestIco ${c.k}"></span><b>Öffnen</b><small>${P.CHESTS[c.k].name}</small>`);
+      b.title = chestText(c.k, c.a);
+      b.addEventListener('click', () => { const loot = P.openStash(profile, i); if (!loot) return; save(); sfx('click'); closeSheet(); sheetDismiss = null; lootSheet(P.CHESTS[c.k].name, loot, profile.stash.length ? `Noch ${profile.stash.length} im Truhenlager` : '', c.k); });
+      grid.append(b);
+    });
+    d.append(grid, el('p', 'small hintLine', 'Truhen mit Wartezeit gibt es nicht mehr. Was du noch hattest, liegt hier und lässt sich sofort öffnen.'));
+  }
+  simpleSheet('Sonderdinge', d, false);
+}
 
 function showQuests() {
   const body = el('div', 'quests');
@@ -390,11 +475,16 @@ function showQuests() {
     row.append(el('div', 'qt', `<b>${d.text(q.need)}</b><div class="meterBig${done ? ' ok' : ''}"><i style="width:${100 * q.have / q.need}%"></i><span>${q.have} / ${q.need}</span></div>`));
     const b = el('button', 'btn primary', q.claimed ? 'Erledigt' : `<span class="ico coin"></span>${d.gold}${d.gems ? ` <span class="ico gem"></span>${d.gems}` : ''}`);
     b.disabled = q.claimed || !done;
-    b.addEventListener('click', () => { if (P.claimQuest(profile, i)) { save(); sfx('coin'); showQuests(); render(); } });
+    b.addEventListener('click', () => {
+      const r = P.claimQuest(profile, i);
+      if (!r) return;
+      save(); collectFx(b, { gold: r.gold, gems: r.gems, marks: r.marks });
+      if (r.lucky) { closeSheet(); sheetDismiss = null; lootSheet('Schicksalstruhe', r.lucky, 'Alle drei Tagesaufgaben erledigt', 'los'); } else { showQuests(); render(); }
+    });
     row.append(b); body.append(row);
   });
   const all = profile.questBonus === profile.day;
-  body.append(el('div', `qbonus${all ? ' claimed' : ''}`, `<div class="qt"><b>Alle drei erledigt</b><small>${all ? 'Wanderscherbe erhalten' : 'bringt eine Wanderscherbe für eine Runenform deiner Wahl'}</small></div><span class="ico wild big"></span>`));
+  body.append(el('div', `qbonus${all ? ' claimed' : ''}`, `<div class="qt"><b>Alle drei erledigt</b><small>${all ? 'Schicksalstruhe erhalten' : `bringt eine Schicksalstruhe ${fates(2)} und ${P.MARKS.quests} Furtmarken`}</small></div><span class="chestIco los f2"></span>`));
   body.append(el('p', 'center small', `Neue Aufgaben in ${untilMidnight()}`));
   simpleSheet('Tagesaufgaben', body);
 }
@@ -409,7 +499,7 @@ function showHelp(then) {
 <li><b>Türme:</b> Sie schießen erst, wenn ein Gegner die Brücke hinter sich gelassen hat.</li>
 <li><b>Helden:</b> Steht ein Held auf dem Feld, erscheint ein goldener Knopf für seine Fähigkeit – sie kostet Kraft.</li>
 <li><b>Runenform:</b> Manche Karten lassen sich mit sechs Runenscherben erwecken. Danach erscheinen sie jedes zweite oder dritte Mal in einer stärkeren Form (violette Rauten auf der Karte).</li>
-<li><b>Fortschritt:</b> Siege bringen Trophäen und eine Truhe. Der Trophäenweg, Tagesaufgaben und die Kronentruhe bringen Gold, Karten und Runensplitter; im Laden gibt es täglich neue Angebote.</li>
+<li><b>Fortschritt:</b> Siege bringen Trophäen, die ersten vier des Tages je eine Schicksalstruhe. Jede Krone füllt den Runenpfad der Saison; dazu kommen Trophäenweg, Sammlungsstufe und Tagesaufgaben. Im Laden gibt es täglich neue Angebote.</li>
 </ul>`);
   const b = el('button', 'btn primary', then ? 'Los geht’s' : 'Alles klar');
   const row = el('div', 'btns one'); row.append(b); d.append(row);
@@ -436,7 +526,10 @@ function renderDeck() {
     return b;
   }));
   $('#wishInfo').textContent = profile.wish ? `${CARDS[profile.wish].name} – in jeder Truhe` : 'noch keine gewählt';
-  $('#jokerNum').textContent = `${fmt(profile.jokers)} Joker`;
+  $('#jokerNum').textContent = `${fmt(P.jokerTotal(profile))} Joker`;
+  const mast = P.masteryOpen(profile); // Kartenmeisterschaft: wartende Belohnungen auf einen Griff
+  $('#mastBtn').hidden = !mast.length;
+  $('#mastInfo').textContent = `${mast.length} ${mast.length === 1 ? 'Belohnung' : 'Belohnungen'} · ${fmt(mast.reduce((s, id) => s + P.masteryInfo(profile, id).next.gold, 0))} Gold`;
   $('#avgCost').textContent = `Ø ${dec(avgCost(profile.deck).toFixed(1))} Kraft`;
   const seg = $('#slotSeg');
   seg.replaceChildren(...Array.from({ length: P.DECK_SLOTS }, (_, i) => { const b = el('button', i === profile.slot ? 'on' : '', `Deck ${i + 1}`); b.dataset.slot = i; return b; }));
@@ -445,7 +538,18 @@ function renderDeck() {
   if (swap) hint.textContent = `Tippe die Deck-Karte an, die ${CARDS[swap].name} ersetzen soll.`;
   const meter = id => { const c = profile.cards[id], u = P.upgradeInfo(profile, id); return u.max ? 0 : Math.max(0.001, c.n / u.copies); };
   const dg = $('#deckGrid'); dg.replaceChildren();
-  for (const id of profile.deck) { const e = cardEl(id, { lvl: profile.cards[id].lvl, meter: meter(id), wish: profile.wish === id }); if (swap) e.classList.add('pick'); dg.append(e); }
+  profile.deck.forEach((id, i) => {
+    const e = cardEl(id, { lvl: profile.cards[id].lvl, meter: meter(id), wish: profile.wish === id });
+    if (swap) e.classList.add('pick');
+    const sl = P.SPECIAL_SLOTS[i]; // die ersten drei Plätze: Runenplatz, Heldenplatz, freier Platz
+    if (sl) { e.classList.add('slot', `slot-${sl.kind}`); if (!P.slotOpen(profile, i)) e.classList.add('slot-closed'); }
+    if (P.hasRune(profile, id) && !P.runeActive(profile, id)) e.classList.add('rune-asleep'); // erweckt, aber nicht auf einem Runenplatz
+    dg.append(e);
+  });
+  let legend = $('#slotLegend');
+  if (!legend) { legend = el('p', 'slotLegend'); legend.id = 'slotLegend'; dg.after(legend); }
+  legend.innerHTML = P.SPECIAL_SLOTS.map((sl, i) => `<span class="${P.slotOpen(profile, i) ? '' : 'off'}"><i class="k ${sl.kind}"></i>Platz ${i + 1}: ${sl.name}${P.slotOpen(profile, i) ? '' : ` (ab Arena ${sl.arena + 1})`}</span>`).join('')
+    + '<small>Nur auf dem Runenplatz und dem freien Platz spielt eine Karte ihre Runenform. Helden stehen nur auf dem Heldenplatz und dem freien Platz.</small>';
   // Türme: die gewählte Art gilt für beide Außentürme; der Hauptturm steigt mit der Spielerstufe
   $('#towerInfo').textContent = `Hauptturm: Stufe ${P.playerLevel(profile.xp).lvl}`;
   $('#towerGrid').replaceChildren(...TOWER_IDS.map(id => {
@@ -470,9 +574,12 @@ $('#wishBtn').addEventListener('click', () => {
   if (profile.wish) { showCard(profile.wish); return; }
   simpleSheet('Wunschkarte', el('p', 'center', 'Wähle eine Karte, die du schneller aufwerten willst: Sie steckt dann in <b>jeder Truhe</b> und bekommt dort den größten Stapel.<br><br>Tippe dazu eine Karte an und wähle „Als Wunschkarte“.'));
 });
-$('#jokerBtn').addEventListener('click', () => {
-  sfx('click');
-  simpleSheet('Joker', el('p', 'center', `Joker ersetzen fehlende Karten beim Aufwerten – bei jeder beliebigen Karte. Du findest sie in allen Truhen.<br><br>Tippe eine Karte an und wähle „Joker einsetzen“.<br><br><b>Du hast ${fmt(profile.jokers)} Joker.</b>`));
+$('#jokerBtn').addEventListener('click', () => { sfx('click'); showItems(); });
+$('#mastBtn').addEventListener('click', () => { // alle gemeisterten Schritte abholen (eine Karte kann mehrere haben)
+  let gold = 0;
+  for (const id of P.masteryOpen(profile)) for (let r; (r = P.claimMastery(profile, id));) gold += r.gold;
+  if (!gold) return;
+  save(); collectFx($('#mastBtn'), { gold }); render();
 });
 $('#slotSeg').addEventListener('click', e => { const s = e.target.dataset.slot; if (s == null) return; sfx('click'); swap = null; P.setSlot(profile, Number(s)); save(); renderDeck(); });
 $('#filterChips').addEventListener('click', e => { const f = e.target.dataset.f; if (!f) return; sfx('click'); filter = f; renderDeck(); });
@@ -481,11 +588,14 @@ $('#deckGrid').addEventListener('click', e => {
   const c = e.target.closest('.card'); if (!c) return;
   sfx('click');
   if (swap) {
-    if (CARDS[swap].hero && !CARDS[c.dataset.id].hero && heroCount(profile.deck) >= MAX_HEROES) { // ein vierter Held ginge nur im Tausch gegen einen anderen
-      sfx('error'); flash(c); $('#swapHint').textContent = `Höchstens ${MAX_HEROES} Helden im Deck – tippe einen Helden an, um ihn zu ersetzen.`;
+    const at = profile.deck.indexOf(c.dataset.id);
+    if (!P.canPlace(profile, swap, at)) { // Helden stehen nur auf dem Heldenplatz und dem freien Platz
+      const hp = P.heroPlaces(profile.arena);
+      sfx('error'); flash(c);
+      $('#swapHint').textContent = hp.length ? `Ein Held steht nur auf dem Heldenplatz${hp.length > 1 ? ' oder dem freien Platz' : ''} – tippe die Karte dort an.` : `Der Heldenplatz öffnet sich in Arena ${P.SPECIAL_SLOTS[1].arena + 1}.`;
       return;
     }
-    profile.deck[profile.deck.indexOf(c.dataset.id)] = swap; swap = null; save(); renderDeck(); return;
+    profile.deck[at] = swap; swap = null; save(); renderDeck(); return;
   }
   showCard(c.dataset.id);
 });
@@ -509,13 +619,16 @@ function statRows(id, lvl) {
     return rows;
   }
   if (c.type === 'spell') {
-    if (c.dmg) { scaled(c.strikes ? 'Schaden je Blitz' : 'Schaden', c.dmg); scaled('Turmschaden', c.dmg * TOWER_SPELL_FACTOR); }
+    if (c.dmg) { scaled(c.strikes ? 'Schaden je Blitz' : c.waves ? 'Schaden je Welle' : 'Schaden', c.dmg); scaled(c.waves ? 'Turmschaden je Welle' : 'Turmschaden', c.dmg * (c.towerF ?? TOWER_SPELL_FACTOR)); }
+    if (c.waves) rows.push(['Wellen', `${c.waves.n} kurz nacheinander`, '']);
+    if (c.vines) { scaled('Schaden je Schub', c.vines.dmg); scaled('Turmschaden je Schub', c.vines.dmg * (c.towerF ?? TOWER_SPELL_FACTOR)); rows.push(['Schübe', String(c.vines.hits), '']); rows.push(['Hält fest', `die ${c.vines.n} zähesten Ziele · ${dec(c.vines.dur)} s`, '']); rows.push(['Flieger', 'holt sie auf den Boden', '']); }
     if (c.strikes) rows.push(['Blitze', `${c.strikes} – auf die zähesten Ziele`, '']);
     if (c.heal) { scaled('Heilung je Schlag', c.heal); rows.push(['Dauer', `${c.dur} s`, '']); }
     if (c.mirror) { rows.push(['Wiederholt', 'deine letzte Karte', '']); rows.push(['Kosten', 'ihre Kraft + 1', '']); rows.push(['Stufe der Wiederholung', String(lvl + 1), lvl < P.MAX_LEVEL ? '+1' : '']); rows.push(['Nicht möglich', 'Helden', '']); return rows; }
     if (c.dot) { scaled('Schaden je Sekunde', c.dot / c.tick); if (c.buildF) scaled('Gebäudeschaden je Sek.', c.dot / c.tick * c.buildF); if (!c.pull) scaled('Turmschaden je Sek.', c.dot / c.tick * (c.towerF || TOWER_SPELL_FACTOR)); rows.push(['Dauer', `${c.dur} s`, '']); }
     if (c.ground) rows.push(['Trifft', 'nur am Boden', '']);
     if (c.slow) rows.push(['Bremst', `${c.dot ? 'solange es bebt' : `${dec(c.slow)} s`} · −30 %`, '']);
+    if (c.snare) rows.push(['Bremst das Laufen', `−${Math.round((1 - c.snare) * 100)} %`, '']);
     if (c.amp) rows.push(['Gegner nehmen', `+${Math.round((c.amp - 1) * 100)} % Schaden`, '']);
     if (c.curse) rows.push(['Gefallene werden', SPAWN_NAME[c.curse][1], '']);
     if (c.clone) { rows.push(['Verdoppelt', 'eigene Truppen im Kreis', '']); rows.push(['Abbild', '1 Leben, voller Schaden', '']); }
@@ -526,10 +639,11 @@ function statRows(id, lvl) {
     if (c.root) rows.push(['Hält fest', `${dec(c.root)} s`, '']);
     if (c.freeze) rows.push(['Friert ein', `${dec(c.freeze)} s · auch Türme`, '']);
     if (c.stun) rows.push(['Betäubt', `${dec(c.stun)} s`, '']);
-    if (c.haste) rows.push(['Treibt an', `${c.haste} s · +30 %`, '']);
+    if (c.haste) rows.push(['Treibt an', c.linger ? `${dec(c.haste)} s im Kreis · +30 %` : `${c.haste} s · +30 %`, '']);
+    if (c.linger) rows.push(['Wirkt nach', `${dec(c.linger)} s · auch Gebäude und Türme`, '']);
     if (c.summon) { const sn = SPAWN_NAME[c.summon.unit]; rows.push(['Bringt', `${c.summon.count} ${sn[c.summon.count > 1 ? 1 : 0]}`, '']); scaled(`${sn[0]}: Schaden`, UNITS[c.summon.unit].dmg); scaled(`${sn[0]}: Leben`, UNITS[c.summon.unit].hp); }
     if (c.roll) { rows.push(['Rollt', `${c.roll.len} Felder weit`, '']); rows.push(['Breite', `${dec(c.roll.w)} Felder`, '']); }
-    if (c.knock) rows.push(['Rückstoß', `${dec(c.knock)} Felder`, '']);
+    if (c.knock) rows.push(['Rückstoß', `${dec(c.knock)} Felder${c.knockOut ? ' von der Mitte weg' : ''}`, '']);
     if (c.pull) rows.push(['Zieht', 'Truppen zur Mitte', '']);
     if (!c.roll && c.radius) rows.push(['Radius', `${dec(c.radius)} Felder`, '']);
     return rows;
@@ -541,6 +655,8 @@ function statRows(id, lvl) {
   else if (u.scatter) { scaled('Schaden je Splitter', u.dmg); rows.push(['Splitter', `${u.scatter.n} im Fächer`, '']); rows.push(['Schlagtempo', `${dec(u.atk)} s`, '']); }
   else if (u.dmg) { scaled(u.splash || u.line || u.burst ? 'Flächenschaden' : 'Schaden', u.dmg); rows.push(['Schlagtempo', `${dec(u.atk)} s`, '']); }
   if (c.mix) for (const [bu, bk] of c.mix.slice(1)) { const b = UNITS[bu], sn = SPAWN_NAME[bu][0]; scaled(`${sn}: Leben`, b.hp); scaled(`${sn}: Schaden`, b.dmg); rows.push([`${sn}: Reichweite`, `${dec(b.range)} Felder`, '']); }
+  if (u.melee) { scaled('Stich aus der Nähe', u.melee.dmg); rows.push(['· gegen Bodenziele', `näher als ${dec(u.melee.range)} Felder`, '']); }
+  if (u.deployHeal) scaled('Heilt bei der Landung', u.deployHeal.amt);
   if (u.chain) rows.push(['Springt über', `auf ${u.chain.n - 1} weitere Ziele`, '']);
   if (u.line && u.line.back) rows.push(['Kehrt zurück', 'trifft zweimal', '']);
   if (u.burst) rows.push(['Streut', `${dec(u.burst.len)} Felder hinter das Ziel`, '']);
@@ -626,10 +742,36 @@ function showCard(id) {
           save(); sfx('rune'); render();
           if (P.hasRune(profile, id)) playRune(id, () => showCard(id)); else showCard(id);
         });
-        rb.append(wb, el('small', 'src', `Scherben: Riesen- und Runentruhe (sicher), andere Truhen mit Glück, Modus des Tages, Stufe ${RUNE_LEVEL} der Karte. Wanderscherben: alle drei Tagesaufgaben, Trophäenweg, Bosse, Laden.`));
+        rb.append(wb, el('small', 'src', `Scherben: Runenkisten, Runenform der Saison auf dem Runenpfad, Schicksalstruhe mit fünf Funken, Modus des Tages, Stufe ${RUNE_LEVEL} der Karte. Wanderscherben: Runenpfad, Schicksalstruhe mit vier Funken, Trophäenweg, Bosse, Laden, Saisonmarkt.`));
       }
     }
     panes.werte.append(rb);
+  }
+  if (HERO_FORMS[id]) {
+    const F = HERO_FORMS[id].ability, fi = own ? P.formInfo(profile, id) : { done: false, price: P.HERO_FORM_PRICE, can: false };
+    const state = fi.done ? (P.formActive(profile, id) ? 'spielt mit: die Karte steht auf einem Heldenplatz' : 'freigeschaltet · spielt nur auf dem Heldenplatz oder dem freien Platz') : 'noch nicht freigeschaltet';
+    const hb = el('div', `extra heroBox formBox${fi.done ? ' on' : ''}`, `<b><span class="formMark${fi.done ? '' : ' off'}"></span>Heldenform · ${F.name}</b><small>${state} · ${F.cost} Kraft, einmal je Einsatz</small><p>${F.desc}</p>`);
+    if (!fi.done && own) {
+      const b = el('button', 'btn', `<span class="ico heldm"></span>Freischalten für ${fi.price} <em>${profile.heroCoins}</em>`);
+      b.disabled = !fi.can;
+      b.addEventListener('click', () => { if (!P.buyForm(profile, id)) { sfx('error'); return; } save(); sfx('rune'); render(); showCard(id); });
+      hb.append(b, el('small', 'src', 'Heldenmünzen gibt es auf dem Runenpfad (beide Spuren) und im Saisonmarkt.'));
+    }
+    panes.werte.append(hb);
+  }
+  if (own && c.type !== 'tower') {
+    // Kartenmeisterschaft: drei Schritte für oft gespielte Karten, jeder bringt Gold
+    const m = P.masteryInfo(profile, id), mb = el('div', `extra mastBox${m.can ? ' can' : ''}`, `<b>Kartenmeisterschaft <em>${m.step} / ${P.MASTERY.length}</em></b><small>${m.next ? `${fmt(Math.min(m.played, m.next.need))} von ${m.next.need}-mal ausgespielt · bringt ${m.next.gold} Gold` : `gemeistert · ${fmt(m.played)}-mal ausgespielt`}</small>`);
+    if (m.next) mb.append(el('div', `meterBig${m.can ? ' ok' : ''}`, `<i style="width:${Math.min(100, 100 * m.played / m.next.need)}%"></i>`));
+    if (m.can) { const b = el('button', 'btn primary', `Abholen <span class="ico coin"></span>${m.next.gold}`); b.addEventListener('click', () => { const r = P.claimMastery(profile, id); if (!r) return; save(); collectFx(b, r); render(); showCard(id); }); mb.append(b); }
+    panes.werte.append(mb);
+    // Stärkungstrank: drei Stunden lang zählt die Karte im Kampf mit der Stufe des Hauptturms
+    const now = Date.now(), on = P.boosted(profile, id, now), tl = P.playerLevel(profile.xp).lvl;
+    if (on || profile.potions > 0) {
+      const pb = el('div', `extra potionBox${on ? ' on' : ''}`, `<b><span class="ico trank"></span>Stärkungstrank</b><small>${on ? `wirkt noch ${Math.max(1, Math.ceil((profile.boosts[id] - now) / 60000))} Min. · die Karte kämpft auf Stufe ${P.boostLevel(profile, id, now)}` : tl > lvl ? `hebt die Karte ${P.POTION_HOURS} Stunden lang auf Stufe ${tl} (Stufe deines Hauptturms)` : `wirkt erst, wenn dein Hauptturm (Stufe ${tl}) über der Karte liegt`}</small>`);
+      if (!on) { const b = el('button', 'btn', `Trank einsetzen <em>${profile.potions}</em>`); b.disabled = tl <= lvl; b.addEventListener('click', () => { if (!P.usePotion(profile, id, Date.now())) { sfx('error'); return; } save(); sfx('rune'); render(); showCard(id); }); pb.append(b); }
+      panes.werte.append(pb);
+    }
   }
   panes.wirkung.append(el('ul', '', explain(id, lvl).map(t => `<li>${esc(t)}</li>`).join('')), el('small', '', `Zahlen für Stufe ${lvl}.`));
   panes.story.append(el('p', '', esc(STORY[id] || '')));
@@ -653,8 +795,8 @@ function showCard(id) {
       if (profile.gold < u.gold) lack.push(`${fmt(u.gold - profile.gold)} Gold`);
       if (lack.length) d.append(el('p', 'center small lack', `Es fehlen noch ${lack.join(' und ')}.`));
       const tools = el('div', 'tools');
-      const jb = el('button', 'btn', `<span class="ico joker"></span>${j.use ? `${j.use} Joker einsetzen` : 'Joker einsetzen'}`);
-      if (j.each > 1 && j.missing) d.append(el('p', 'center small', `${P.RARITY_NAME[rar]}e Karte: ${j.each} Joker ersetzen eine Kopie.`));
+      const jb = el('button', 'btn', `<span class="ico joker r-${rar}"></span>${j.use ? `${j.use} Joker einsetzen` : 'Joker einsetzen'}`);
+      if (j.missing) d.append(el('p', 'center small', `${P.JOKER_NAME[rar]}: du hast ${fmt(j.have)} – einer ersetzt eine Kopie.`));
       jb.disabled = !j.use;
       jb.addEventListener('click', () => { if (P.useJokers(profile, id)) { save(); sfx('buy'); render(); showCard(id); } });
       const wb = el('button', `btn${profile.wish === id ? ' wished' : ''}`, `<span class="ico star"></span>${profile.wish === id ? 'Wunschkarte ✓' : 'Als Wunschkarte'}`);
@@ -672,6 +814,15 @@ function showCard(id) {
       const b = el('button', 'btn', 'Ins Deck');
       b.addEventListener('click', () => { sfx('click'); swap = id; closeSheet(); show('cards'); $('#tabCards .scroll').scrollTop = 0; });
       btns.append(b);
+    } else { // im Deck: auf einen der besonderen Plätze rücken
+      const at = profile.deck.indexOf(id), fits = [...new Set([...(c.hero || P.hasForm(profile, id) ? P.heroPlaces(profile.arena) : []), ...(RUNES[id] && !c.hero ? P.runePlaces(profile.arena) : [])])].sort();
+      for (const i of fits) {
+        if (i === at || !P.canPlace(profile, profile.deck[i], at)) continue;
+        const b = el('button', 'btn', `Auf den ${P.SPECIAL_SLOTS[i].name.replace('Freier Platz', 'freien Platz')}`);
+        b.addEventListener('click', () => { if (P.moveInDeck(profile, id, i)) { sfx('deploy'); save(); render(); showCard(id); } });
+        btns.append(b);
+      }
+      if (RUNES[id] && !c.hero && P.hasRune(profile, id)) d.insertBefore(el('p', 'center small', P.runeActive(profile, id) ? `Steht auf dem ${P.SPECIAL_SLOTS[at].name.replace('Freier Platz', 'freien Platz')}: Die Runenform spielt mit.` : 'Die Runenform ruht: Sie spielt nur auf dem Runenplatz oder dem freien Platz.'), d.querySelector('.upline, .notice') || null);
     }
   }
   btns.append(closeBtn());
@@ -751,9 +902,9 @@ function renderShop() {
   const body = $('#shopBody'); body.replaceChildren();
   const head = (t, s) => body.append(el('div', 'sub', `<b>${t}</b><span>${s || ''}</span>`));
   head('Tagesgeschenk', `neu in ${untilMidnight()}`);
-  const gift = el('button', `offer wide${profile.shop.gift ? ' sold' : ''}`, `<span class="ico coin big"></span><span><b>${P.giftGold(profile)} Gold</b><small>${profile.shop.gift ? 'Heute schon abgeholt' : 'Jeden Tag einmal gratis'}</small></span><em>${profile.shop.gift ? '✓' : 'Abholen'}</em>`);
+  const gift = el('button', `offer wide${profile.shop.gift ? ' sold' : ''}`, `<span class="chestIco los f1"></span><span><b>${P.giftGold(profile)} Gold · ${P.GIFT_GEMS} Runensplitter · Schicksalstruhe</b><small>${profile.shop.gift ? 'Heute schon abgeholt' : 'Jeden Tag einmal gratis'}</small></span><em>${profile.shop.gift ? '✓' : 'Abholen'}</em>`);
   gift.disabled = profile.shop.gift;
-  gift.addEventListener('click', () => { const r = P.claimGift(profile); if (r) { save(); sfx('coin'); render(); } });
+  gift.addEventListener('click', () => { const r = P.claimGift(profile); if (!r) return; save(); collectFx(gift, { gold: r.gold, gems: r.gems }); lootSheet('Schicksalstruhe', r.lucky, 'aus dem Tagesgeschenk', 'los'); });
   body.append(gift);
 
   head('Angebote des Tages', 'Karten gegen Gold');
@@ -764,43 +915,84 @@ function renderShop() {
     b.addEventListener('click', () => {
       if (o.sold) return;
       if (profile.gold < o.gold) { sfx('error'); flash(b); return; }
-      if (P.buyOffer(profile, o.i)) { save(); sfx('buy'); render(); }
+      const r = P.buyOffer(profile, o.i);
+      if (r) { save(); sfx('buy'); collectFx(b, r); render(); }
     });
     grid.append(b);
   }
   body.append(grid);
 
-  head('Truhen', 'gegen Runensplitter');
+  head('Truhen und Kisten', 'gegen Runensplitter');
   const chests = el('div', 'offers two');
-  for (const kind of P.SHOP_CHESTS) {
-    const c = P.CHESTS[kind], info = P.chestInfo(kind, profile.arena);
-    const b = el('button', 'offer chestOffer', `<span class="chestIco ${kind}"></span><b>${c.name}</b><small>${info.cards} Karten<br>rund ${fmt(info.gold)} Gold</small><em class="${profile.gems < c.gems ? 'poor' : ''}"><span class="ico gem"></span>${c.gems}</em>`);
+  P.SHOP_BOXES.forEach((x, i) => {
+    const pt = rewardParts(x);
+    const b = el('button', 'offer chestOffer', `${pt.ico}<b>${x.t === 'runebox' ? 'Runenkiste' : 'Schicksalstruhe'}</b><small>${x.t === 'runebox' ? '1, 2 oder 6 Runenscherben' : `beginnt mit ${fates(x.s)}`}</small><em class="${profile.gems < x.gems ? 'poor' : ''}"><span class="ico gem"></span>${x.gems}</em>`);
     b.addEventListener('click', () => {
-      if (profile.gems < c.gems) { sfx('error'); flash(b); return; }
-      const loot = P.buyChest(profile, kind);
-      if (loot) { save(); lootSheet(c.name, loot, '', kind); }
+      if (profile.gems < x.gems) { sfx('error'); flash(b); return; }
+      collected(b, P.buyBox(profile, i));
     });
     chests.append(b);
-  }
+  });
   body.append(chests);
 
-  head('Runenformen', `${profile.wild} Wanderscherben`);
-  const wild = el('button', `offer wide${profile.shop.wild ? ' sold' : ''}`, `<span class="ico wild big"></span><span><b>Wanderscherbe</b><small>${profile.shop.wild ? 'Heute schon gekauft' : 'Passt auf jede Karte mit Runenform · eine am Tag'}</small></span><em class="${profile.gems < P.WILD_PRICE && !profile.shop.wild ? 'poor' : ''}">${profile.shop.wild ? '✓' : `<span class="ico gem"></span>${P.WILD_PRICE}`}</em>`);
+  head('Sonderdinge', `${profile.wild} Wanderscherben · ${profile.potions} Tränke`);
+  const full = profile.wild >= P.WILD_CAP;
+  const wild = el('button', `offer wide${profile.shop.wild || full ? ' sold' : ''}`, `<span class="ico wild big"></span><span><b>Wanderscherbe</b><small>${profile.shop.wild ? 'Heute schon gekauft' : full ? `Vorrat voll (${P.WILD_CAP})` : 'Passt auf jede Karte mit Runenform · eine am Tag'}</small></span><em class="${profile.gems < P.WILD_PRICE && !profile.shop.wild ? 'poor' : ''}">${profile.shop.wild ? '✓' : `<span class="ico gem"></span>${P.WILD_PRICE}`}</em>`);
   wild.id = 'wildOffer';
-  wild.addEventListener('click', () => { if (profile.shop.wild) return; if (P.buyWild(profile)) { save(); sfx('buy'); render(); } else { sfx('error'); flash(wild); } });
+  wild.addEventListener('click', () => { if (profile.shop.wild || full) return; const r = P.buyWild(profile); if (r) { save(); sfx('buy'); collectFx(wild, r); render(); } else { sfx('error'); flash(wild); } });
   body.append(wild);
-  head('Gold', '');
+  const pfull = profile.potions >= P.POTION_CAP;
+  const potion = el('button', `offer wide${pfull ? ' sold' : ''}`, `<span class="ico trank big"></span><span><b>Stärkungstrank</b><small>${pfull ? `Vorrat voll (${P.POTION_CAP})` : `Hebt eine Karte ${P.POTION_HOURS} Stunden auf die Stufe deines Hauptturms`}</small></span><em class="${profile.gems < P.POTION_PRICE ? 'poor' : ''}"><span class="ico gem"></span>${P.POTION_PRICE}</em>`);
+  potion.id = 'potionOffer';
+  potion.addEventListener('click', () => { if (pfull) return; const r = P.buyPotion(profile); if (r) { save(); sfx('buy'); collectFx(potion, r); render(); } else { sfx('error'); flash(potion); } });
+  body.append(potion);
   const gold = el('button', 'offer wide', `<span class="ico coin big"></span><span><b>${P.GOLD_PACK.gold} Gold</b><small>Für Aufwertungen und Angebote</small></span><em class="${profile.gems < P.GOLD_PACK.gems ? 'poor' : ''}"><span class="ico gem"></span>${P.GOLD_PACK.gems}</em>`);
-  gold.addEventListener('click', () => { if (P.buyGold(profile)) { save(); sfx('buy'); render(); } else { sfx('error'); flash(gold); } });
+  gold.addEventListener('click', () => { const r = P.buyGold(profile); if (r) { save(); sfx('buy'); collectFx(gold, r); render(); } else { sfx('error'); flash(gold); } });
   body.append(gold);
-  body.append(el('p', 'fine', 'Runensplitter bekommst du nur im Spiel: auf dem Trophäenweg, für Aufgaben, neue Arenen, Spielerstufen und aus der Kronentruhe. Echtes Geld gibt es hier nicht.'));
+
+  // Saisonmarkt: Furtmarken aus Spielmodi und Bosskämpfen gegen Sonderdinge; die besten Stücke öffnen sich erst nach und nach
+  const s = profile.season;
+  head('Saisonmarkt', `noch ${P.seasonLeft(profile.day)} ${P.seasonLeft(profile.day) === 1 ? 'Tag' : 'Tage'}`);
+  body.append(el('div', 'marketHead', `<span class="ico marke big"></span><span><b>${fmt(s.marks)} Furtmarken</b><small>Siege in Spielmodi (${P.MARKS.mode}, die ersten ${P.MARKS.modeWins} am Tag), Modus des Tages (+${P.MARKS.day}), Bosse (${P.MARKS.boss}), alle Tagesaufgaben (${P.MARKS.quests})</small></span>`));
+  const market = el('div', 'offers three'); market.id = 'market';
+  for (const m of P.marketInfo(profile)) {
+    const pt = rewardParts(m), gone = m.left <= 0;
+    const b = el('button', `offer marketOffer${gone ? ' sold' : ''}${m.locked ? ' locked' : ''}`, `${pt.ico}<b>${m.t === 'lucky' ? `Schicksalstruhe ${pt.short}` : pt.short}</b><small>${m.locked ? `öffnet nach ${fmt(m.gate)} ausgegebenen Marken (${fmt(s.spent)})` : gone ? 'ausverkauft' : `noch ${m.left} von ${m.max}`}</small><em class="${!gone && !m.locked && s.marks < m.price ? 'poor' : ''}"><span class="ico marke"></span>${m.price}</em>`);
+    b.addEventListener('click', () => {
+      if (gone) return;
+      if (!m.can) { sfx('error'); flash(b); return; }
+      sfx('buy'); collected(b, P.buyMarket(profile, m.i));
+    });
+    market.append(b);
+  }
+  body.append(market);
+  body.append(el('p', 'fine', 'Runensplitter und Furtmarken bekommst du nur im Spiel: auf dem Runenpfad, dem Trophäenweg, für Sammlungsstufen, Aufgaben, neue Arenen und Spielerstufen. Übrige Furtmarken werden am Saisonende zu Gold. Echtes Geld gibt es hier nicht.'));
 }
 function flash(node) { node.classList.remove('shake'); void node.offsetWidth; node.classList.add('shake'); }
 
-// ---- Reiter „Weg“ (Trophäenweg) ----------------------------------------------------------------
-let roadSeen = false;
+// ---- Reiter „Weg“: Trophäenweg, Runenpfad (Saison) und Sammlungsstufe ----------------------------------
+let roadSeen = false, wayView = 'pass';
+const WAYS = { road: 'Trophäenweg', pass: 'Runenpfad', coll: 'Sammlung' };
 function renderRoad() {
-  const body = $('#roadBody'); body.replaceChildren();
+  const counts = { road: P.roadOpen(profile).length, pass: passReady(), coll: P.collOpen(profile).length };
+  $('#waySeg').replaceChildren(...Object.entries(WAYS).map(([k, label]) => { const b = el('button', k === wayView ? 'on' : '', `${label}${counts[k] ? `<em>${counts[k]}</em>` : ''}`); b.dataset.way = k; return b; }));
+  const body = $('#roadBody'); body.replaceChildren(); body.dataset.way = wayView;
+  const target = wayView === 'pass' ? renderPass(body) : wayView === 'coll' ? renderColl(body) : renderTrophyRoad(body);
+  if (!roadSeen) { roadSeen = true; if (target) requestAnimationFrame(() => target.scrollIntoView({ block: 'center' })); else body.scrollTop = 0; }
+}
+$('#waySeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; sfx('click'); wayView = b.dataset.way; roadSeen = false; renderRoad(); });
+
+// Meilenstein-Zeile für Trophäenweg und Sammlung
+function mileRow(at, r, can, got, arena, claim) {
+  const pt = rewardParts(r, arena), row = el('div', `mile${got ? ' got' : can ? ' can' : ''}`);
+  row.append(el('span', 'at', at), el('span', 'what', `${pt.ico}<span>${pt.name}</span>`));
+  const b = el('button', 'btn primary', got ? '✓' : can ? (r.t === 'choice' ? 'Wählen' : 'Abholen') : '');
+  b.disabled = !can || got;
+  b.addEventListener('click', () => claim(b));
+  row.append(b);
+  return row;
+}
+function renderTrophyRoad(body) {
   body.append(el('div', 'sub', `<b>Trophäenweg</b><span>Bestmarke ${fmt(profile.best)}</span>`));
   let here = null, firstOpen = null;
   P.ARENAS.forEach((a, i) => {
@@ -816,22 +1008,107 @@ function renderRoad() {
     for (const r of P.ROAD) {
       if (r.at <= a.at || (next && r.at > next.at)) continue;
       const can = profile.best >= r.at, got = profile.road.includes(r.at);
-      const row = el('div', `mile${got ? ' got' : can ? ' can' : ''}`);
-      row.append(el('span', 'at', `${fmt(r.at)} <span class="ico trophy"></span>`), el('span', 'what', r.kind === 'gold' ? `<span class="ico coin"></span>${r.n} Gold` : r.kind === 'gems' ? `<span class="ico gem"></span>${r.n} Runensplitter${r.wild ? ' <span class="ico wild"></span>Wanderscherbe' : ''}` : `<span class="chestIco ${r.chest} mini"></span>${P.CHESTS[r.chest].name}`));
-      const b = el('button', 'btn primary', got ? '✓' : can ? 'Abholen' : '');
-      b.disabled = !can || got;
-      b.addEventListener('click', () => {
-        const loot = P.claimRoad(profile, r.at);
-        if (!loot) return;
-        save();
-        if (loot.cards.length) lootSheet(`${P.CHESTS[r.chest].name} vom Trophäenweg`, loot, '', r.chest); else { sfx('coin'); render(); }
+      const row = mileRow(`${fmt(r.at)} <span class="ico trophy"></span>`, r, can, got, Math.min(profile.arena, P.arenaIndex(r.at)), b => {
+        if (r.t === 'choice') { showChoice(r.at); return; }
+        collected(b, P.claimRoad(profile, r.at));
       });
-      row.append(b); body.append(row);
+      body.append(row);
       if (can && !got && !firstOpen) firstOpen = row;
     }
   });
-  const target = firstOpen || here; // zur ersten abholbereiten Belohnung springen, sonst zur eigenen Arena
-  if (!roadSeen && target) { roadSeen = true; requestAnimationFrame(() => target.scrollIntoView({ block: 'center' })); }
+  return firstOpen || here; // zur ersten abholbereiten Belohnung springen, sonst zur eigenen Arena
+}
+// Kartenwahl auf dem Trophäenweg: eine von zwei Karten
+function showChoice(at) {
+  const pair = P.roadChoice(at), d = el('div', 'draft');
+  d.append(el('h3', '', 'Kartenwahl'), el('p', 'center', 'Welche Karte nimmst du mit? Die andere bleibt liegen.'));
+  const row = el('div', 'draftRow');
+  pair.forEach((c, k) => {
+    const b = el('button', 'draftPick'), own = profile.cards[c.id], u = own ? P.upgradeInfo(profile, c.id) : null;
+    b.append(cardEl(c.id, { tag: 'div', lvl: own ? own.lvl : 0 }), el('b', '', `× ${c.n}`), el('small', '', u && !u.max ? `du hast ${own.n} von ${u.copies}` : u ? 'Höchste Stufe' : ''));
+    b.addEventListener('click', () => { const loot = P.claimRoad(profile, at, Math.random, k); if (!loot) return; closeSheet(); sheetDismiss = null; collected(b, loot); });
+    row.append(b);
+  });
+  d.append(row);
+  const btns = el('div', 'btns one'); btns.append(closeBtn('Später')); d.append(btns);
+  sheetDismiss = () => { closeSheet(); sheetDismiss = null; };
+  openSheet(d, true);
+}
+
+// Runenpfad: 90 Stufen, links die freie Wegspur, rechts die Runenspur
+function renderPass(body) {
+  const s = profile.season, pi = P.passInfo(profile), open = P.passOpen(profile), left = P.seasonLeft(profile.day), runeId = P.seasonRune(s.id);
+  const head = el('div', 'passHead');
+  head.append(el('div', 'pt', `<div><small>Saison</small><b>${P.seasonName(s.id)}</b><em>noch ${left} ${left === 1 ? 'Tag' : 'Tage'}</em></div><div class="tierBadge"><small>Stufe</small><b>${pi.tier}</b></div>`));
+  head.append(el('div', `meterBig crownMeter${pi.done ? ' ok' : ''}`, `<i style="width:${pi.done ? 100 : 100 * pi.into / pi.need}%"></i><span>${pi.done ? 'Alle 90 Stufen geschafft' : `${pi.into} / ${pi.need} Kronen bis Stufe ${pi.tier + 1}`}</span>`));
+  head.append(el('p', 'small', `Jede Krone aus einem Kampf zählt – auch bei einer Niederlage. Die ersten ${P.BONUS_WINS} Siege des Tages bringen ${P.BONUS_CROWNS} Bonuskronen.`));
+  const btns = el('div', 'passBtns');
+  const all = el('button', 'btn primary', open.length ? `Alles abholen <em>${open.length}</em>` : 'Nichts abzuholen'); all.id = 'passAll'; all.disabled = !open.length;
+  all.addEventListener('click', () => { const loot = P.claimPassAll(profile); if (!loot) return; save(); sfx('chest'); const b = el('div'); b.append(lootBox(`${loot.n} Belohnungen vom Runenpfad`, loot)); simpleSheet('', b); render(); });
+  const cost = P.skipCost(profile), skip = el('button', 'btn', pi.done ? 'Pfad geschafft' : `Nächste Stufe <span class="ico gem"></span>${cost}`); skip.id = 'passSkip'; skip.disabled = pi.done || profile.gems < cost;
+  skip.addEventListener('click', () => { if (P.skipTier(profile)) { save(); sfx('buy'); roadSeen = false; render(); } else sfx('error'); });
+  btns.append(all, skip); head.append(btns);
+  const rune = el('div', `runeTrack${s.open ? ' on' : ''}`, `<span class="runeMark"></span><span><b>Runenspur${s.open ? ' · freigeschaltet' : ''}</b><small>Runenform der Saison: <u>${CARDS[runeId].name}</u> (${P.RUNE_SHARDS} Scherben auf Stufe 1), dazu Joker aller Seltenheiten, Schicksalstruhen ${fates(3)} und ${fates(5)}, Runenkisten, volle Goldkisten.${s.open ? '' : ' Schon erreichte Stufen zählen mit.'}</small></span>`);
+  if (!s.open) {
+    const b = el('button', 'btn primary', `Freischalten <span class="ico gem"></span>${P.PASS_PRICE}`); b.id = 'passBuy'; b.disabled = profile.gems < P.PASS_PRICE;
+    b.addEventListener('click', () => { if (P.buyPass(profile)) { save(); sfx('rune'); roadSeen = false; render(); } else sfx('error'); });
+    rune.append(b);
+    if (profile.gems < P.PASS_PRICE) rune.append(el('small', 'need', `Es fehlen ${P.PASS_PRICE - profile.gems} Runensplitter – die Wegspur bringt je Saison ${P.PASS_PRICE}.`));
+  }
+  head.append(rune);
+  body.append(head);
+  body.append(el('div', 'passCols', '<b>Wegspur</b><i></i><b>Runenspur</b>'));
+  let target = null;
+  const cell = (track, tier) => {
+    const r = P.passReward(track, tier, s.id);
+    if (!r) return el('span', 'pcell none');
+    const list = track === 'rune' ? s.rune : s.free, got = list.includes(tier), reached = tier <= pi.tier, shut = track === 'rune' && !s.open, can = reached && !got && !shut;
+    const pt = rewardParts(r), b = el('button', `pcell ${track}${got ? ' got' : can ? ' can' : reached ? ' shut' : ''}`, `${pt.ico}<small>${pt.short}</small>${got ? '<i class="tick">✓</i>' : shut ? '<i class="lockMark"></i>' : ''}`);
+    b.title = pt.name;
+    b.addEventListener('click', () => {
+      if (can) { sfx('click'); collected(b, P.claimPass(profile, track, tier)); return; }
+      sfx('click'); toastWay(`${track === 'rune' ? 'Runenspur' : 'Wegspur'}, Stufe ${tier}: ${pt.name.replace(/<[^>]+>/g, '')}${got ? ' – abgeholt' : shut ? ' – Runenspur noch nicht freigeschaltet' : reached ? '' : ` – noch ${(tier - pi.tier) * P.PASS_CROWNS - pi.into} Kronen`}`);
+    });
+    if (can && !target) target = b;
+    return b;
+  };
+  const list = el('div', 'passList');
+  let nowRow = null;
+  for (let t = 1; t <= P.PASS_TIERS; t++) {
+    const row = el('div', `prow${t <= pi.tier ? ' reached' : ''}${t === pi.tier + 1 ? ' now' : ''}`);
+    row.append(cell('free', t), el('b', 'pt', String(t)), cell('rune', t));
+    list.append(row);
+    if (t === pi.tier + 1 || (pi.done && t === P.PASS_TIERS)) nowRow = row;
+  }
+  body.append(list);
+  // Kronenspeicher: nach Stufe 90 füllen Kronen ihn weiter
+  const bank = P.bankInfo(profile), bk = el('div', `bank${bank.can ? ' can' : ''}`, `<span class="chestIco los f1"></span><span><b>Kronenspeicher</b><small>Nach Stufe ${P.PASS_TIERS}: je ${P.BANK_CROWNS} Kronen eine Schicksalstruhe, eine am Tag. ${pi.done ? `${bank.into} / ${P.BANK_CROWNS} Kronen${bank.ready ? ` · ${bank.ready} bereit` : ''}` : 'Noch verschlossen.'}</small></span>`);
+  const bb = el('button', 'btn primary', bank.can ? 'Abholen' : bank.ready ? 'morgen' : ''); bb.disabled = !bank.can;
+  bb.addEventListener('click', () => collected(bb, P.claimBank(profile)));
+  bk.append(bb); body.append(bk);
+  if (bank.can && !target) target = bk;
+  return target ? target.closest('.prow') || target : nowRow;
+}
+let wayToastT = 0;
+function toastWay(text) { let t = $('#wayToast'); if (!t) { t = el('div', 'wayToast'); t.id = 'wayToast'; $('#tabRoad').append(t); } t.textContent = text; t.hidden = false; clearTimeout(wayToastT); wayToastT = setTimeout(() => { t.hidden = true; }, 2600); }
+
+// Sammlungsstufe: jede Kartenstufe zählt eins, jede Runenform fünf; alle zehn Stufen eine Belohnung
+function renderColl(body) {
+  const lvl = P.collLevel(profile), open = P.collOpen(profile), next = Math.max(P.COLL_FIRST, (Math.floor(lvl / P.COLL_STEP) + 1) * P.COLL_STEP);
+  const head = el('div', 'passHead');
+  head.append(el('div', 'pt', `<div><small>Deine Sammlung</small><b>Sammlungsstufe ${fmt(lvl)}</b><em>von ${fmt(P.COLL_MAX)}</em></div><div class="tierBadge coll"><small>bereit</small><b>${open.length}</b></div>`));
+  head.append(el('div', 'meterBig', `<i style="width:${100 * (lvl - (next - P.COLL_STEP)) / P.COLL_STEP}%"></i><span>${lvl} / ${next} bis zur nächsten Belohnung</span>`));
+  head.append(el('p', 'small', 'Jede Kartenstufe zählt einen Punkt – auch die erste einer neuen Karte –, jede erweckte Runenform fünf. Alle zehn Punkte wartet eine Belohnung.'));
+  body.append(head);
+  const rows = [...open, ...Array.from({ length: 10 }, (_, k) => next + k * P.COLL_STEP).filter(n => n <= P.COLL_MAX)];
+  let first = null;
+  for (const n of rows) {
+    const can = n <= lvl, row = mileRow(`Stufe ${n}`, P.collReward(n), can, false, profile.arena, b => collected(b, P.claimColl(profile, n)));
+    body.append(row);
+    if (can && !first) first = row;
+  }
+  body.append(el('p', 'fine', `Abgeholt: ${profile.coll.length} Belohnungen. Zu sehen sind die offenen und die nächsten zehn.`));
+  return first;
 }
 $('#roadBody').addEventListener('click', e => { const c = e.target.closest('.thumbs .card'); if (c) { sfx('click'); showCard(c.dataset.id); } });
 
@@ -940,7 +1217,7 @@ function showAbout() {
 // ---- Spielmodi und Bosskämpfe ------------------------------------------------------------------
 function showModes() {
   const d = el('div', 'modes');
-  d.append(el('h3', '', 'Spielmodi'), el('p', 'center small', 'Herausforderungen ohne Trophäen. Jeder Sieg bringt eine Truhe.'));
+  d.append(el('h3', '', 'Spielmodi'), el('p', 'center small', `Herausforderungen ohne Trophäen. Siege zählen als Tagessiege und bringen ${P.MARKS.mode} Furtmarken (die ersten ${P.MARKS.modeWins} am Tag).`));
   const today = P.modeOfDay(profile.day), list = el('div', 'list');
   const row = (key, name, text, badge) => { const b = el('button', 'btn item modeRow', `<span><b>${name}${badge ? `<em>${badge}</em>` : ''}</b><small>${text}</small></span><i></i>`); b.dataset.mode = key; list.append(b); };
   const ids = [today, ...P.MODE_IDS.filter(id => id !== today)];
@@ -1025,7 +1302,7 @@ function startBattle(opts) {
   let s = seed || 1;
   const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
   const mode = opts.mode || null, boss = opts.boss ?? null;
-  let decks = [profile.deck, P.opponentDeck(profile, rnd)], levels = [P.playerLevels(profile), P.opponentLevels(profile, profile.level)], rules = {}, aiLevel = profile.level;
+  let decks = [profile.deck, P.opponentDeck(profile, rnd)], levels = [P.playerLevels(profile, Date.now()), P.opponentLevels(profile, profile.level)], rules = {}, aiLevel = profile.level;
   B.foe = P.opponentName(rnd); B.label = '';
   const foeTower = P.opponentTower(profile, rnd);
   levels[1].towerType = foeTower;
@@ -1039,6 +1316,15 @@ function startBattle(opts) {
     if (mode === 'wahl') { decks = opts.decks; levels = even(); }
     if (mode === 'ansturm') B.foe = 'Ansturm';
   }
+  // Deck-Plätze gelten für beide Seiten: Helden und Runenformen nur auf ihren Plätzen. Das eigene Deck ist schon geordnet,
+  // gewürfelte und gewählte Decks werden es hier. Bosse sind ausgenommen.
+  const slotted = (s, order) => {
+    if (order) decks[s] = P.slotOrder(decks[s], profile.arena, { runes: levels[s].runes || [], forms: levels[s].forms || [] });
+    const forms = P.slotForms(decks[s], levels[s].forms || [], profile.arena);
+    levels[s] = { ...levels[s], forms, runes: P.slotRunes(decks[s], levels[s].runes || [], profile.arena).filter(id => !forms.includes(id)) };
+  };
+  slotted(0, mode === 'wahl');
+  if (boss == null) slotted(1, mode !== 'spiegel');
   for (const id of decks[0]) art(id); // Kartenbilder vor dem Kampf erzeugen
   const opp = levels[1];
   B.g = sim.createGame({ seed, decks, levels, rules });
@@ -1175,7 +1461,8 @@ function updateHud(force) {
     if (force || B.hand[i] !== key) {
       const fresh = !B.hand[i] || B.hand[i].split('|')[0] !== id;
       B.hand[i] = key;
-      const e = cardEl(id, { lvl: S.levels[id] || 1, rune: null, pips: R ? { n: Math.min(R.cycles, S.cycle[id] || 0), of: R.cycles } : null, cost: echo ? (Number.isFinite(price) ? price : '?') : null, ability: CARDS[id].hero ? CARDS[id].ability : null });
+      const e = cardEl(id, { lvl: S.levels[id] || 1, rune: null, pips: R ? { n: Math.min(R.cycles, S.cycle[id] || 0), of: R.cycles } : null, cost: echo ? (Number.isFinite(price) ? price : '?') : null, ability: CARDS[id].hero ? CARDS[id].ability : S.forms.has(id) ? HERO_FORMS[id].ability : null });
+      if (S.forms.has(id)) e.classList.add('hero');
       if (echo && S.last) e.querySelector('.name').textContent = `↺ ${CARDS[S.last].name}`;
       e.dataset.i = i;
       if (!force && fresh) e.classList.add('new');
@@ -1192,7 +1479,7 @@ function updateHud(force) {
   if (force || B.flags.abl !== akey) {
     B.flags.abl = akey;
     box.classList.toggle('many', abl.length > 2);
-    box.replaceChildren(...abl.map(a => { const b = el('button', 'ability', `<span class="an">${a.ability.name}</span><span class="ac">${a.ability.cost}</span><span class="cdn"></span>`); b.dataset.id = a.cardId; b.setAttribute('aria-label', `${CARDS[a.cardId].name}: ${a.ability.name}, ${a.ability.cost} Kraft`); return b; }));
+    box.replaceChildren(...abl.map(a => { const b = el('button', 'ability', `<span class="an">${a.ability.name.length > 10 ? a.ability.name.replace(/^(Schnee|Stachel|Kiesel|Klingen|Bolzen|Sternen)/, '$1&shy;') : a.ability.name}</span><span class="ac">${a.ability.cost}</span><span class="cdn"></span>`); b.dataset.id = a.cardId; b.setAttribute('aria-label', `${CARDS[a.cardId].name}: ${a.ability.name}, ${a.ability.cost} Kraft`); return b; }));
   }
   abl.forEach((a, i) => {
     const b = box.children[i];
@@ -1223,7 +1510,7 @@ $('#abilities').addEventListener('pointerdown', e => {
   e.preventDefault(); e.stopPropagation(); unlock();
   if (sim.useAbility(B.g, 0, b.dataset.id)) { B.count.abilities++; return; }
   const st = sim.abilities(B.g, 0).find(a => a.cardId === b.dataset.id);
-  toast(!st ? 'Held ist gefallen' : st.used ? 'Fähigkeit ist verbraucht' : st.cd > 0 ? 'Fähigkeit lädt noch' : B.g.sides[0].kraft < st.ability.cost ? 'Zu wenig Kraft' : st.ent.deployT > 0 ? 'Held ist noch nicht bereit' : 'Kein Gegner in Reichweite');
+  toast(!st ? 'Held ist gefallen' : st.wait ? 'Erst wenn der letzte Wicht gefallen ist' : st.used ? 'Fähigkeit ist verbraucht' : st.cd > 0 ? 'Fähigkeit lädt noch' : B.g.sides[0].kraft < st.ability.cost ? 'Zu wenig Kraft' : st.ent.deployT > 0 ? 'Held ist noch nicht bereit' : 'Kein Gegner in Reichweite');
   sfx('error');
 });
 $('#hand').addEventListener('pointerdown', e => {
@@ -1295,7 +1582,7 @@ function finishBattle() {
   if (w === 0) confetti();
   d.append(el('div', 'result', `<span class="me">${g.sides[0].crowns}</span><span class="ico crown"></span><span class="foe">${g.sides[1].crowns}</span>`));
   if (timeout) d.append(el('p', 'center', 'Entschieden über den am stärksten beschädigten Turm.'));
-  if (B.training) d.append(el('p', 'center', 'Übungskampf – Trophäen und Truhen bleiben unberührt.'));
+  if (B.training) d.append(el('p', 'center', 'Übungskampf – Trophäen, Kronen und Truhen bleiben unberührt.'));
   else if (special) {
     d.append(el('p', 'center', `${B.opts.boss != null ? `Bosskampf gegen ${B.foe}` : `Herausforderung „${P.MODES[B.opts.mode].name}“`} – ohne Trophäen.`));
     if (res.bossFirst) d.append(el('div', 'notice', `Boss besiegt! +${P.BOSS_REWARD.gems} Runensplitter, ${P.BOSS_REWARD.wild} Wanderscherben und eine große Truhe`));
@@ -1314,24 +1601,29 @@ function finishBattle() {
     for (const id of res.newCards) { const it = el('div', 'item'); it.append(cardEl(id, { tag: 'div' })); loot.append(it); }
     box.append(loot); d.append(box);
   }
-  if (res.chest) { // die Siegestruhe wartet verschlossen; der Inhalt ist schon gutgeschrieben
-    const big = res.bossFirst, cname = big ? 'Bosstruhe' : 'Siegestruhe';
-    const slot = el('div', 'chestSlot'), cb = el('button', 'chestBtn', `<span class="chestIco ${big ? 'runen' : 'sieg'}"></span><b>${cname} öffnen</b>`);
+  // Verschlossene Truhen: Bosstruhe und die Schicksalstruhe eines Tagessiegs. Der Inhalt ist schon gutgeschrieben.
+  const chestButton = (kind, cname, ico, loot) => {
+    const slot = el('div', 'chestSlot'), cb = el('button', 'chestBtn', `<span class="chestIco ${ico}"></span><b>${cname} öffnen</b>`);
     cb.addEventListener('click', () => {
       sfx('click');
-      openChest(big ? 'runen' : 'sieg', cname, res.chest, () => {
-        slot.replaceChildren(lootBox(cname, res.chest));
+      openChest(kind, cname, loot, () => {
+        slot.replaceChildren(lootBox(cname, loot));
         if (canUpgradeAny()) slot.append(el('p', 'center', 'Du kannst eine Karte aufwerten – schau unter „Karten“.'));
       });
     });
     slot.append(cb); d.append(slot);
+  };
+  if (res.chest) chestButton('runen', 'Bosstruhe', 'runen', res.chest);
+  if (res.lucky) chestButton('los', 'Schicksalstruhe', `los f${res.lucky.start}`, res.lucky);
+  if (res.prize) { // Siegprämie: Gold oder ein Kartenstapel
+    const c = res.prize.cards[0];
+    d.append(el('p', 'center prize', c ? `<span class="ico ncards"></span>Siegprämie: ${CARDS[c.id].name} × ${c.n}` : `<span class="ico coin"></span>Siegprämie: +${fmt(res.prize.gold)} Gold`));
   }
-  if (res.slot) { // die gewonnene Truhe liegt jetzt auf einem Truhenplatz
-    const v = P.chestSlots(profile, Date.now())[res.slot.i], C = P.CHESTS[res.slot.kind];
-    d.append(el('div', 'wonChest', `<span class="chestIco ${res.slot.kind}"></span><span><b>${C.name} gewonnen</b><small>Truhenplatz ${res.slot.i + 1} · ${v && v.state === 'run' ? `öffnet sich in ${mins(v.left)}` : `wartet, braucht ${mins(P.chestTime(res.slot.kind))}`}</small></span>`));
-  } else if (res.full) d.append(el('div', 'notice', `Alle Truhenplätze sind belegt – die ${P.CHESTS[res.full].name} wartet auf deinen nächsten Sieg.`));
-  if (res.gold) d.append(el('p', 'center prize', `<span class="ico coin"></span>+${res.gold} Gold Siegprämie`));
-  if (res.crownBox) d.append(el('div', 'notice', 'Die Kronentruhe ist voll – hol sie dir im Menü!'));
+  if (res.marks) d.append(el('p', 'center prize marks', `<span class="ico marke"></span>+${res.marks} Furtmarken für den Saisonmarkt`));
+  if (!B.training && res.crowns) { // Runenpfad: Kronen dieses Kampfs, Stand der laufenden Stufe
+    const pi = P.passInfo(profile);
+    d.append(el('div', `passGain${res.tiers ? ' up' : ''}`, `<span><span class="ico crown"></span><b>+${res.crowns}</b> ${res.bonusCrowns ? `<small>davon ${res.bonusCrowns} Bonus (Tagessieg ${profile.dayWins} von ${P.BONUS_WINS})</small>` : '<small>für den Runenpfad</small>'}</span><div class="meterBig${pi.done ? ' ok' : ''}"><i style="width:${pi.done ? 100 : 100 * pi.into / pi.need}%"></i><span>${pi.done ? 'Runenpfad geschafft' : `Stufe ${pi.tier} · ${pi.into} / ${pi.need}`}</span></div>${res.tiers ? `<em>Stufe ${pi.tier} erreicht – Belohnung wartet unter „Weg“</em>` : ''}`));
+  }
   if (P.questsOpen(profile) > questsBefore) d.append(el('div', 'notice', 'Tagesaufgabe erfüllt – Belohnung wartet im Menü.'));
   const row = el('div', 'btns');
   const menu = el('button', 'btn', 'Menü'), again = el('button', 'btn primary', 'Nochmal');

@@ -43,10 +43,10 @@
       <canvas id="stageCv" aria-hidden="true"></canvas>
       <div class="sideCol left">
         <button class="sideBtn" id="questBtn"><span class="ico qico"></span><b>Aufgaben</b><small id="questInfo"></small><span class="dot" id="questDot" hidden></span></button>
-        <button class="sideBtn" id="freeBtn"><span class="chestIco frei"></span><b>Freie Truhe</b><small id="freeInfo"></small><span class="dot" id="freeDot" hidden></span></button>
+        <button class="sideBtn" id="passBtn"><span class="ico pfad"></span><b>Runenpfad</b><small id="passInfo"></small><i class="mini"><i id="passFill"></i></i><span class="dot" id="passDot" hidden></span></button>
       </div>
       <div class="sideCol right">
-        <button class="sideBtn" id="crownBtn"><span class="chestIco kronen"></span><b>Kronentruhe</b><small id="crownInfo"></small><i class="mini"><i id="crownFill"></i></i><span class="dot" id="crownDot" hidden></span></button>
+        <button class="sideBtn" id="itemsBtn"><span class="ico joker"></span><b>Sonderdinge</b><small id="itemsInfo"></small><span class="dot" id="itemsDot" hidden></span></button>
         <button class="sideBtn" id="deckBtn"><span class="ico ncards"></span><b id="deckName">Deck 1</b><small id="deckInfo"></small></button>
       </div>
       <div class="who" id="who"></div>
@@ -58,7 +58,7 @@
       <button class="big" id="playBtn"><span>Kampf</span><small id="playInfo"></small></button>
       <button class="btn side" id="modeBtn"><span class="ico nfight"></span>Modi<span class="dot" id="modeDot" hidden></span></button>
     </div>
-    <div class="chestRow" id="chestRow" aria-label="Truhenplätze"></div>
+    <div class="chestRow" id="chestRow" aria-label="Tagessiege"></div>
     <div class="stats" id="stats"></div>
   </div>
 
@@ -71,8 +71,9 @@
       </div>
       <div class="row helpers">
         <button class="btn tile" id="wishBtn"><span class="ico star"></span><span><b>Wunschkarte</b><small id="wishInfo"></small></span></button>
-        <button class="btn tile" id="jokerBtn"><span class="ico joker"></span><span><b id="jokerNum">0 Joker</b><small>ersetzen fehlende Karten</small></span></button>
+        <button class="btn tile" id="jokerBtn"><span class="ico joker"></span><span><b id="jokerNum">0 Joker</b><small>und andere Sonderdinge</small></span></button>
       </div>
+      <button class="btn tile wideTile" id="mastBtn" hidden><span class="ico coin"></span><span><b>Kartenmeisterschaft</b><small id="mastInfo"></small></span><em>Abholen</em></button>
       <div class="sub"><b>Dein Deck</b><span id="avgCost"></span></div>
       <div class="seg small" id="slotSeg" role="group" aria-label="Deck-Platz"></div>
       <div class="swapHint" id="swapHint" hidden></div>
@@ -91,8 +92,9 @@
     <div class="scroll" id="shopBody"></div>
   </div>
 
-  <!-- Trophäenweg -->
+  <!-- Wege: Trophäenweg, Runenpfad, Sammlung -->
   <div class="tab" id="tabRoad" hidden>
+    <div class="seg small" id="waySeg" role="group" aria-label="Wege"></div>
     <div class="scroll" id="roadBody"></div>
   </div>
 

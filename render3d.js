@@ -4,6 +4,7 @@
 // Gleiche Schnittstelle wie der 2D-Zeichner in render.js (resize, reset, onEvent, draw, toField, snapshot).
 import * as THREE from './vendor/three.module.min.js';
 import { CARDS, UNITS, RUNES } from './cards.js';
+import { HERO_FORMS } from './helden.js';
 import { W, H, RIVER_TOP, RIVER_BOT, BRIDGES, BRIDGE_HALF, OUTER_Y, MAIN_Y, POCKET, deployPlan, cardCost, outerTower } from './sim.js';
 import * as SIM from './sim.js'; // nur für deployTiles: wird benutzt, sobald es das gibt
 import { TEAM } from './render.js';
@@ -449,6 +450,7 @@ export function createRenderer3D(canvas, overlay) {
       for (const [unit] of c.mix || [[c.unit]]) add(unit, side);
       if (RUNES[id]) add(RUNES[id].unit, side);
       if (c.ability && c.ability.unit) add(c.ability.unit, side);
+      if (S.forms && S.forms.has(id) && HERO_FORMS[id].ability.unit) add(HERO_FORMS[id].ability.unit, side);   // was die Fähigkeit einer Heldenform aufs Feld bringt
     } });
     releaseUnits(want);                               // Bildfolgen des letzten Kampfs freigeben, die jetzt nicht vorkommen
     return Promise.all([...want].map(n => loadUnit(n).catch(() => { fresh.delete(n); })));      // neue Bildfolgen dieses Kampfs laden (nicht ladbar: Figur wie bisher)
@@ -753,6 +755,7 @@ export function createRenderer3D(canvas, overlay) {
         }
       }
       if (inst.neu) {
+        if (e.formId && !!inst.formFly !== (e.formMode === 'flug')) { inst.formFly = e.formMode === 'flug'; inst.fly = inst.formFly ? 1.5 : 0; }   // Funkenflug: hebt ab und landet wieder
         if (inst.tower) actors.updateTower(e, inst, dt, time); else if (inst.building) actors.updateBuilding(e, inst, g, dt, time); else { sprites.update(e, inst, g, dt, time, occ); if (e.clone) inst.u.uFrost.value = 0.8; }
         statusRing(e, inst, time);
         if (inst.aura) { inst.aura.position.set(e._x, 0.035, e._y); inst.aura.rotation.z = time * 1.5; }
@@ -861,7 +864,7 @@ export function createRenderer3D(canvas, overlay) {
     o2.clearRect(0, 0, width, height);
     o2.textAlign = 'center'; o2.textBaseline = 'middle'; o2.lineJoin = 'round';
     let lvlFont = '';
-    for (const e of g.ents) {
+    for (const e of opt.bars === false ? [] : g.ents) {
       const tower = e.kind === 'tower';
       if (e.deployT > 0 && e.kind === 'unit') { // Aufmarsch-Uhr am Standpunkt
         const [fx0, fy0] = project(e._x, 0, e._y), [fx1] = project(e._x + 1, 0, e._y), pp = fx1 - fx0, q = 1 - Math.min(1, e.deployT), r = Math.max(4.5, pp * 0.2);
@@ -902,6 +905,12 @@ export function createRenderer3D(canvas, overlay) {
         o2.restore();
       }
       if (e.shield > 0) { o2.fillStyle = 'rgba(15,20,26,.9)'; o2.fillRect(sx - w / 2 - 1, y - h * 0.7 - 2, w + 2, h * 0.7 + 1); o2.fillStyle = '#dff3ff'; o2.fillRect(sx - w / 2, y - h * 0.7 - 1, w * e.shield / e.maxShield, h * 0.7 - 1); }
+      // Vorrat über dem Balken: gesammelte Seelen des Wurzelkönigs, gefüllte Pfannen des Hammerschmieds in Heldenform
+      const stock = e.cardId && e.souls && CARDS[e.cardId].ability.souls ? [e.souls, CARDS[e.cardId].ability.souls, '#b9f3a0'] : e.formId === 'hammerschmied' && !e.abilityUsed ? [Math.min(3, Math.floor((e.pan || 0) / 22)), 3, GOLD] : null;
+      if (stock) {
+        const [n, of, col] = stock, pw = w / of, ph = Math.max(3, h * 0.6), py = y - ph - 3 - (e.shield > 0 ? h * 0.7 + 1 : 0);
+        for (let i = 0; i < of; i++) { o2.fillStyle = 'rgba(15,20,26,.9)'; o2.fillRect(bx0 + i * pw, py, pw - 1, ph); if (i < n) { o2.fillStyle = col; o2.fillRect(bx0 + i * pw + 1, py + 1, pw - 3, ph - 2); } }
+      }
       if (tower) {
         lvlFont = ''; o2.font = `800 ${Math.max(10, Math.round(ppt * 0.5))}px -apple-system, system-ui, "Segoe UI", sans-serif`;
         o2.lineWidth = 3; o2.strokeStyle = 'rgba(15,20,26,.9)'; o2.strokeText(String(Math.ceil(e.hp)), sx, y + h / 2 + 0.5);
@@ -970,6 +979,7 @@ export function createRenderer3D(canvas, overlay) {
     opt.maxDpr = o.quality === 'niedrig' ? 1.5 : o.quality === 'mittel' ? 2 : 3;
     opt.shadows = o.quality !== 'niedrig'; opt.shake = o.shake !== false;
     if (o.fxRate != null) opt.fxRate = o.fxRate; // Zeitlupe der Effekte – nur für die Foto-Werkzeuge
+    if (o.bars != null) opt.bars = o.bars;       // Lebensbalken und Stufenschilder ausblenden – nur für die Arena-Bilder des Hauptmenüs
     look.setQuality({ maxDpr: opt.maxDpr, samples: o.quality === 'niedrig' ? 0 : o.quality === 'mittel' ? 2 : 4, shadows: opt.shadows });
   }
 

@@ -701,3 +701,207 @@ body.calm .big::after { display: none; }
 .chestfx[data-rar="legendaer"] .rays { background: repeating-conic-gradient(rgba(95,240,224,.4) 0 9deg, rgba(255,154,213,.25) 9deg 14deg, transparent 14deg 24deg); }
 .chestfx[data-rar="held"] .rays { background: repeating-conic-gradient(rgba(246,196,83,.5) 0 9deg, transparent 9deg 24deg); }
 @media (prefers-reduced-motion: reduce) { .ritem.r-episch, .ritem.r-legendaer, .ritem.r-held { animation-name: itemout; } .ritem .rspark { display: none; } }
+/* ==== Fortschritt nach dem heutigen Vorbild: Runenpfad, Schicksalstruhen, Sonderdinge ==== */
+:root { --f1: #c3d2db; --f2: #6fe0a8; --f3: #ffcf70; --f4: #d3a1ff; --f5: #74f5e6; }
+.bump { animation: bump .45s; }
+.flyItem { position: fixed; z-index: 60; width: 26px; height: 26px; pointer-events: none; filter: drop-shadow(0 0 6px rgba(246,196,83,.8)); }
+.gainPop { position: fixed; z-index: 61; display: flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 14px; background: rgba(6,20,28,.92); border: 1px solid var(--gold); color: var(--gold); font-weight: 800; font-size: 16px; pointer-events: none; white-space: nowrap; }
+.gainPop .ico { width: 18px; height: 18px; }
+/* Funken (Rauten) einer Schicksalstruhe */
+.fz { font-size: .82em; letter-spacing: 1px; font-weight: 800; white-space: nowrap; color: var(--f1); }
+.fz.f2 { color: var(--f2); } .fz.f3 { color: var(--f3); } .fz.f4 { color: var(--f4); } .fz.f5 { color: var(--f5); text-shadow: 0 0 6px rgba(214,82,159,.9); }
+.fz i { font-style: normal; opacity: .25; }
+/* Symbole */
+.ico.pfad { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M3 18c5 0 3.500-5.500 8-5.500S14.500 7 18 7' fill='none' stroke='%23f6c453' stroke-width='2.600' stroke-linecap='round'/%3E%3Ccircle cx='3.500' cy='17.500' r='1.800' fill='%23fff3c4'/%3E%3Cpath d='M15 .8l3.300 4.200-3.300 4.700-3.300-4.700z' fill='%23c98bff' stroke='%235b2f8a' stroke-width='1.200' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.ico.trank { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M8 2.500h4V7l4.300 7.300A3 3 0 0 1 13.700 19H6.300a3 3 0 0 1-2.600-4.700L8 7z' fill='%23dff3fb' stroke='%231f6f9c' stroke-width='1.300' stroke-linejoin='round'/%3E%3Cpath d='M6.200 11.500h7.600l1.500 2.700a2 2 0 0 1-1.700 3H6.400a2 2 0 0 1-1.700-3z' fill='%23ff8a5c'/%3E%3Ccircle cx='9' cy='14' r='1' fill='%23fff3c4'/%3E%3Crect x='6.800' y='1' width='6.400' height='2.200' rx='1.100' fill='%23f6c453' stroke='%23a8741a' stroke-width='.800'/%3E%3C/svg%3E"); }
+.ico.marke { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 1.200l7.600 4.400v8.800L10 18.800l-7.600-4.400V5.600z' fill='%232ec4b6' stroke='%230f6b63' stroke-width='1.400' stroke-linejoin='round'/%3E%3Cpath d='M5.300 8.300c1.600-2.100 3.100-2.100 4.700 0s3.100 2.100 4.700 0' fill='none' stroke='%23eafffb' stroke-width='1.600' stroke-linecap='round' opacity='.65'/%3E%3Cpath d='M5.300 12c1.600-2.100 3.100-2.100 4.700 0s3.100 2.100 4.700 0' fill='none' stroke='%23eafffb' stroke-width='1.600' stroke-linecap='round'/%3E%3C/svg%3E"); }
+.ico.huge { display: block; width: 72px; height: 72px; margin: 4px auto; }
+.ico.joker.r-gewoehnlich { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='4' y='2' width='12' height='16' rx='2.500' fill='%23eef6f7' stroke='%2346627a' stroke-width='1.500'/%3E%3Cpath d='M10 5.500 11.300 8.500 14.500 8.800 12.100 11 12.800 14.200 10 12.500 7.200 14.200 7.900 11 5.500 8.800 8.700 8.500z' fill='%238fa9b8' stroke='%2346627a' stroke-width='.800' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.ico.joker.r-selten { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='4' y='2' width='12' height='16' rx='2.500' fill='%23eef6f7' stroke='%238a4f0c' stroke-width='1.500'/%3E%3Cpath d='M10 5.500 11.300 8.500 14.500 8.800 12.100 11 12.800 14.200 10 12.500 7.200 14.200 7.900 11 5.500 8.800 8.700 8.500z' fill='%23f2a13c' stroke='%238a4f0c' stroke-width='.800' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.ico.joker.r-episch { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='4' y='2' width='12' height='16' rx='2.500' fill='%23eef6f7' stroke='%235b2f8a' stroke-width='1.500'/%3E%3Cpath d='M10 5.500 11.300 8.500 14.500 8.800 12.100 11 12.800 14.200 10 12.500 7.200 14.200 7.900 11 5.500 8.800 8.700 8.500z' fill='%23c76bff' stroke='%235b2f8a' stroke-width='.800' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.ico.joker.r-legendaer { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='4' y='2' width='12' height='16' rx='2.500' fill='%23eef6f7' stroke='%2316776d' stroke-width='1.500'/%3E%3Cpath d='M10 5.500 11.300 8.500 14.500 8.800 12.100 11 12.800 14.200 10 12.500 7.200 14.200 7.900 11 5.500 8.800 8.700 8.500z' fill='%235ff0e0' stroke='%2316776d' stroke-width='.800' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.ico.joker.r-held { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='4' y='2' width='12' height='16' rx='2.500' fill='%23eef6f7' stroke='%23a8741a' stroke-width='1.500'/%3E%3Cpath d='M10 5.500 11.300 8.500 14.500 8.800 12.100 11 12.800 14.200 10 12.500 7.200 14.200 7.900 11 5.500 8.800 8.700 8.500z' fill='%23f6c453' stroke='%23a8741a' stroke-width='.800' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+.chestIco.los.f1, .chestIco.los { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M5 17h30v15a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3z' fill='%237d909d' stroke='%231f2a33' stroke-width='2'/%3E%3Cpath d='M5 17c0-6 6-10 15-10s15 4 15 10z' fill='%23c3d2db' stroke='%231f2a33' stroke-width='2'/%3E%3Cpath d='M20 12l6.500 9-6.500 10-6.500-10z' fill='%23eef6f7' stroke='%231f2a33' stroke-width='1.600' stroke-linejoin='round'/%3E%3Cpath d='M20 16l3.300 5-3.300 5.500-3.300-5.500z' fill='%23fff' opacity='.6'/%3E%3Cpath d='M8 1.500l1.100 2.400 2.400 1.100-2.400 1.100L8 8.500 6.900 6.100 4.500 5l2.400-1.100z' fill='%23eef6f7'/%3E%3Cpath d='M32 .5l.9 1.900 1.900.9-1.900.9-.9 1.900-.9-1.900-1.900-.9 1.900-.9z' fill='%23eef6f7'/%3E%3C/svg%3E"); }
+.chestIco.los.f2 { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M5 17h30v15a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3z' fill='%232b9a6b' stroke='%230c3324' stroke-width='2'/%3E%3Cpath d='M5 17c0-6 6-10 15-10s15 4 15 10z' fill='%236fe0a8' stroke='%230c3324' stroke-width='2'/%3E%3Cpath d='M20 12l6.500 9-6.500 10-6.500-10z' fill='%23dcffec' stroke='%230c3324' stroke-width='1.600' stroke-linejoin='round'/%3E%3Cpath d='M20 16l3.300 5-3.300 5.500-3.300-5.500z' fill='%23fff' opacity='.6'/%3E%3Cpath d='M8 1.500l1.100 2.400 2.400 1.100-2.400 1.100L8 8.500 6.900 6.100 4.500 5l2.400-1.100z' fill='%23dcffec'/%3E%3Cpath d='M32 .5l.9 1.900 1.900.9-1.900.9-.9 1.900-.9-1.900-1.900-.9 1.900-.9z' fill='%23dcffec'/%3E%3C/svg%3E"); }
+.chestIco.los.f3 { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M5 17h30v15a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3z' fill='%23d98a1c' stroke='%234a2f05' stroke-width='2'/%3E%3Cpath d='M5 17c0-6 6-10 15-10s15 4 15 10z' fill='%23ffcf70' stroke='%234a2f05' stroke-width='2'/%3E%3Cpath d='M20 12l6.500 9-6.500 10-6.500-10z' fill='%23fff3c4' stroke='%234a2f05' stroke-width='1.600' stroke-linejoin='round'/%3E%3Cpath d='M20 16l3.300 5-3.300 5.500-3.300-5.500z' fill='%23fff' opacity='.6'/%3E%3Cpath d='M8 1.500l1.100 2.400 2.400 1.100-2.400 1.100L8 8.500 6.900 6.100 4.500 5l2.400-1.100z' fill='%23fff3c4'/%3E%3Cpath d='M32 .5l.9 1.900 1.900.9-1.900.9-.9 1.900-.9-1.900-1.900-.9 1.900-.9z' fill='%23fff3c4'/%3E%3C/svg%3E"); }
+.chestIco.los.f4 { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M5 17h30v15a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3z' fill='%237c46c9' stroke='%2327114a' stroke-width='2'/%3E%3Cpath d='M5 17c0-6 6-10 15-10s15 4 15 10z' fill='%23d3a1ff' stroke='%2327114a' stroke-width='2'/%3E%3Cpath d='M20 12l6.500 9-6.500 10-6.500-10z' fill='%23f3e3ff' stroke='%2327114a' stroke-width='1.600' stroke-linejoin='round'/%3E%3Cpath d='M20 16l3.300 5-3.300 5.500-3.300-5.500z' fill='%23fff' opacity='.6'/%3E%3Cpath d='M8 1.500l1.100 2.400 2.400 1.100-2.400 1.100L8 8.500 6.900 6.100 4.500 5l2.400-1.100z' fill='%23f3e3ff'/%3E%3Cpath d='M32 .5l.9 1.900 1.900.9-1.900.9-.9 1.900-.9-1.900-1.900-.9 1.900-.9z' fill='%23f3e3ff'/%3E%3C/svg%3E"); }
+.chestIco.los.f5 { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M5 17h30v15a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3z' fill='%23d6529f' stroke='%233a0f2e' stroke-width='2'/%3E%3Cpath d='M5 17c0-6 6-10 15-10s15 4 15 10z' fill='%2374f5e6' stroke='%233a0f2e' stroke-width='2'/%3E%3Cpath d='M20 12l6.500 9-6.500 10-6.500-10z' fill='%23fff8b0' stroke='%233a0f2e' stroke-width='1.600' stroke-linejoin='round'/%3E%3Cpath d='M20 16l3.300 5-3.300 5.500-3.300-5.500z' fill='%23fff' opacity='.6'/%3E%3Cpath d='M8 1.500l1.100 2.400 2.400 1.100-2.400 1.100L8 8.500 6.900 6.100 4.500 5l2.400-1.100z' fill='%23fff8b0'/%3E%3Cpath d='M32 .5l.9 1.900 1.900.9-1.900.9-.9 1.900-.9-1.900-1.900-.9 1.900-.9z' fill='%23fff8b0'/%3E%3C/svg%3E"); }
+.chestIco.runenkiste { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath d='M10 10V6.500h20V10' fill='none' stroke='%238f66b8' stroke-width='2.400' stroke-linejoin='round'/%3E%3Crect x='5' y='10' width='30' height='25' rx='3.500' fill='%235a3a86' stroke='%231a0f2b' stroke-width='2'/%3E%3Cpath d='M5 17h30' stroke='%231a0f2b' stroke-width='2'/%3E%3Cpath d='M5.500 12.500h29' stroke='%238f66b8' stroke-width='2.500'/%3E%3Cpath d='M21.500 15.500l6 7.500-4.500 9-7.500-5.500-1-6.500z' fill='%23c98bff' stroke='%231a0f2b' stroke-width='1.500' stroke-linejoin='round'/%3E%3Cpath d='M21.500 15.500l1.500 16.500' stroke='%23f0dcff' stroke-width='1.200' opacity='.7'/%3E%3C/svg%3E"); }
+.chestIco.goldkiste { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ccircle cx='13' cy='14' r='6' fill='%23f6c453' stroke='%23a8741a' stroke-width='1.600'/%3E%3Ccircle cx='26' cy='12.500' r='6.500' fill='%23f6c453' stroke='%23a8741a' stroke-width='1.600'/%3E%3Ccircle cx='19.500' cy='17' r='6' fill='%23ffd97a' stroke='%23a8741a' stroke-width='1.600'/%3E%3Cpath d='M5 19h30l-2.500 15.500h-25z' fill='%239a6634' stroke='%233b2716' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M12.500 20.500l1 12.500M20 20.500V33M27.500 20.500l-1 12.500' stroke='%235d3d1f' stroke-width='2'/%3E%3Cpath d='M4 19h32' stroke='%233b2716' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E"); }
+.chestIco.goldkiste.voll { filter: drop-shadow(0 0 5px rgba(246,196,83,.95)) saturate(1.25); }
+.chestIco.mini { display: inline-block; width: 22px; height: 22px; margin: 0 6px 0 0; vertical-align: -5px; }
+/* Hauptmenü: Tagessiege statt Truhenplätze */
+.slot.next { border-color: var(--gold); background: linear-gradient(#2c4d5c, #173340); }
+.slot.next b { color: var(--gold); }
+.slot.next .chestIco { animation: chestwob 1.6s infinite; }
+.slot.got { opacity: .62; }
+.slot.got .chestIco { filter: grayscale(.55) brightness(.8); }
+.slot.got b { color: var(--ok); font-size: 11.500px; }
+.slot.vacant .chestIco { opacity: .5; filter: grayscale(.35); }
+.slot small .fz, .slot .fz { font-size: 11px; }
+#playInfo .fz { font-size: 1em; color: #5a3a00; text-shadow: none; }
+.runeTrack .runeMark { display: block; width: 18px; height: 18px; margin: 0 6px; transform: rotate(45deg); background: linear-gradient(135deg, #e7ccff, var(--rune)); border: 1.5px solid #fff; box-shadow: 0 0 7px var(--rune); }
+.sideBtn .ico.pfad, .sideBtn .ico.joker { width: 28px; height: 28px; }
+.wideTile { width: 100%; margin-top: 8px; border-color: var(--gold); }
+.wideTile em { margin-left: auto; font-style: normal; font-weight: 800; padding: 6px 12px; border-radius: 10px; background: var(--teal); color: #05312d; font-size: 13px; }
+.wideTile[hidden] { display: none; }
+/* Truhe öffnen: Schicksalswürfe */
+.chestfx.los, .chestfx.los.f1 { --c0: #c3d2db; --c1: #7d909d; --c2: #56646f; --edge: #1f2a33; --band: #eef6f7; }
+.chestfx.los.f2 { --c0: #6fe0a8; --c1: #2b9a6b; --c2: #1b6a49; --edge: #0c3324; --band: #dcffec; }
+.chestfx.los.f3 { --c0: #ffcf70; --c1: #d98a1c; --c2: #a36410; --edge: #4a2f05; --band: #fff3c4; }
+.chestfx.los.f4 { --c0: #d3a1ff; --c1: #7c46c9; --c2: #55308f; --edge: #27114a; --band: #f3e3ff; }
+.chestfx.los.f5 { --c0: #74f5e6; --c1: #d6529f; --c2: #8f2f6a; --edge: #3a0f2e; --band: #fff8b0; }
+.chestfx.runenkiste { --c0: #8f66b8; --c1: #5a3a86; --c2: #35224f; --edge: #1a0f2b; --band: #c98bff; }
+.chestfx.runenkiste .lid { border-radius: 10px 10px 8px 8px; height: 40px; }
+.chestfx .lid, .chestfx .body, .chestfx .lock { transition: background .3s, transform .38s cubic-bezier(.3,1.5,.5,1), opacity .2s; }
+.fates { display: flex; justify-content: center; gap: 10px; margin-top: 12px; height: 34px; }
+.fates i { width: 24px; height: 24px; transform: rotate(45deg); border-radius: 5px; background: #12232e; border: 2px solid #2a4657; }
+.fates i.on { background: var(--c0); border-color: var(--band); box-shadow: 0 0 12px var(--c0); }
+.fates i.pop { animation: fatepop .5s cubic-bezier(.2,1.8,.4,1); }
+@keyframes fatepop { 0% { transform: rotate(45deg) scale(.2); } 60% { transform: rotate(45deg) scale(1.7); } 100% { transform: rotate(45deg) scale(1); } }
+.chestfx.roll .chestbox { animation: fateroll .43s ease-in-out; }
+@keyframes fateroll { 0% { transform: none; } 25% { transform: translateY(-16px) rotate(-7deg) scale(1.05); } 55% { transform: translateY(-22px) rotate(7deg) scale(1.08); } 80% { transform: translateY(0) rotate(-2deg); } 100% { transform: none; } }
+.chestBtn .chestIco.los { filter: drop-shadow(0 0 6px rgba(255,255,255,.35)); }
+/* Kampfende: Kronen für den Runenpfad */
+.passGain { margin-top: 12px; padding: 10px 12px; border-radius: 14px; background: #10242f; border: 1px solid var(--line); display: grid; gap: 6px; text-align: left; }
+.passGain > span { display: flex; align-items: center; gap: 6px; font-size: 15px; }
+.passGain b { font-size: 18px; color: var(--gold); } .passGain small { color: var(--dim); font-size: 12px; }
+.passGain em { font-style: normal; font-size: 13px; font-weight: 800; color: var(--ok); text-align: center; }
+.passGain.up { border-color: var(--gold); }
+#sheet p.prize.marks { color: var(--teal); }
+#sheet p.prize .ico { width: 20px; height: 20px; }
+/* Tagessiege erklärt */
+.cycle.four { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.cycle.four div { padding: 8px 0 6px; } .cycle.four div.next { grid-column: auto; } .cycle.four div.got { opacity: .5; }
+.cycle.four .chestIco, .cycle.four div.next .chestIco { width: 40px; height: 40px; }
+.oddsTable { display: grid; gap: 2px; margin: 10px 0 4px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.oddsTable > div { display: grid; grid-template-columns: 64px repeat(5, 1fr); align-items: center; padding: 5px 4px; border-radius: 8px; background: #0f222d; text-align: center; }
+.oddsTable > div.oh { background: none; color: var(--dim); font-weight: 700; }
+.oddsTable span { text-align: left; padding-left: 4px; } .oddsTable i { font-style: normal; } .oddsTable b .fz { font-size: 8px; letter-spacing: 0; }
+.kinds .fz { font-size: 13px; }
+.notice small { font-weight: 600; color: var(--dim); }
+/* Sonderdinge */
+.items .sub { margin: 14px 0 6px; } .items .sub:first-child { margin-top: 2px; }
+.itemRow { display: flex; align-items: center; gap: 12px; padding: 8px 12px; margin-top: 6px; border-radius: 12px; background: #0f222d; }
+.itemRow .ico { width: 30px; height: 30px; }
+.itemRow > span:nth-child(2) { flex: 1; min-width: 0; }
+.itemRow b { display: block; font-size: 15px; } .itemRow small { display: block; color: var(--dim); font-size: 12px; line-height: 1.25; }
+.itemRow em { font-style: normal; font-weight: 800; font-size: 18px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.itemRow em small { display: inline; font-size: 12px; margin-left: 3px; }
+.hintLine { color: var(--dim); margin: 8px 2px 0; line-height: 1.35; }
+.stash { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.stash .slot { animation: none; }
+/* Kartenblatt: Meisterschaft und Stärkungstrank */
+.mastBox, .potionBox { display: grid; gap: 6px; }
+.mastBox b em { font-style: normal; float: right; color: var(--dim); font-size: 13px; }
+.mastBox.can { box-shadow: 0 0 0 2px var(--gold) inset; }
+.mastBox .btn, .potionBox .btn { height: 42px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.mastBox .btn .ico { width: 16px; height: 16px; }
+.mastBox .meterBig { height: 10px; }
+.potionBox b { display: flex; align-items: center; gap: 6px; } .potionBox b .ico { width: 20px; height: 20px; }
+.potionBox.on { box-shadow: 0 0 0 2px var(--kraft) inset; }
+.potionBox .btn em { font-style: normal; padding: 1px 8px; border-radius: 9px; background: #24505a; font-size: 13px; }
+/* Laden */
+.offers.three { grid-template-columns: repeat(3, 1fr); }
+.chestOffer .chestIco { width: 56px; height: 56px; }
+.chestOffer small { min-height: 0; }
+.marketHead { display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 8px; border-radius: 12px; background: #10332f; border: 1px solid var(--teal-d); }
+.marketHead b { display: block; font-size: 16px; } .marketHead small { color: var(--dim); font-size: 12px; line-height: 1.3; display: block; }
+.marketOffer { padding: 8px 4px 6px; gap: 3px; }
+.marketOffer .chestIco { width: 40px; height: 40px; } .marketOffer > .ico { width: 34px; height: 34px; margin: 3px auto; }
+.marketOffer b { font-size: 12.500px; line-height: 1.15; min-height: 29px; display: grid; place-items: center; }
+.marketOffer small { color: var(--dim); font-size: 10.500px; line-height: 1.2; min-height: 26px; }
+.marketOffer.locked { border-style: dashed; } .marketOffer.locked .chestIco, .marketOffer.locked > .ico { filter: grayscale(.8) brightness(.7); }
+.offer.wide .chestIco { width: 40px; height: 40px; margin: 0; flex: none; }
+.offer.wide b .fz { font-size: 12px; }
+/* Wege: Umschalter, Runenpfad, Sammlung */
+#waySeg { margin: 8px 0 0; flex: none; }
+#waySeg button { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 13.500px; }
+#waySeg em { font-style: normal; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #6fe06a; color: #06301a; font-size: 11px; font-weight: 800; line-height: 18px; }
+#tabRoad { position: relative; }
+.mile .what { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mile .what .ico { width: 20px; height: 20px; margin: 0; flex: none; }
+.mile .what .chestIco { width: 26px; height: 26px; margin: 0; flex: none; }
+.mile .what .fz { font-size: 11px; }
+.passHead { margin-top: 8px; padding: 12px 14px; border-radius: 16px; background: var(--bg2); border: 1px solid var(--line); display: grid; gap: 8px; }
+.passHead .pt { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.passHead .pt small { display: block; color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.passHead .pt b { font-size: 20px; } .passHead .pt em { display: block; font-style: normal; color: var(--dim); font-size: 13px; }
+.tierBadge { flex: none; min-width: 62px; padding: 5px 8px; border-radius: 14px; background: linear-gradient(#ffd97a, #f0a92e); color: #3a2500; text-align: center; box-shadow: 0 3px 0 #a8741a; }
+.passHead .tierBadge small { color: #6b4a08; font-size: 10px; } .passHead .tierBadge b { font-size: 24px; line-height: 1; }
+.tierBadge.coll { background: linear-gradient(#49d6c8, #1f8f86); color: #05312d; box-shadow: 0 3px 0 #125a55; } .passHead .tierBadge.coll small { color: #0a4a44; }
+.passHead p { margin: 0; color: var(--dim); line-height: 1.35; }
+.crownMeter { height: 20px; border-radius: 10px; } .crownMeter i { background: linear-gradient(90deg, #d99a2b, var(--gold)); } .crownMeter span { line-height: 20px; }
+.passBtns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.passBtns .btn { height: 44px; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 5px; }
+.passBtns .btn em { font-style: normal; min-width: 22px; padding: 0 6px; border-radius: 10px; background: #05312d; color: var(--teal); font-size: 12px; line-height: 20px; }
+.passBtns .btn .ico { width: 16px; height: 16px; }
+.runeTrack { display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center; padding: 10px 12px; border-radius: 12px; background: linear-gradient(#2a1c44, #1a1230); border: 1px solid #5b2f8a; }
+
+.runeTrack b { display: block; color: var(--rune); font-size: 15px; } .runeTrack small { color: #cdbde6; font-size: 12px; line-height: 1.35; display: block; }
+.runeTrack u { text-decoration: none; color: #fff; font-weight: 700; }
+.runeTrack .btn { grid-column: 1 / -1; height: 44px; display: flex; align-items: center; justify-content: center; gap: 6px; background: var(--rune); color: #1a0f2b; }
+.runeTrack .btn .ico { width: 16px; height: 16px; }
+.runeTrack small.need { grid-column: 1 / -1; text-align: center; }
+.runeTrack.on { border-color: var(--rune); }
+.passCols { display: grid; grid-template-columns: 1fr 44px 1fr; margin: 12px 0 4px; color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; text-align: center; }
+.passCols b:last-child { color: var(--rune); }
+.passList { display: grid; gap: 5px; }
+.prow { display: grid; grid-template-columns: 1fr 44px 1fr; align-items: stretch; gap: 0; }
+.prow > b.pt { display: grid; place-items: center; position: relative; color: var(--dim); font-size: 14px; }
+.prow > b.pt::before { content: ''; position: absolute; top: -5px; bottom: 0; left: 50%; width: 4px; margin-left: -2px; background: #1c3442; z-index: -2; }
+.prow > b.pt::after { content: ''; position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; background: #12232e; border: 2px solid #2a4657; z-index: -1; }
+.prow > b.pt { z-index: 1; isolation: isolate; }
+.prow.reached > b.pt { color: #3a2500; } .prow.reached > b.pt::after { background: var(--gold); border-color: #a8741a; } .prow.reached > b.pt::before { background: var(--gold); }
+.prow.now > b.pt { color: var(--gold); } .prow.now > b.pt::after { border-color: var(--gold); box-shadow: 0 0 10px rgba(246,196,83,.7); }
+.pcell { position: relative; display: flex; align-items: center; gap: 8px; min-height: 50px; min-width: 0; padding: 5px 8px; border-radius: 12px; background: #10242f; border: 1px solid var(--line); text-align: left; color: var(--dim); }
+.pcell.rune { background: #1b1430; border-color: #3d2a5f; flex-direction: row-reverse; text-align: right; }
+.pcell.none { background: none; border: 1px dashed #1c3442; opacity: .5; }
+.pcell .ico { width: 28px; height: 28px; } .pcell .chestIco { width: 36px; height: 36px; margin: 0; flex: none; }
+.pcell small { flex: 1; min-width: 0; font-size: 12px; font-weight: 700; line-height: 1.15; }
+.pcell small .fz { font-size: 12px; }
+.pcell.can { color: var(--text); border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset, 0 0 10px rgba(246,196,83,.35); animation: slotglow 1.2s ease-in-out infinite alternate; }
+.pcell.can .ico, .pcell.can .chestIco { animation: chestwob 1.5s infinite; }
+.pcell.got { opacity: .45; } .pcell.got .ico, .pcell.got .chestIco { filter: grayscale(.7); }
+.pcell.shut { color: var(--text); }
+.pcell .tick { position: absolute; right: 6px; top: 3px; font-style: normal; color: var(--ok); font-weight: 800; font-size: 13px; }
+.pcell.rune .tick { right: auto; left: 6px; }
+.pcell .lockMark { position: absolute; left: 5px; top: 4px; width: 11px; height: 9px; border-radius: 2px; background: #8f66b8; }
+.pcell .lockMark::before { content: ''; position: absolute; left: 2px; top: -6px; width: 5px; height: 6px; border: 2px solid #8f66b8; border-bottom: 0; border-radius: 4px 4px 0 0; }
+.bank { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 12px; border-radius: 14px; background: var(--bg2); border: 1px solid var(--line); }
+.bank .chestIco { width: 44px; height: 44px; margin: 0; }
+.bank b { display: block; } .bank small { color: var(--dim); font-size: 12px; line-height: 1.3; display: block; }
+.bank .btn { height: 38px; padding: 0 12px; font-size: 14px; } .bank .btn:disabled:empty { display: none; }
+.bank.can { border-color: var(--gold); }
+.wayToast { position: absolute; left: 0; right: 0; bottom: 8px; z-index: 5; padding: 9px 12px; border-radius: 12px; background: rgba(6,20,28,.96); border: 1px solid var(--line); font-size: 13px; font-weight: 700; text-align: center; box-shadow: 0 6px 18px rgba(0,0,0,.5); }
+.wayToast[hidden] { display: none; }
+.draftPick b { font-size: 16px; }
+.qbonus .chestIco { width: 40px; height: 40px; margin: 0; }
+.qbonus small .fz { font-size: 11px; }
+@media (max-width: 340px) { .pcell { padding: 4px 5px; gap: 5px; } .pcell .chestIco { width: 30px; height: 30px; } .pcell .ico { width: 24px; height: 24px; } .pcell small { font-size: 11px; } .prow, .passCols { grid-template-columns: 1fr 38px 1fr; } .marketOffer b { font-size: 11.500px; } #waySeg button { font-size: 12px; } }
+body.calm .slot.next .chestIco, body.calm .pcell.can, body.calm .pcell.can .ico, body.calm .pcell.can .chestIco { animation: none; }
+@media (prefers-reduced-motion: reduce) { .slot.next .chestIco, .pcell.can, .pcell.can .ico, .pcell.can .chestIco, .chestfx.roll .chestbox, .fates i.pop { animation: none; } }
+
+/* ---- Deck-Plätze: Runenplatz, Heldenplatz, freier Platz ---- */
+#deckGrid .card.slot-rune { box-shadow: 0 0 0 2px var(--rune, #c98bff), 0 0 14px rgba(201,139,255,.55); }
+#deckGrid .card.slot-hero { box-shadow: 0 0 0 2px #f2c14e, 0 0 14px rgba(242,193,78,.5); }
+#deckGrid .card.slot-wild { box-shadow: 0 0 0 2px #7fe0d4, 0 0 14px rgba(127,224,212,.5); }
+#deckGrid .card.slot-closed { box-shadow: 0 0 0 2px rgba(255,255,255,.16); }
+#deckGrid .card.rune-asleep .runeMark { background: rgba(20,12,34,.85); border-color: #9a7bbd; box-shadow: none; opacity: .8; }
+.slotLegend { margin: 10px 2px 2px; display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: #cfe3ee; }
+.slotLegend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.slotLegend span.off { opacity: .55; }
+.slotLegend .k { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.slotLegend .k.rune { background: var(--rune, #c98bff); } .slotLegend .k.hero { background: #f2c14e; } .slotLegend .k.wild { background: #7fe0d4; }
+.slotLegend small { flex-basis: 100%; color: #8fa9b8; font-size: 11.5px; line-height: 1.35; }
+
+/* ---- Heldenformen ---- */
+.ico.heldm { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='8.5' fill='%23f2c14e' stroke='%238a5a00' stroke-width='1.4'/%3E%3Cpath d='M5.2 12.6l-.9-5 3 2.2L10 5.6l2.7 4.2 3-2.2-.9 5z' fill='%238a5a00'/%3E%3C/svg%3E"); }
+.card .formMark, .formBox .formMark { position: absolute; left: 4px; bottom: 46px; width: 14px; height: 12px; background: linear-gradient(#ffe9a8, #e9a01f); clip-path: polygon(0 100%, 6% 0, 30% 45%, 50% 0, 70% 45%, 94% 0, 100% 100%); filter: drop-shadow(0 0 3px rgba(242,193,78,.9)); }
+.formBox .formMark { position: static; display: inline-block; margin-right: 7px; vertical-align: -1px; }
+.formBox .formMark.off { background: #6b6247; filter: none; }
+.extra.formBox { border-left: 3px solid #f2c14e; }
+.extra.formBox b { color: #ffd97a; }
+.extra.formBox .btn { margin-top: 10px; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.extra.formBox .btn em { font-style: normal; opacity: .75; }
+#deckGrid .card.form-live { box-shadow: 0 0 0 2px #f2c14e, 0 0 16px rgba(242,193,78,.75); }

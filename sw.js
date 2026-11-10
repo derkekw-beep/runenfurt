@@ -1,7 +1,7 @@
 // Offline-Cache für den Spiel-Code. Spielstände liegen NICHT hier, sondern im localStorage.
 // Das Spiel kommt immer komplett aus dem Cache EINER Version – nie halb alt, halb neu.
 // Bei jeder Änderung die Versionsnummer erhöhen (macht tools/deploy.mjs).
-const VERSION = 'runenfurt-v6';
+const VERSION = 'runenfurt-v7';
 // Die großen Bildfolgen der Figuren liegen in einem eigenen Speicher, der Versionen überdauert: Sie werden beim ersten
 // Gebrauch gespeichert (und vom Spiel im Hintergrund nachgeladen). Ihre Adresse trägt ?v=<Stand der Figur> – ändert sich
 // eine Figur, ändert sich die Adresse, und nur sie wird neu geholt. Die Liste unten pflegt tools/engine_dateien.mjs.
@@ -13,7 +13,22 @@ const FILES = [
   './style.css',
   './boot.js',
   './main.js',
-  './menu.js',
+  './arenabild.js',
+  './helden.js',
+  './ui/arena-01.webp',
+  './ui/arena-02.webp',
+  './ui/arena-03.webp',
+  './ui/arena-04.webp',
+  './ui/arena-05.webp',
+  './ui/arena-06.webp',
+  './ui/arena-07.webp',
+  './ui/arena-08.webp',
+  './ui/arena-09.webp',
+  './ui/arena-10.webp',
+  './ui/arena-11.webp',
+  './ui/arena-12.webp',
+  './ui/arena-13.webp',
+  './ui/arena-14.webp',
   './cards.js',
   './sim.js',
   './ai.js',

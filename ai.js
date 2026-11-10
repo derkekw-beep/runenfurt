@@ -47,7 +47,7 @@ function rawDps(d, dmg = d.dmg || 0, atk = d.atk || 1) {
 const entDps = e => rawDps(e.d, e.dmg, e.atk);
 const spawnDps = d => (d.spawn ? rawDps(UNITS[d.spawn.unit]) * (d.spawn.count || 1) * Math.min(3, 7 / d.spawn.every) : 0);
 // Gesamtschaden eines Schadenszaubers (Dauerschaden zählt nur anteilig, weil Gegner aus dem Kreis laufen)
-const spellDmg = c => (c.freeze ? 0 : c.dmg) || (c.dot ? c.dot * (c.dur / c.tick) * 0.55 : 0) || (c.pulses ? c.pulses.dmg[1] * c.pulses.n * 0.6 : 0);
+const spellDmg = c => (c.freeze ? 0 : (c.dmg || 0) * (c.waves ? c.waves.n : 1)) || (c.vines ? c.vines.dmg * c.vines.hits : 0) || (c.dot ? c.dot * (c.dur / c.tick) * 0.55 : 0) || (c.pulses ? c.pulses.dmg[1] * c.pulses.n * 0.6 : 0);
 
 const INFO = new Map();
 function info(id) {
@@ -59,7 +59,7 @@ function info(id) {
   if (I.spell) {
     I.dmg = spellDmg(c);
     const sum = c.summon || c.summonOver;
-    I.kind = c.mirror ? 'mirror' : c.root || c.freeze ? 'halt' : sum && !c.dmg ? 'summon' : c.heal ? 'heal' : c.clone ? 'clone' : c.haste ? 'haste' : I.dmg ? 'dmg' : 'other';
+    I.kind = c.mirror ? 'mirror' : c.root || c.freeze || c.vines ? 'halt' : sum && !c.dmg ? 'summon' : c.heal ? 'heal' : c.clone ? 'clone' : c.haste ? 'haste' : I.dmg ? 'dmg' : 'other';
     if (I.kind === 'summon') { u = UNITS[sum.unit]; list = Array(sum.count).fill(u); }
     I.roles.push(I.kind === 'dmg' ? (c.cost <= 3 ? 'zauber-klein' : 'zauber-gross') : I.kind === 'halt' ? 'kontrolle' : 'zauber');
   } else {
@@ -441,8 +441,8 @@ export function aiChoose(g, side, ai) {
             net = a.val - val(leakOf(left, a.Dg, a.Da, a.ar / a.Dg, 0, 0, false), a.tw) - h.cost;
             act = cast(h, sp.x, sp.y);
           } else if (I.kind === 'halt') {
-            const dur = c.root || c.freeze, lead = a.lead;
-            const left = a.items.map(t => ((c.freeze || !t.air) && t.e.kind === 'unit' && Math.hypot(t.e.x - lead.x, t.e.y - lead.y) <= c.radius ? { ...t, a: t.a + dur } : t));
+            const dur = c.root || c.freeze || (c.vines ? c.vines.dur : 0), lead = a.lead;
+            const left = a.items.map(t => ((c.freeze || c.vines || !t.air) && t.e.kind === 'unit' && Math.hypot(t.e.x - lead.x, t.e.y - lead.y) <= c.radius ? { ...t, a: t.a + dur } : t));
             net = a.val - val(leakOf(left, a.Dg, a.Da, a.ar / a.Dg, 0, 0, false), a.tw) - h.cost - 0.5; // hält nur auf: lieber etwas, das bleibt
             act = cast(h, lead.x, lead.y);
           } else continue;
@@ -702,6 +702,32 @@ export function aiChoose(g, side, ai) {
   return place(pick.idx, x, mm); // langsame hinten starten, damit Kraft nachwächst
 }
 
+// Lohnt die Fähigkeit einer Heldenform (helden.js) gerade? Jede wirkt nur einmal je Einsatz – also nicht ins Leere.
+function formWanted(g, side, st, near) {
+  const h = st.ent, a = st.ability, S = g.sides[side];
+  const all = g.ents.filter(e => e.side !== side && !e.hidden), foes = all.filter(e => e.kind === 'unit'), ground = foes.filter(e => !e.air);
+  const hurt = h.hp < h.maxHp * 0.5, onMe = all.filter(e => e.targetId === h.id && e.dmg > 0 && e.hp > 0).length;
+  switch (a.id) {
+    case 'schildruf': return near(all.filter(e => e.dmg > 0), a.radius).length >= 2 || (hurt && onMe >= 1);
+    case 'felswurf': return near(foes, a.radius + h.r).some(e => e.hp >= 500);
+    case 'glutmahl': return (h.pan || 0) >= 44 || (hurt && onMe >= 1) || (h.inRange && (h.pan || 0) >= 22);
+    case 'bolzenstand': return near(foes, 6).length >= 1 && S.kraft >= 5;
+    case 'funkenflug': return near(ground.filter(e => !e.hitsAir), 3).length >= 1 || near(foes, 5.5).length >= 3;
+    case 'schneetreiben': return near(foes, a.radius).length >= 2 || near(foes, a.radius).some(e => e.hp >= 600);
+    case 'bannerruf': return S.kraft >= 2.5 || st.left < 1.5;             // das Banner steht nur fünf Sekunden; nicht die letzte Kraft dafür geben
+    case 'stachelsprung': return foes.some(e => e.hp > 0 && e.hp <= a.dmg * 1.6 && e.dmg > 0) && !hurt;
+    case 'zweiterlauf': return near(ground, a.len).length >= 1 && (hurt || near(ground, a.len).length >= 2);
+    case 'sternentrug': return near(ground, 3).length >= 1 || onMe >= 2;
+    case 'kieselspringer': return near(ground, a.radius).length >= 1;
+    case 'absprung': return near(all.filter(e => e.kind !== 'unit'), 7).length >= 1 || (hurt && near(ground, 2).length >= 1);
+    case 'standwurf': return near(all.filter(e => e.kind !== 'unit'), a.range).length >= 1 && near(foes, 4).length === 0;
+    case 'grabmutter': return S.kraft >= a.cost + 1.5;
+    case 'baerenzorn': return (h.inRange && S.kraft >= 5) || (h.hp < h.maxHp * 0.35 && onMe >= 1);
+    case 'klingenwirbel': return near(ground, a.radius).length >= 2 || near(ground, a.radius).some(e => e.hp >= 700);
+    default: return false;
+  }
+}
+
 // Soll der Held seine Fähigkeit jetzt einsetzen?
 export function aiAbility(g, side, ai) {
   const L = LEVELS[ai.level] || LEVELS.mittel;
@@ -710,6 +736,7 @@ export function aiAbility(g, side, ai) {
     const h = st.ent, a = st.ability;
     const near = (list, r) => list.filter(e => e !== h && e.hp > 0 && Math.hypot(e.x - h.x, e.y - h.y) - e.r <= r);
     const foes = near(g.ents.filter(e => e.side !== side), a.radius);
+    if (st.form) { if (formWanted(g, side, st, near)) return st.cardId; continue; }
     if (a.id === 'schlachtruf') {
       const allies = near(g.ents.filter(e => e.side === side && e.kind === 'unit'), a.radius);
       const fight = near(g.ents.filter(e => e.side !== side), 7).length > 0;

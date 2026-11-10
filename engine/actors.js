@@ -164,7 +164,7 @@ export function createActors(look, fx) {
     if (g) { let best = null, bd = 9; for (const e of g.ents) { if ((e.model || e.type) !== ev.from) continue; const d = Math.hypot(e.x - ev.x, e.y - ev.y); if (d < bd) { bd = d; best = e; } } if (best) return best.side; }
     return 0;
   }
-  const MORE = new Set(['charge', 'impact', 'bolts', 'trail', 'burst', 'shield', 'kraft', 'fuse', 'chain', 'scatter', 'hook', 'hookcast', 'morph', 'heal', 'curse', 'hatch', 'rune', 'ench', 'rise', 'pulse', 'clone', 'bless', 'ability']);
+  const MORE = new Set(['charge', 'impact', 'bolts', 'trail', 'burst', 'shield', 'kraft', 'fuse', 'chain', 'scatter', 'hook', 'hookcast', 'morph', 'heal', 'curse', 'hatch', 'rune', 'ench', 'rise', 'pulse', 'clone', 'bless', 'ability', 'banner']);
   function onEvent(ev, g, projs) {
     const C = ctx(ev.side);
     if (ev.t === 'hit') {

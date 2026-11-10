@@ -1,6 +1,7 @@
 // Spiel-Logik von Runenfurt: reine Simulation ohne Browser-Abhängigkeiten (läuft auch unter node --test).
 // Seite 0 spielt von unten (großes y), Seite 1 von oben. Fester Zeitschritt DT.
 import { UNITS, CARDS, RUNES, FORMS, TOWER_SPELL_FACTOR, HASTE, SLOW_FACTOR, sanitizeDeck } from './cards.js';
+import { HERO_FORMS, formUse, formTick, formWorld, formShot, formStrike, formTowerF, formHurt, formFloor, formDeath, bannerUse } from './helden.js';
 
 // Feldmaße wie im Genre üblich: 18 breit, 32 lang, der Fluss zwei Felder breit in der Mitte.
 export const W = 18, H = 32;
@@ -46,6 +47,7 @@ function spawn(g, type, side, x, y, extra, lvl = 1) {
     kraftT: d.kraft ? d.kraft.every : 0, ammo: d.ammo ? d.ammo.max : 0, ammoT: 0, blessed: false,
     cd2: d.second ? d.second.atk : 0, hookT: 0, hookCd: 0, hookId: 0, curseT: 0, curseSide: 0, curseUnit: '', curseLvl: 1, ampT: 0, wardT: 0, wardF: 1,
     hatchT: d.hatch ? d.hatch.after : 0, ench: null, enchT: 0, comboN: 0, buried: false, upT: 0, ford: !!d.ford, clone: false,
+    snareT: 0, snareF: 1, groundT: 0, hotN: 0, hotT: 0, hotAmt: 0, hotEvery: 0, souls: 0, summonN: 0, summonT: 0, idleT: 0, snipeN: d.snipe ? d.snipe.n : 0,
     face: side === 0 ? -1 : 1, anim: 0, vx: 0, vy: 0,
     ...extra,
   };
@@ -55,7 +57,8 @@ function spawn(g, type, side, x, y, extra, lvl = 1) {
 }
 
 // levels[s] = { cards: { kartenId: Stufe }, tower: Stufe des Hauptturms, outer: Stufe der Außentürme (sonst wie tower),
-//              towerType: Turmkarte der Außentürme, runes: [kartenIds mit Runenform] } – fehlt etwas, gilt Stufe 1
+//              towerType: Turmkarte der Außentürme, runes: [kartenIds mit Runenform],
+//              forms: [kartenIds, die als Heldenform spielen – siehe helden.js] } – fehlt etwas, gilt Stufe 1
 // rules (alles freiwillig) – Sonderregeln für Spielmodi und Bosskämpfe:
 //   kraftFixed: n       die Kraft läuft das ganze Spiel n-fach
 //   sudden: true        der erste zerstörte Turm entscheidet; bei Zeitablauf zählt der schwächste Turm
@@ -68,16 +71,17 @@ export function createGame({ decks, levels, seed = 1, duration = 180, overtime =
     sudden: !!rules.sudden, kraftFixed: rules.kraftFixed || 0,
     waves: rules.waves ? { t: 6, n: 0, pool: rules.waves.pool, lvl: rules.waves.lvl || 1 } : null,
     seed: seed >>> 0, time: 0, duration, overtime, phase: 'main', over: false, winner: null,
-    ents: [], projs: [], zones: [], events: [], dead: [], byId: new Map(), nextId: 1, sides: [],
+    ents: [], projs: [], zones: [], events: [], dead: [], byId: new Map(), nextId: 1, sides: [], banners: [], whirls: [], nextGroup: 1,
   };
   for (let s = 0; s < 2; s++) {
     const deck = sanitizeDeck(decks && decks[s]);
     for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(rnd(g) * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; }
     const lv = (levels && levels[s]) || {};
     const pick = key => (rules[key] && rules[key][s]) || null, passive = pick('passive');
+    const forms = new Set((lv.forms || []).filter(id => HERO_FORMS[id] && CARDS[id])); // wer als Heldenform spielt, spielt nicht zugleich als Runenform
     g.sides.push({
       kraftMult: pick('kraft') || 1, speedMult: pick('speed') || 1, runeAlways: !!pick('runeAlways'), passive, passiveT: passive ? passive.every : 0,
-      levels: lv.cards || {}, tower: lv.tower || 1, runes: new Set(lv.runes || []), cycle: {}, away: [], blessT: 0,
+      levels: lv.cards || {}, tower: lv.tower || 1, runes: new Set((lv.runes || []).filter(id => !forms.has(id))), forms, formLast: {}, cycle: {}, away: [], blessT: 0,
       kraft: 5, hand: deck.splice(0, 4), next: deck.shift(), queue: deck, crowns: 0, spent: 0,
     });
     const my = y => (s === 0 ? H - y : y);
@@ -249,7 +253,7 @@ export function cardCost(g, side, id) {
 
 function castZone(g, id, side, x, y, lvl, delay) {
   const c = CARDS[id];
-  g.zones.push({ spell: c.spell, card: id, side, x, y, r: c.radius, delay, dur: c.dur || 0, tickT: c.dot ? c.tick : 0, done: false, mult: cardMult(lvl), lvl,
+  g.zones.push({ spell: c.spell, card: id, side, x, y, r: c.radius, delay, dur: c.dur || (c.waves ? (c.waves.n - 1) * c.waves.every + 0.01 : c.vines ? c.vines.dur : 0), tickT: c.dot ? c.tick : 0, done: false, mult: cardMult(lvl), lvl,
     n: 0, t2: c.summonOver ? c.summonOver.first : c.pulses ? c.pulses.first : 0 });
 }
 
@@ -296,6 +300,8 @@ export function playCard(g, side, handIdx, x, y) {
   const lvl = hc.mirror ? (S.levels[hid] || 1) + 1 : S.levels[id] || 1; // … auf der Stufe des Widerhalls plus eins
   const R = !hc.mirror && runeReady(g, side, id) ? RUNES[id] : null;
   const plan = deployPlan(g, side, hid, x, y); // vor dem Weiterzählen des Runenzyklus: der Plan fragt selbst nach der Runenform
+  const form = !hc.mirror && S.forms.has(id) ? { id, group: g.nextGroup++ } : null; // Heldenform: die Figuren dieser Ausspielung gehören zusammen
+  if (form) S.formLast[id] = form.group;
   x = plan.x; y = plan.y;                      // die Karte landet auf ihrer Kachel
   if (!hc.mirror && S.runes.has(id) && RUNES[id]) S.cycle[id] = R ? 0 : (S.cycle[id] || 0) + 1;
   S.kraft -= cost;
@@ -306,14 +312,15 @@ export function playCard(g, side, handIdx, x, y) {
   if (!hc.mirror && !hc.hero) S.last = hid;
   if (c.type === 'spell') {
     castZone(g, id, side, x, y, lvl, c.delay);
+    if (form) g.zones[g.zones.length - 1].form = form;
     emit(g, { t: 'cast', spell: c.spell, side, x, y, r: c.radius, delay: c.delay, echo: !!hc.mirror });
   } else {
     const home = mainTower(g, side);
     for (const s of plan.spots) { // die Figuren eines Trupps erscheinen kurz nacheinander
       const d = UNITS[s.unit], dig = d.tunnel && home ? Math.hypot(s.x - home.x, s.y - home.y) / d.tunnel : 0; // wer gräbt, braucht vom eigenen Hauptturm bis zum Ziel seine Zeit
-      spawn(g, s.unit, side, s.x, s.y, { deployT: (d.deploy || 1) + s.wait, cardId: c.hero ? id : '', ...(dig ? { digT: dig, hidden: true } : {}) }, lvl);
+      spawn(g, s.unit, side, s.x, s.y, { deployT: (d.deploy || 1) + s.wait, cardId: c.hero ? id : '', ...(dig ? { digT: dig, hidden: true } : {}), ...(form ? { formId: form.id, formGroup: form.group, hero: true } : {}) }, lvl);
     }
-    emit(g, { t: 'deploy', side, x, y, card: id, rune: !!R, hero: !!c.hero, echo: !!hc.mirror });
+    emit(g, { t: 'deploy', side, x, y, card: id, rune: !!R, hero: !!c.hero || !!form, echo: !!hc.mirror });
   }
   return true;
 }
@@ -330,6 +337,21 @@ export function abilities(g, side) {
     const a = CARDS[e.cardId].ability;
     out.push({ cardId: e.cardId, ent: e, ability: a, cd: Math.max(0, e.abilityCd), ready: e.deployT <= 0 && e.abilityCd <= 0 && e.stunT <= 0 && S.kraft >= a.cost && !(a.once && e.abilityUsed), used: !!(a.once && e.abilityUsed) });
   }
+  // Heldenformen: der Knopf gehört zur zuletzt gespielten Karte und bleibt, solange von ihr jemand steht (Abbilder zählen nicht)
+  for (const id of S.forms) {
+    const a = HERO_FORMS[id].ability, grp = S.formLast[id];
+    if (!grp) continue;
+    let e = null;
+    for (const o of g.ents) if (o.side === side && o.formGroup === grp && o.hp > 0 && !o.clone) { e = o; break; }
+    if (a.id === 'bannerruf') { // erst das Banner der gefallenen Wichte macht den Ruf möglich
+      const b = g.banners.find(o => o.side === side && o.t > 0 && !o.used);
+      if (!e && !b) continue;
+      out.push({ cardId: id, form: true, ent: b ? { id: 0, x: b.x, y: b.y, r: 0.5, hp: 1, maxHp: 1, lvl: b.lvl, deployT: 0, inRange: false } : e, ability: a, cd: 0, ready: !!b && S.kraft >= a.cost, used: false, wait: !b, left: b ? b.t : 0 });
+      continue;
+    }
+    if (!e) continue;
+    out.push({ cardId: id, form: true, ent: e, ability: a, cd: 0, ready: e.deployT <= 0 && !(e.digT > 0) && e.stunT <= 0 && S.kraft >= a.cost && !e.abilityUsed, used: !!e.abilityUsed });
+  }
   return out;
 }
 
@@ -337,6 +359,13 @@ export function useAbility(g, side, cardId) {
   const st = abilities(g, side).find(s => s.cardId === cardId);
   if (g.over || !st || !st.ready) return false;
   const S = g.sides[side], h = st.ent, a = st.ability, m = cardMult(h.lvl);
+  if (st.form) { // Heldenform: die Wirkung selbst steht in helden.js
+    S.kraft -= a.cost; S.spent += a.cost;
+    if (a.id === 'bannerruf') return bannerUse(FORM_API, g, side);
+    h.abilityUsed = true; h.anim = 0.3;
+    formUse(FORM_API, g, side, h, a);
+    return true;
+  }
   const inReach = (e, x, y) => e.side !== side && e.hp > 0 && !e.hidden && Math.hypot(e.x - x, e.y - y) - e.r <= a.radius;
   if (a.id === 'sturmlauf' && !g.ents.some(e => inReach(e, h.x, h.y))) return false; // niemand da, den er anspringen könnte
   S.kraft -= a.cost; S.spent += a.cost;
@@ -353,14 +382,10 @@ export function useAbility(g, side, cardId) {
       damage(g, e, Math.round(a.dmg * m * (e.kind === 'tower' ? TOWER_SPELL_FACTOR : 1)), side);
     }
   } else if (a.id === 'schleier') {
-    h.cloakT = a.dur; h.cloakRate = a.rate; h.hidden = true;
+    h.cloakT = a.dur; h.cloakRate = a.rate; h.cloakSlow = a.slow || 1; h.hidden = true;
   } else if (a.id === 'wurzelheer') {
-    for (let i = 0; i < a.count; i++) {
-      const w = (i / a.count) * Math.PI * 2 + 0.4;
-      const sx = clamp(h.x + Math.cos(w) * 1.3, 0.4, W - 0.4), sy = offRiver(clamp(h.y + Math.sin(w) * 1.3, 0.4, H - 0.4));
-      spawn(g, a.unit, side, sx, sy, { deployT: 0.5 }, h.lvl);
-      hits.push({ x: sx, y: sy });
-    }
+    // Seelenruf wie im Vorbild: nach kurzer Pause steigt alle a.every Sekunden ein Abbild-Kiesel aus dem Boden – sechs, dazu einer je gesammelter Seele
+    h.summonN = Math.min(a.max, a.count + h.souls); h.summonT = a.delay; h.souls = 0;
   } else if (a.id === 'sturmlauf') {
     // von Gegner zu Gegner springen; er landet neben dem letzten Bodenziel
     let px = h.x, py = h.y, land = null;
@@ -391,7 +416,7 @@ export function useAbility(g, side, cardId) {
     h.wardT = a.dur; h.wardF = a.f;
   } else if (a.id === 'leibwache') {
     const f = side === 0 ? -1 : 1, gy = offRiver(clamp(h.y + f * 1.6, 0.4, H - 0.4));
-    spawn(g, a.unit, side, h.x, gy, { deployT: 0.35 }, h.lvl);
+    spawn(g, a.unit, side, h.x, gy, { deployT: 0.3 }, h.lvl);
     hits.push({ x: h.x, y: gy });
   }
   emit(g, { t: 'ability', id: a.id, side, x: h.x, y: h.y, r: a.radius, hits });
@@ -404,11 +429,13 @@ function stun(e, t) {
   if (e.charging && e.d.dashGuard) return; // mitten im Sprung prallt auch die Betäubung ab
   e.stunT = Math.max(e.stunT, t); e.inRange = false; e.runT = 0; e.charging = false;
   if (e.d.rampKeep) e.rampT = 0;
+  if (e.d.frenzy && e.d.frenzy.reset) e.stacks = 0;
 }
 
 function die(g, e) {
   e.hp = 0;
   emit(g, { t: 'die', kind: e.kind, type: e.type, model: e.model, side: e.side, x: e.x, y: e.y, air: e.air, main: e.main });
+  if (e.formId) formDeath(FORM_API, g, e);
   g.dead.push(e);
 }
 
@@ -416,7 +443,7 @@ function die(g, e) {
 function damage(g, e, amount, bySide, src) {
   if (e.digT > 0) return; // unter der Erde trifft nichts
   if (e.hp <= 0 || g.over) return;
-  if (e.buried || (e.charging && e.d.dashGuard)) return; // vergraben oder mitten im Sprung: nichts trifft
+  if ((e.buried && !g.deep) || (e.charging && e.d.dashGuard)) return; // vergraben oder mitten im Sprung: nichts trifft (g.deep: Frost und Beben reichen auch unter die Erde)
   const rf = e.d.reflect;
   if (rf && src && src.hp > 0 && src.side !== e.side && edgeDist(src, e) <= rf.r) { // Dornen schlagen auf nahe Angreifer zurück
     if (src.kind !== 'tower') stun(src, rf.stun);
@@ -427,6 +454,7 @@ function damage(g, e, amount, bySide, src) {
   if (e.d.guard && !e.inRange) amount *= e.d.guard;
   if (e.wardT > 0) amount *= e.wardF;
   if (e.ampT > 0) amount *= e.ampF || 1;
+  if (e.formMode) amount = formHurt(e, amount);
   if (e.shield > 0) { // der Schild fängt den Treffer ganz ab, auch wenn er dabei bricht
     e.shield -= amount;
     if (e.shield <= 0) {
@@ -437,6 +465,7 @@ function damage(g, e, amount, bySide, src) {
     return;
   }
   e.hp -= amount;
+  if (e.formMode && e.hp < formFloor(e)) e.hp = formFloor(e); // Bärenzorn: das Leben fällt nicht unter eins
   if (e.d.dropAt && !e.dropped && e.hp > 0 && e.hp <= e.maxHp * e.d.dropAt.at) { e.dropped = true; e.dropNow = true; }
   if (e.main && !e.active) { e.active = true; e.cd = 3.5; emit(g, { t: 'wake', side: e.side, x: e.x, y: e.y }); }
   if (e.hp > 0) return;
@@ -456,6 +485,9 @@ function processDeaths(g) {
     const e = g.dead.shift(), d = e.d;
     if (e.cardId) { const S = g.sides[e.side], i = S.away.indexOf(e.cardId); if (i >= 0) { S.away.splice(i, 1); S.queue.push(e.cardId); } }
     if (g.over) continue;
+    // Seelen (Wurzelkönig): jede gefallene Truppe in ihrer letzten Gestalt zählt, gleich von welcher Seite – keine Abbilder, keine Gebäude
+    if (e.kind === 'unit' && !e.clone && (!d.deathSpawn || d.second)) for (const k of g.ents) if (k.hp > 0 && k.cardId && CARDS[k.cardId].ability.souls) k.souls = Math.min(CARDS[k.cardId].ability.souls, k.souls + 1);
+    if (e.reborn) continue;   // der wiedergeschlüpfte Glutfalke verbrennt nichts mehr und legt kein Ei
     if (d.deathDmg && !e.spent) {
       const dd = d.deathDmg, dmg = Math.round(dd.dmg * cardMult(e.lvl));
       if (dd.delay) { // Bombe mit Lunte
@@ -463,7 +495,7 @@ function processDeaths(g) {
         emit(g, { t: 'fuse', x: e.x, y: e.y, r: dd.r, delay: dd.delay });
       } else {
         emit(g, { t: 'burst', x: e.x, y: e.y, r: dd.r, side: e.side, frost: !!dd.slow });
-        areaDamage(g, e.side, e.x, e.y, dd.r, dmg, false, dd.tower ?? 1, dd.slow || 0);
+        areaDamage(g, e.side, e.x, e.y, dd.r, dmg, true, dd.tower ?? 1, dd.slow || 0, dd.knock ? { knock: dd.knock } : null);   // Todesschaden trifft Boden und Luft
       }
     }
     if (e.ownerId) { const o = g.byId.get(e.ownerId); if (o && o.hp > 0 && o.d.spawnHeal) overheal(g, o, o.d.spawnHeal.amt, o.d.spawnHeal.over); }   // Evolution: fällt ein Gerufener, heilt das die Ruferin
@@ -473,7 +505,7 @@ function processDeaths(g) {
       const n = d.deathSpawn.count, air = UNITS[d.deathSpawn.unit].air;
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2 + 0.5, rr = n > 1 ? 0.6 : 0, sy = clamp(e.y + Math.sin(a) * rr, 0.4, H - 0.4);
-        const k = spawn(g, d.deathSpawn.unit, e.side, clamp(e.x + Math.cos(a) * rr, 0.4, W - 0.4), air || !e.air ? sy : offRiver(sy), { deployT: 0.5 }, e.lvl);
+        const k = spawn(g, d.deathSpawn.unit, e.side, clamp(e.x + Math.cos(a) * rr, 0.4, W - 0.4), air || !e.air ? sy : offRiver(sy), { deployT: d.deathSpawn.wait ?? 0.5, ...(d.deathSpawn.hit1 ? { first: d.deathSpawn.hit1 } : {}) }, e.lvl);
         if (e.clone) makeClone(k);
       }
     }
@@ -482,9 +514,9 @@ function processDeaths(g) {
       F.kraft = Math.min(MAX_KRAFT, F.kraft + d.bounty);
       emit(g, { t: 'kraft', side: 1 - e.side, x: e.x, y: e.y });
     }
-    if (d.enchant) for (const o of g.ents) if (o.ench && o.ench.by === e.id) o.ench = null; // die Runenzeichen erlöschen mit dem Hünen
+    if (d.enchant) for (const o of g.ents) if (o.ench && o.ench.by === e.id) o.ench.until = g.time + (d.enchant.linger || 0); // die Runenzeichen erlöschen kurz nach dem Hünen
     if (e.curseT > 0 && e.kind === 'unit' && e.curseUnit && !e.spent) { // verflucht gefallen: steht für die andere Seite wieder auf
-      spawn(g, e.curseUnit, e.curseSide, e.x, UNITS[e.curseUnit].air ? e.y : offRiver(e.y), { deployT: 0.5 }, e.curseLvl);
+      spawn(g, e.curseUnit, e.curseSide, e.x, UNITS[e.curseUnit].air ? e.y : offRiver(e.y), { deployT: e.curseWait ?? 0.5, ...(e.curseHit1 ? { first: e.curseHit1 } : {}) }, e.curseLvl);
       emit(g, { t: 'curse', side: e.curseSide, x: e.x, y: e.y });
     }
   }
@@ -498,6 +530,26 @@ function overheal(g, u, amt, over) {
   u.maxHp = Math.max(u.maxHp, u.hp);
   emit(g, { t: 'heal', x: u.x, y: u.y });
 }
+
+// Heilung in Schüben (wie im Vorbild: vier Schübe im Abstand einer Viertelsekunde); eine neue Heilung löst die laufende ab
+function healOver(e, total, pulses = 1, every = 0) {
+  e.hotN = pulses; e.hotAmt = total; e.hotEvery = every; e.hotT = 0;   // hotAmt: was noch aussteht
+}
+
+// Heilerin: alle eigenen Truppen ringsum bekommen die Heilung in Schüben – sie selbst und andere Heilerinnen nicht
+function healAround(g, u, h) {
+  const amt = Math.round(h.amt * cardMult(u.lvl));
+  for (const e of g.ents) if (e !== u && !e.d.healHit && e.side === u.side && e.kind === 'unit' && e.hp > 0 && dist(u, e) <= h.r + e.r) healOver(e, amt, h.pulses, h.every);
+}
+
+// Nur das Laufen bremsen (Gift, Beben, Fessel): f = verbleibender Anteil des Tempos; die stärkere Bremse gilt
+function snare(e, dur, f) {
+  e.snareF = e.snareT > 0 ? Math.min(e.snareF, f) : f;
+  e.snareT = Math.max(e.snareT, dur);
+}
+
+// Wen ein Stoß versetzt: schwere Figuren bleiben stehen (noKnock an der Einheit, sonst ab Trefferfläche 0,75)
+const canKnock = e => e.kind === 'unit' && !e.buried && !(e.d.noKnock ?? e.r >= 0.75);
 
 // Stoß um die Einheit herum (Landung, Auftauchen). air: trifft auch Flieger, stun/slow: Dauer in Sekunden, tower: Anteil an Türmen (sonst voll)
 function groundPulse(g, u, dd) {
@@ -549,7 +601,7 @@ function areaDamage(g, side, x, y, radius, dmg, hitsAir, towerFactor = 1, slow =
     if (e.side === side || e.hp <= 0 || (e.air && !hitsAir)) continue;
     if (Math.hypot(e.x - x, e.y - y) > radius + e.r) continue; // getroffen ist, wessen Trefferfläche den Kreis berührt
     if (slow && e.kind === 'unit') e.slowT = Math.max(e.slowT, slow);
-    if (o && o.knock && e.kind === 'unit' && e.r < 0.75 && !e.buried) push(e, o.kx === undefined ? e.x - x : o.kx, o.kx === undefined ? e.y - y : o.ky, o.knock);
+    if (o && o.knock && canKnock(e)) push(e, o.kx === undefined ? e.x - x : o.kx, o.kx === undefined ? e.y - y : o.ky, o.knock);
     damage(g, e, e.kind === 'tower' ? dmg * towerFactor : e.kind === 'building' && o && o.buildF ? dmg * o.buildF : dmg, side, o ? o.src : undefined);
   }
 }
@@ -559,6 +611,7 @@ function push(e, dx, dy, k) {
   const L = Math.hypot(dx, dy) || 1;
   e.x = clamp(e.x + (dx / L) * k, 0.4, W - 0.4); e.y = clamp(e.y + (dy / L) * k, 0.4, H - 0.4);
   e.inRange = false; e.runT = 0; e.charging = false;
+  if (e.d.frenzy && e.d.frenzy.reset) e.stacks = 0;
 }
 
 function shoot(g, u, t, dmg) {
@@ -615,7 +668,7 @@ function pullHook(g, u, h) {
     h.x = u.x + (dx / L) * gap; h.y = u.y + (dy / L) * gap;
     if (!h.air && !h.ford && bankOf(h.y) === 0 && bankOf(u.y) !== 0) h.y = u.y; // nicht im Wasser absetzen
     h.ox = h.x; h.oy = h.y; h.targetId = 0;
-    stun(h, 0.4); h.slowT = Math.max(h.slowT, 1.5);
+    stun(h, 0.4);   // die Bremse nach dem Haken gibt es im Vorbild seit April 2026 nicht mehr
   } else {
     u.x = h.x - (dx / L) * gap; u.y = h.y - (dy / L) * gap; u.ox = u.x; u.oy = u.y;
   }
@@ -624,19 +677,26 @@ function pullHook(g, u, h) {
 
 function strike(g, u, t) {
   const d = u.d;
+  if (u.formMode === 'wirbel') return;                      // im Klingenwirbel schlägt sie nicht einzeln zu – der Wirbel trifft
   u.anim = 0.3;
+  if (u.formMode && formShot(FORM_API, g, u, t)) return;    // Standwurf
   let dmg = u.dmg, knock = 0;
+  if (u.formMode && t.kind === 'tower') dmg = Math.round(dmg * formTowerF(u));
+  const melee = !!d.melee && !t.air && edgeDist(u, t) <= d.melee.range;   // Schützenbund: aus der Nähe wird mit dem Bajonett zugestochen
+  if (melee) dmg = Math.round(d.melee.dmg * cardMult(u.lvl));
+  else if (u.snipeN > 0) { u.snipeN--; dmg = Math.round(d.snipe.dmg * cardMult(u.lvl)); }   // auch aus der Nähe sind die ersten Schüsse Scharfschüsse
   if (d.farBonus && dist(u, t) >= d.farBonus.min) dmg = Math.round(dmg * d.farBonus.f);   // Fernschuss: mehr Schaden ab diesem Abstand
-  if (u.charging) { dmg *= (d.charge || d.leap).dmg; u.charging = false; emit(g, { t: 'impact', x: t.x, y: t.y }); }
+  if (u.charging) { dmg *= (d.charge || d.leap).dmg; knock = (d.leap && d.leap.knock) || 0; u.charging = false; emit(g, { t: 'impact', x: t.x, y: t.y }); }
   u.runT = 0;
   if (d.stealth) u.revealT = d.stealth;
   if (d.ramp) { for (const [after, f] of d.ramp) if (u.rampT >= after) dmg = u.dmg * f; }
   if (d.combo && ++u.comboN >= d.combo.every) { u.comboN = 0; dmg *= d.combo.f; knock = d.combo.knock; emit(g, { t: 'impact', x: t.x, y: t.y }); }
   if (u.ench) { // Zeichen eines Runenhünen: jeder dritte Treffer schlägt mit Zusatzschaden ein
     const by = g.byId.get(u.ench.by);
-    if (!by || by.hp <= 0) u.ench = null;
+    if (u.ench.until !== undefined ? g.time > u.ench.until : !by || by.hp <= 0) u.ench = null;   // until: der Hüne ist gefallen, das Zeichen hält noch einen Augenblick
     else if (++u.ench.n >= u.ench.every) { u.ench.n = 0; dmg += u.ench.bonus; emit(g, { t: 'ench', x: t.x, y: t.y, air: t.air }); }
   }
+  if (d.kamikaze === 'drop') { die(g, u); return; }   // lässt am Ziel nur die Fracht fallen: Schaden und Insassen kommen aus dem Tod
   if (d.kamikaze) {
     u.spent = true;
     if (d.chain) chainHit(g, u, t, dmg);
@@ -649,7 +709,7 @@ function strike(g, u, t) {
     if (d.again) g.zones.push({ blast: { dmg, stun: d.stunArea || 0, ice: !!d.ice }, side: u.side, x: t.x, y: t.y, r: u.splash, delay: d.again, dur: 0, done: false });   // Evolution: dieselbe Wirkung noch einmal
     if (d.healBurst) {
       const amt = Math.round(d.healBurst.amt * cardMult(u.lvl));
-      for (const e of g.ents) if (e !== u && e.side === u.side && e.kind === 'unit' && e.hp > 0 && e.hp < e.maxHp && Math.hypot(e.x - t.x, e.y - t.y) <= d.healBurst.r + e.r) { e.hp = Math.min(e.maxHp, e.hp + amt); emit(g, { t: 'heal', x: e.x, y: e.y }); }
+      for (const e of g.ents) if (e !== u && e.side === u.side && e.kind === 'unit' && e.hp > 0 && Math.hypot(e.x - t.x, e.y - t.y) <= d.healBurst.r + e.r) healOver(e, amt, d.healBurst.pulses, d.healBurst.every);
     }
     emit(g, { t: 'hit', from: u.model, x: t.x, y: t.y, splash: u.splash || (d.healBurst ? d.healBurst.r : 0), frost: !!d.ice });
     if (u.hp > 0) die(g, u);
@@ -661,7 +721,7 @@ function strike(g, u, t) {
     const dx = t.x - u.x, dy = t.y - u.y, L = Math.hypot(dx, dy) || 1;
     g.projs.push({ line: true, x: u.x, y: u.y, ox: u.x, oy: u.y, sx: u.x, sy: u.y, vx: dx / L, vy: dy / L, left: d.line.len, len: d.line.len, back: !!d.line.back, near: d.line.near || null, w: d.line.w, speed: u.proj, dmg, knock: d.knock || 0, side: u.side, hitsAir: u.hitsAir, from: u.model, hit: new Set(), towerFactor: 1, srcId: u.id });
     emit(g, { t: 'shoot', from: u.model, side: u.side, x: u.x, y: u.y });
-  } else if (u.proj) {
+  } else if (u.proj && !melee) {
     shoot(g, u, t, dmg);
     if (d.multi > 1) {
       const more = g.ents.filter(e => e !== t && canHit(u, e) && reachDist(u, e) <= u.range).sort((p, q) => dist(u, p) - dist(u, q)).slice(0, d.multi - 1);
@@ -675,24 +735,22 @@ function strike(g, u, t) {
     }
   } else {
     if (d.spin) areaDamage(g, u.side, u.x, u.y, d.spin + u.r, dmg, false, 1, 0, { src: u });
-    else if (u.splash) areaDamage(g, u.side, t.x, t.y, u.splash, dmg, u.hitsAir, 1, 0, { src: u });
+    else if (u.splash && !melee) { areaDamage(g, u.side, t.x, t.y, u.splash, dmg, u.hitsAir, 1, 0, { src: u, knock: d.combo ? 0 : knock }); if (!d.combo) knock = 0; }
     else {
       damage(g, t, t.kind === 'tower' && d.towerDmg ? dmg * d.towerDmg : dmg, u.side, u);
       if (d.killHeal && t.hp <= 0 && t.kind !== 'tower') overheal(g, u, (d.killHeal.tiers.find(([hp]) => t.maxHp < hp) || d.killHeal.tiers[d.killHeal.tiers.length - 1])[1], d.killHeal.over);   // Evolution: jeder Gefällte heilt
     }
-    if (knock && t.hp > 0 && t.kind === 'unit' && t.r < 0.75) { const fwd = d.combo && d.combo.fwd; push(t, fwd ? 0 : t.x - u.x, fwd ? (u.side === 0 ? -1 : 1) : t.y - u.y, knock); }   // fwd: immer in Richtung der gegnerischen Türme
+    if (knock && t.hp > 0 && (canKnock(t) || (d.combo && d.combo.all && t.kind === 'unit'))) { const fwd = d.combo && d.combo.fwd; push(t, fwd ? 0 : t.x - u.x, fwd ? (u.side === 0 ? -1 : 1) : t.y - u.y, knock); }   // fwd: immer in Richtung der gegnerischen Türme
     if (d.ramp && !d.rampMelee) emit(g, { t: 'beam', x: u.x, y: u.y, tx: t.x, ty: t.y, from: u.model, air: u.air, tair: t.air, hot: dmg / u.dmg });
     else emit(g, { t: 'hit', from: u.model, x: d.spin ? u.x : t.x, y: d.spin ? u.y : t.y, heavy: dmg >= 300, spin: d.spin ? d.spin + u.r : 0 });
   }
-  if (d.healHit) {
-    const amt = Math.round(d.healHit.amt * cardMult(u.lvl));
-    for (const e of g.ents) if (e !== u && !e.d.healHit && e.side === u.side && e.kind === 'unit' && e.hp > 0 && e.hp < e.maxHp && dist(u, e) <= d.healHit.r) { e.hp = Math.min(e.maxHp, e.hp + amt); emit(g, { t: 'heal', x: e.x, y: e.y }); }
-  }
-  if (d.frenzy) u.stacks = Math.min(d.frenzy.max, u.stacks + 1);
+  if (d.healHit) healAround(g, u, d.healHit);
+  if (d.frenzy) u.stacks = Math.min(d.frenzy.stages ? d.frenzy.per * (d.frenzy.stages.length - 1) : d.frenzy.max, u.stacks + 1);
   if (d.hitHaste) u.hasteT = Math.max(u.hasteT, d.hitHaste);   // Evolution: jeder Schlag treibt ihn selbst an
   if (d.strikeWave) { const w = d.strikeWave; emit(g, { t: 'impact', x: u.x, y: u.y, r: w.r }); areaDamage(g, u.side, u.x, u.y, w.r, Math.round(w.dmg * cardMult(u.lvl)), false, 1, 0, { knock: w.knock }); }   // Evolution: Druckwelle um den Schützen
   if (d.leech) { u.leechN = d.leech.pulses; u.leechT = 0; }
   if (d.rageTrail) u.trailN = (u.trailN || 0) + 1;
+  if (u.formId) formStrike(FORM_API, g, u, t);
   u.rampIdle = 0;
 }
 
@@ -702,7 +760,7 @@ function strike(g, u, t) {
 // Es zählt der Gegner, dessen Mitte am nächsten liegt, unter allen in Sicht – Sichtweite plus beide Kollisionsradien, Türme sieht eine Truppe
 // zwei Felder weiter. Gebäude und Türme sehen so weit, wie sie schießen. Solange das Ziel nicht in Reichweite ist, wird jeden Takt neu gewählt.
 export function pickTarget(g, u) {
-  const isStatic = u.kind !== 'unit', sight = isStatic ? u.range : u.d.sight || SIGHT, min = u.d.minRange || 0;
+  const isStatic = u.kind !== 'unit', sight = isStatic ? u.range : u.sight || u.d.sight || SIGHT, min = u.d.minRange || 0;
   let best = null, bd = Infinity;
   for (const e of g.ents) {
     if (!canHit(u, e)) continue;
@@ -725,6 +783,8 @@ export function pickTarget(g, u) {
 const bankOf = y => (y < RIVER_TOP ? -1 : y > RIVER_BOT ? 1 : 0);
 // Punkt aus dem Wasser ans nähere Ufer schieben
 const offRiver = y => (y > RIVER_TOP - 0.4 && y < RIVER_BOT + 0.4 ? (y < (RIVER_TOP + RIVER_BOT) / 2 ? RIVER_TOP - 0.4 : RIVER_BOT + 0.4) : y);
+// Was die Heldenformen (helden.js) vom Spielkern brauchen
+const FORM_API = { spawn, damage, areaDamage, stun, emit, cardMult, offRiver, W, H };
 
 // Nächster Wegpunkt für Bodentruppen: über die Brücke, wenn das Ziel auf der anderen Flussseite liegt.
 export function waypoint(u, tx, ty) {
@@ -876,7 +936,30 @@ function updateEnt(g, u, dt) {
       groundPulse(g, u, d.deployDmg);
     }
     if (u.deployT <= 0 && d.deployDmg && d.surfaceDmg) u.pulseCd = 1;   // der Stoß beim Aufstellen gilt auch für das erste Auftauchen gleich danach
+    if (u.deployT <= 0 && d.deployHeal) { emit(g, { t: 'heal', x: u.x, y: u.y }); healAround(g, u, d.deployHeal); }   // Heilung bei der Landung
+    if (u.deployT <= 0 && d.snipe) u.cd = d.first || 0;
     return;
+  }
+  if (u.formId) formTick(FORM_API, g, u, dt);
+  if (u.hotN > 0) { // Heilung in Schüben
+    u.hotT -= dt;
+    if (u.hotT <= 0) {
+      const amt = Math.round(u.hotAmt / u.hotN);
+      u.hotAmt -= amt; u.hotN--; u.hotT += u.hotEvery;
+      if (u.hp < u.maxHp) { u.hp = Math.min(u.maxHp, u.hp + amt); emit(g, { t: 'heal', x: u.x, y: u.y }); }
+    }
+  }
+  if (u.groundT > 0) { u.groundT -= dt; if (u.groundT <= 0) u.air = !!d.air; }   // von Ranken heruntergeholt: danach wieder in der Luft
+  if (u.snareT > 0) u.snareT -= dt;
+  if (u.summonN > 0) { // Seelenruf: einer nach dem anderen steigt aus dem Boden
+    u.summonT -= dt;
+    if (u.summonT <= 0) {
+      const a = CARDS[u.cardId].ability, w = rnd(g) * Math.PI * 2, rr = Math.sqrt(rnd(g)) * a.radius;
+      const sx = clamp(u.x + Math.cos(w) * rr, 0.4, W - 0.4), sy = offRiver(clamp(u.y + Math.sin(w) * rr, 0.4, H - 0.4));
+      u.summonT += a.every; u.summonN--;
+      makeClone(spawn(g, a.unit, u.side, sx, sy, { deployT: 0.4 }, u.lvl));
+      emit(g, { t: 'rise', side: u.side, x: sx, y: sy });
+    }
   }
   if (d.morph && u.hp <= u.maxHp * d.morph.at && (!UNITS[d.morph.unit].building || bankOf(u.y) !== 0)) { morph(g, u); return; }
   if (u.cloakT > 0) u.cloakT -= dt;
@@ -919,7 +1002,7 @@ function updateEnt(g, u, dt) {
   if (d.hatch) { // das Ei: bleibt es heil, schlüpft die Einheit erneut
     u.hatchT -= dt;
     if (u.hatchT <= 0) {
-      const k = spawn(g, d.hatch.unit, u.side, u.x, u.y, { deployT: 0.4 }, u.lvl);
+      const k = spawn(g, d.hatch.unit, u.side, u.x, u.y, { deployT: 0.4, reborn: !!d.hatch.once }, u.lvl);   // once: wer geschlüpft ist, hinterlässt beim nächsten Tod nichts mehr
       if (u.clone) makeClone(k);
       emit(g, { t: 'hatch', x: u.x, y: u.y });
       u.hp = 0; // verschwindet ohne Todeswirkung
@@ -961,15 +1044,16 @@ function updateEnt(g, u, dt) {
         const dmg2 = Math.round(s.dmg * cardMult(u.lvl));
         for (let i = 0; i < (s.count || 1); i++) {
           const e = list[i % list.length];
-          g.projs.push({ x: u.x, y: u.y, ox: u.x, oy: u.y, sx: u.x, sy: u.y, tx: e.x, ty: e.y, targetId: e.id, speed: s.proj, dmg: dmg2, splash: s.splash || 0, slow: 0, stun: 0, root: s.root || 0, curse: null, burst: null,
+          g.projs.push({ x: u.x, y: u.y, ox: u.x, oy: u.y, sx: u.x, sy: u.y, tx: e.x, ty: e.y, targetId: e.id, speed: s.proj, dmg: dmg2, splash: s.splash || 0, slow: 0, stun: 0, root: s.root || 0, snare: s.snare || null, curse: null, burst: null,
             side: u.side, hitsAir: !!s.hitsAir, from: s.from, rune: false, air: u.air || e.air, srcId: u.id });
         }
         emit(g, { t: 'shoot', from: s.from, side: u.side, x: u.x, y: u.y });
       }
     }
   }
+  const pace = (u.hasteT > 0 ? HASTE : 1) * (u.slowT > 0 ? SLOW_FACTOR : 1);   // Antrieb und Bremse wirken auch auf Nachschub und Kraftgewinn
   if (d.kraft) {
-    u.kraftT -= dt;
+    u.kraftT -= dt * pace;
     if (u.kraftT <= 0) {
       u.kraftT += d.kraft.every;
       const S = g.sides[u.side];
@@ -979,14 +1063,14 @@ function updateEnt(g, u, dt) {
     }
   }
   if (d.spawn) {
-    u.spawnT -= dt;
+    u.spawnT -= dt * pace;
     if (d.spawn.busy && u.inRange) u.spawnT = Math.min(u.spawnT, d.spawn.busy);   // busy: kürzerer Takt, solange sie kämpft
     if (u.spawnT <= 0 && (!d.spawn.below || u.hp <= u.maxHp * d.spawn.below) && (!d.spawn.near || g.ents.some(e => e.side !== u.side && e.hp > 0 && !e.hidden && Math.hypot(e.x - u.x, e.y - u.y) - e.r <= d.spawn.near))) {   // near: nur wenn ein Gegner so nah ist
       u.spawnT = d.spawn.busy && u.inRange ? d.spawn.busy : d.spawn.every;
       const f = u.side === 0 ? -1 : 1, n = d.spawn.count || 1;
       for (let i = 0; i < n; i++) {
         const heals = d.spawnHeal && (!d.spawnHeal.first || (u.called = (u.called || 0) + 1) <= d.spawnHeal.first);   // Evolution: nur die ersten Gerufenen heilen sie
-        spawn(g, d.spawn.unit, u.side, clamp(u.x + (i - (n - 1) / 2) * 0.6 + (rnd(g) - 0.5) * 0.3, 0.4, W - 0.4), clamp(u.y + f * (d.spawn.back ? -d.spawn.back : u.r + 0.4), 0.4, H - 0.4), { deployT: 0.3, ownerId: heals ? u.id : 0 }, u.lvl);
+        spawn(g, d.spawn.unit, u.side, clamp(u.x + (i - (n - 1) / 2) * 0.6 + (rnd(g) - 0.5) * 0.3, 0.4, W - 0.4), clamp(u.y + f * (d.spawn.back ? -d.spawn.back : u.r + 0.4), 0.4, H - 0.4), { deployT: 0.3 + i * (d.spawn.gap || 0), ownerId: heals ? u.id : 0, ...(d.spawn.hit1 ? { first: d.spawn.hit1 } : {}) }, u.lvl);   // gap: die Gerufenen kommen nacheinander, hit1: eigener erster Schlag
       }
       u.anim = 0.3;
     }
@@ -999,28 +1083,46 @@ function updateEnt(g, u, dt) {
   const rate = (u.hasteT > 0 ? HASTE : 1) * (u.slowT > 0 ? SLOW_FACTOR : 1);
   u.cd = Math.max(0, u.cd - dt * rate * (u.cloakT > 0 ? u.cloakRate : 1));
   u.scan -= dt;
+  if (u.snipeN > 0 && u.cd <= 0) { // Scharfschüsse (Runenform der Bolzenschützin): die ersten Schüsse reichen in ihrer Bahn über das ganze Feld
+    const sn = d.snipe;
+    let best = null, bd = sn.range;
+    for (const e of g.ents) { if (!canHit(u, e) || Math.abs(e.x - u.x) > sn.w / 2 + e.r) continue; const dd = edgeDist(u, e); if (dd <= bd) { bd = dd; best = e; } }
+    if (best && bd > u.range) {
+      u.snipeN--; u.cd = u.atk; u.anim = 0.3; u.face = best.x > u.x ? 1 : -1;
+      g.projs.push({ x: u.x, y: u.y, ox: u.x, oy: u.y, sx: u.x, sy: u.y, tx: best.x, ty: best.y, targetId: best.id, speed: sn.proj, dmg: Math.round(sn.dmg * cardMult(u.lvl)), splash: 0, slow: 0, stun: 0, root: 0, curse: null, burst: null,
+        side: u.side, hitsAir: true, from: u.model, rune: true, air: u.air || best.air, srcId: u.id });
+      emit(g, { t: 'shoot', from: u.model, side: u.side, x: u.x, y: u.y });
+    }
+  }
+  if (u.tauntT > 0) { // Schildruf: wer gerufen wurde, greift so lange den Rufer an
+    u.tauntT -= dt; const tt = g.byId.get(u.tauntId);
+    if (u.tauntT > 0 && tt && tt.hp > 0 && !tt.hidden && !(tt.air && !u.hitsAir)) { if (u.targetId !== tt.id) { u.targetId = tt.id; u.inRange = false; } u.scan = 0.2; } else { u.tauntT = 0; u.scan = 0; }
+  }
   let t = u.targetId ? g.byId.get(u.targetId) : null;
   if (t && (t.hp <= 0 || t.hidden || (d.minRange && dist(u, t) < d.minRange + u.r + t.r))) t = null;
   if (!t || (!u.inRange && u.scan <= 0)) {
     t = pickTarget(g, u);
     u.scan = 0.05; // ohne Ziel in Reichweite praktisch jeden Takt neu wählen
     u.targetId = t ? t.id : 0;
-    if (!t) { u.inRange = false; u.runT = 0; u.charging = false; if (!(d.rampKeep && u.rampIdle < d.rampKeep)) u.rampT = 0; if (d.frenzy && d.frenzy.reset) u.stacks = 0; return; }
+    if (!t) { u.inRange = false; u.runT = 0; u.charging = false; if (!(d.rampKeep && u.rampIdle < d.rampKeep)) u.rampT = 0; u.idleT += dt; if (d.frenzy && d.frenzy.reset && u.idleT > (d.frenzy.keep || 0)) u.stacks = 0; return; }
   }
   if (d.ramp && u.rampId !== t.id) { u.rampId = t.id; if (!(d.rampKeep && u.rampIdle < d.rampKeep)) u.rampT = 0; }   // rampKeep: die Stufe bleibt so viele Sekunden ohne Treffer erhalten
   const dd = reachDist(u, t);
   if (dd <= u.range + (u.inRange ? 0.2 : 0)) {
-    if (!u.inRange) { u.inRange = true; u.cd = u.charging ? 0 : Math.max(u.cd, d.first ?? (u.kind === 'unit' ? 0.4 : d.burrow ? 0.5 : 0.25)); }   // first: Zeit bis zum ersten Schlag
+    if (!u.inRange) { u.inRange = true; u.cd = u.charging ? 0 : Math.max(u.cd, u.first ?? d.first ?? (u.kind === 'unit' ? 0.4 : d.burrow ? 0.5 : 0.25)); }   // first: Zeit bis zum ersten Schlag (u.first: eigener Wert der Gerufenen)
     if (t.x !== u.x) u.face = t.x > u.x ? 1 : -1;
     if (d.ramp) u.rampT += dt;
+    u.idleT = 0;
     if (u.cd <= 0 && (!d.ammo || u.ammo > 0)) {
       if (d.ammo) u.ammo--;
       strike(g, u, t);
-      u.cd = u.atk * (d.frenzy ? Math.pow(d.frenzy.f, u.stacks) : 1);
+      const fz = d.frenzy;   // stages: feste Taktstufen, alle fz.per Schüsse eine weiter; sonst wird jeder Schlag um den Faktor f schneller
+      u.cd = !fz ? u.atk : fz.stages ? fz.stages[Math.min(fz.stages.length - 1, Math.floor(u.stacks / fz.per))] : u.atk * Math.pow(fz.f, u.stacks);
     }
   } else {
     u.inRange = false; if (!(d.rampKeep && u.rampIdle < d.rampKeep)) u.rampT = 0;
-    if (d.frenzy && d.frenzy.reset) u.stacks = 0;
+    u.idleT += dt;
+    if (d.frenzy && d.frenzy.reset && u.idleT > (d.frenzy.keep || 0)) u.stacks = 0;
     if (u.kind === 'unit' && u.rootT <= 0) {
       if (d.hook) {
         if (u.hookT > 0) { // holt aus; danach fliegt der Haken
@@ -1039,11 +1141,11 @@ function updateEnt(g, u, dt) {
         }
       }
       if (d.leap && !u.charging && !t.air && dd >= d.leap.min && dd <= d.leap.max) { u.charging = true; emit(g, { t: 'charge', x: u.x, y: u.y }); }
-      if (d.charge && !(d.charge.noShield && u.shield > 0)) { u.runT += u.speed * rate * dt; // Anlauf nach Strecke (charge.after in Feldern), wie im Vorbild
+      if (d.charge && !u.onFoot && !(d.charge.noShield && u.shield > 0)) { u.runT += u.speed * rate * dt; // Anlauf nach Strecke (charge.after in Feldern), wie im Vorbild
          if (!u.charging && u.runT >= d.charge.after) { u.charging = true; emit(g, { t: 'charge', x: u.x, y: u.y }); } }
       const [wx, wy] = routePoint(g, u, t);
       const dx = wx - u.x, dy = wy - u.y, len = Math.hypot(dx, dy) || 1;
-      const stepLen = Math.min(u.speed * rate * (u.charging ? (d.charge || d.leap).speed : 1) * dt, len);
+      const stepLen = Math.min(u.speed * rate * (u.snareT > 0 ? u.snareF : 1) * (u.cloakT > 0 ? u.cloakSlow || 1 : 1) * (u.charging ? (d.charge || d.leap).speed : 1) * dt, len);
       u.vx = dx / len; u.vy = dy / len;
       u.x += u.vx * stepLen; u.y += u.vy * stepLen;
       if (Math.abs(dx) > 0.05) u.face = dx > 0 ? 1 : -1;
@@ -1125,11 +1227,18 @@ function updateZones(g, dt) {
         emit(g, { t: 'bolts', x: z.x, y: z.y, hits: top.map(e => ({ x: e.x, y: e.y, air: e.air })) });
         for (const e of top) { if (e.kind !== 'tower') stun(e, c.stun); damage(g, e, e.kind === 'tower' ? dmg * (c.towerF ?? TOWER_SPELL_FACTOR) : dmg, z.side); }
       } else if (c.roll) {
-        g.projs.push({ line: true, x: z.x, y: z.y, ox: z.x, oy: z.y, vx: 0, vy: z.side === 0 ? -1 : 1, left: c.roll.len, w: c.roll.w, speed: c.roll.speed, dmg, knock: c.knock || 0, side: z.side, hitsAir: false, from: z.spell, hit: new Set(), towerFactor: c.towerF ?? TOWER_SPELL_FACTOR,
-          spawnEnd: c.rollSpawn ? { unit: c.rollSpawn.unit, count: c.rollSpawn.count, lvl: z.lvl } : null });
+        g.projs.push({ line: true, x: z.x, y: z.y, ox: z.x, oy: z.y, vx: 0, vy: z.side === 0 ? -1 : 1, left: c.roll.len, w: c.roll.w, speed: c.roll.speed, dmg, knock: c.knock || 0, knockAll: !!c.knockAll, side: z.side, hitsAir: false, from: z.spell, hit: new Set(), towerFactor: c.towerF ?? TOWER_SPELL_FACTOR,
+          spawnEnd: c.rollSpawn ? { unit: c.rollSpawn.unit, count: c.rollSpawn.count, lvl: z.lvl, wait: c.rollSpawn.wait, form: z.form || null } : null });
+      } else if (c.vines) { // Ranken: die zähesten Ziele im Kreis werden festgehalten, Flieger dabei auf den Boden geholt
+        z.held = g.ents.filter(e => e.side !== z.side && e.hp > 0 && !e.buried && !e.hidden && inZone(z, e)).sort((p, q) => q.hp - p.hp || p.id - q.id).slice(0, c.vines.n).map(e => e.id);
+        z.t2 = c.vines.dur / c.vines.hits; z.n = 0;
+        for (const id of z.held) { const e = g.byId.get(id); stun(e, c.vines.dur); if (e.air) { e.air = false; e.groundT = c.vines.dur; } }
       } else {
         if (c.stun) for (const e of g.ents) if (e.side !== z.side && e.kind !== 'tower' && e.hp > 0 && inZone(z, e)) stun(e, c.stun);
-        if (dmg) areaDamage(g, z.side, z.x, z.y, z.r, dmg, true, c.towerF ?? TOWER_SPELL_FACTOR, c.slow || 0, c.knock ? { knock: c.knock, kx: 0, ky: z.side === 0 ? -1 : 1 } : null);
+        g.deep = !!c.deep;
+        if (dmg) areaDamage(g, z.side, z.x, z.y, z.r, dmg, true, c.towerF ?? TOWER_SPELL_FACTOR, c.slow || 0, c.knock ? (c.knockOut ? { knock: c.knock } : { knock: c.knock, kx: 0, ky: z.side === 0 ? -1 : 1 }) : null);
+        g.deep = false;
+        if (c.waves) { z.n = 1; z.t2 = c.waves.every; }
       }
       if (c.clone) for (const e of [...g.ents]) { // Trugbild: jede eigene Truppe im Kreis bekommt ein Abbild
         if (e.side !== z.side || e.kind !== 'unit' || e.hp <= 0 || e.hero || e.clone || !e.speed || !inZone(z, e)) continue;
@@ -1137,9 +1246,27 @@ function updateZones(g, dt) {
         emit(g, { t: 'clone', x: e.x, y: e.y, air: e.air });
       }
       if (c.freeze) for (const e of g.ents) if (e.side !== z.side && e.hp > 0 && inZone(z, e)) { stun(e, c.freeze); e.iceT = c.freeze; }
-      if (c.summon) for (const [dx, dy] of formation(c.summon.count, 0.5, z.side)) spawn(g, c.summon.unit, z.side, clamp(z.x + dx, 0.4, W - 0.4), offRiver(clamp(z.y + dy, 0.4, H - 0.4)), { deployT: 0.4 }, z.lvl);
+      if (c.summon) for (const [dx, dy] of formation(c.summon.count, 0.5, z.side)) spawn(g, c.summon.unit, z.side, clamp(z.x + dx, 0.4, W - 0.4), offRiver(clamp(z.y + dy, 0.4, H - 0.4)), { deployT: c.summon.wait ?? 0.4, ...(c.summon.hit1 ? { first: c.summon.hit1 } : {}) }, z.lvl);
       if (c.root) for (const e of g.ents) if (e.side !== z.side && e.kind === 'unit' && !e.air && e.hp > 0 && inZone(z, e)) e.rootT = c.root;
-      if (c.haste) for (const e of g.ents) if (e.side === z.side && e.kind === 'unit' && e.hp > 0 && inZone(z, e)) e.hasteT = c.haste;
+    }
+    // Antrieb: der Kreis bleibt liegen und wirkt auf alles Eigene darin – Truppen, Gebäude, Türme; wer hinausläuft, behält ihn noch c.linger Sekunden
+    if (c.haste) for (const e of g.ents) if (e.side === z.side && e.hp > 0 && inZone(z, e)) e.hasteT = Math.max(e.hasteT, c.linger ?? c.haste);
+    if (c.snare) for (const e of g.ents) if (e.side !== z.side && e.kind === 'unit' && e.hp > 0 && !(c.ground && e.air) && inZone(z, e)) snare(e, 1, c.snare);   // Gift und Beben bremsen nur das Laufen
+    if (c.waves && z.n > 0 && z.n < c.waves.n) { // weitere Wellen
+      z.t2 -= dt;
+      if (z.t2 <= 1e-9) {
+        z.t2 += c.waves.every; z.n++;
+        emit(g, { t: 'spell', spell: z.spell, side: z.side, x: z.x, y: z.y, r: z.r, wave: z.n });
+        areaDamage(g, z.side, z.x, z.y, z.r, Math.round(c.dmg * z.mult), true, c.towerF ?? TOWER_SPELL_FACTOR);
+      }
+    }
+    if (c.vines && z.held) { // Schaden in Schüben an den Festgehaltenen
+      z.t2 -= dt;
+      if (z.t2 <= 1e-9 && z.n < c.vines.hits) {
+        z.t2 += c.vines.dur / c.vines.hits; z.n++;
+        const per = Math.round(c.vines.dmg * z.mult), hits = [];
+        for (const id of z.held) { const e = g.byId.get(id); if (!e || e.hp <= 0) continue; hits.push(e); emit(g, { t: 'hit', from: z.spell, x: e.x, y: e.y }); damage(g, e, e.kind === 'tower' ? per * (c.towerF ?? TOWER_SPELL_FACTOR) : per, z.side); }
+      }
     }
     if (c.pull) for (const e of g.ents) { // zur Mitte ziehen, schwere Brocken langsamer
       if (e.side === z.side || e.kind !== 'unit' || e.hp <= 0 || !inZone(z, e)) continue;
@@ -1151,13 +1278,13 @@ function updateZones(g, dt) {
     if (c.amp || c.curse) for (const e of g.ents) { // Fluch: mehr Schaden; wer im Kreis fällt, wechselt die Seite
       if (e.side === z.side || e.hp <= 0 || e.kind === 'tower' || !inZone(z, e)) continue;
       if (c.amp) { e.ampT = 0.3; e.ampF = c.amp; }
-      if (c.curse && e.kind === 'unit') { e.curseT = 0.5; e.curseSide = z.side; e.curseUnit = c.curse; e.curseLvl = z.lvl; }
+      if (c.curse && e.kind === 'unit') { e.curseT = 0.5; e.curseSide = z.side; e.curseUnit = c.curse; e.curseLvl = z.lvl; e.curseWait = undefined; e.curseHit1 = c.curseHit1; }
     }
     if (c.summonOver) { // nach und nach wühlen sich Einheiten aus dem Boden
       z.t2 -= dt;
       if (z.t2 <= 1e-9 && z.n < c.summonOver.count) {
         z.t2 += c.summonOver.every; z.n++;
-        const a = rnd(g) * Math.PI * 2, rr = Math.sqrt(rnd(g)) * (z.r - 0.5);
+        const a = rnd(g) * Math.PI * 2, rr = Math.sqrt(rnd(g)) * (c.summonOver.rMax ?? z.r - 0.5);
         const sx = clamp(z.x + Math.cos(a) * rr, 0.4, W - 0.4), sy = offRiver(clamp(z.y + Math.sin(a) * rr, 0.4, H - 0.4));
         spawn(g, c.summonOver.unit, z.side, sx, sy, { deployT: 0.4 }, z.lvl);
         emit(g, { t: 'rise', side: z.side, x: sx, y: sy });
@@ -1177,7 +1304,7 @@ function updateZones(g, dt) {
       z.tickT -= dt;
       if (z.tickT <= 1e-9) {
         z.tickT += c.tick;
-        if (c.dot) areaDamage(g, z.side, z.x, z.y, z.r, Math.round(c.dot * z.mult), !c.ground, c.towerF || TOWER_SPELL_FACTOR, c.slow || 0, c.buildF ? { buildF: c.buildF } : null);
+        if (c.dot) { g.deep = !!c.deep; areaDamage(g, z.side, z.x, z.y, z.r, Math.round(c.dot * z.mult), !c.ground, c.towerF || TOWER_SPELL_FACTOR, c.slow || 0, c.buildF ? { buildF: c.buildF } : null); g.deep = false; }
         else for (const e of g.ents) {
           if (e.side === z.side && e.kind === 'unit' && e.hp > 0 && e.hp < e.maxHp && inZone(z, e)) {
             e.hp = Math.min(e.maxHp, e.hp + Math.round(c.heal * z.mult));
@@ -1203,12 +1330,12 @@ function updateProjs(g, dt) {
         const rx = e.x - p.x, ry = e.y - p.y, along = rx * p.vx + ry * p.vy, across = Math.abs(rx * p.vy - ry * p.vx);
         if (across > p.w / 2 + e.r || along > e.r + 0.3 || along < -stepLen - e.r - 0.3) continue;
         p.hit.add(e.id);
-        if (p.knock && e.kind === 'unit' && e.r < 0.75) { // zurückstoßen (schwere Brocken bleiben stehen)
+        if (p.knock && (p.knockAll ? e.kind === 'unit' : canKnock(e))) { // zurückstoßen (schwere Brocken bleiben stehen – außer vor der Walze)
           e.x = clamp(e.x + p.vx * p.knock, 0.4, W - 0.4); e.y = clamp(e.y + p.vy * p.knock, 0.4, H - 0.4);
           e.inRange = false; e.runT = 0; e.charging = false;
         }
         const close = p.near && Math.hypot(e.x - p.sx, e.y - p.sy) <= p.near.max, hd = close ? Math.round(p.dmg * p.near.f) : p.dmg;   // Evolution: wer nah am Werfer steht, bekommt mehr ab
-        if (close && p.near.knock && !p.rev && e.kind === 'unit' && e.r < 0.75) { e.x = clamp(e.x + p.vx * p.near.knock, 0.4, W - 0.4); e.y = clamp(e.y + p.vy * p.near.knock, 0.4, H - 0.4); e.inRange = false; e.runT = 0; e.charging = false; }
+        if (close && p.near.knock && !p.rev && canKnock(e)) { e.x = clamp(e.x + p.vx * p.near.knock, 0.4, W - 0.4); e.y = clamp(e.y + p.vy * p.near.knock, 0.4, H - 0.4); e.inRange = false; e.runT = 0; e.charging = false; }
         damage(g, e, e.kind === 'tower' ? hd * p.towerFactor : hd, p.side, p.srcId ? g.byId.get(p.srcId) : undefined);
         emit(g, { t: 'hit', from: p.from, x: e.x, y: e.y });
       }
@@ -1216,7 +1343,7 @@ function updateProjs(g, dt) {
         if (p.back) { p.back = false; p.rev = true; p.vx = -p.vx; p.vy = -p.vy; p.left = p.len; p.hit = new Set(); } // kehrt um und trifft alle noch einmal
         else {
           p.done = true;
-          if (p.spawnEnd) for (let i = 0; i < p.spawnEnd.count; i++) spawn(g, p.spawnEnd.unit, p.side, clamp(p.x + i * 0.6, 0.4, W - 0.4), offRiver(clamp(p.y, 0.4, H - 0.4)), { deployT: 0.4 }, p.spawnEnd.lvl);
+          if (p.spawnEnd) for (let i = 0; i < p.spawnEnd.count; i++) spawn(g, p.spawnEnd.unit, p.side, clamp(p.x + i * 0.6, 0.4, W - 0.4), offRiver(clamp(p.y, 0.4, H - 0.4)), { deployT: p.spawnEnd.wait ?? 0.4, ...(p.spawnEnd.form ? { formId: p.spawnEnd.form.id, formGroup: p.spawnEnd.form.group, hero: true } : {}) }, p.spawnEnd.lvl);
         }
       }
       continue;
@@ -1235,15 +1362,20 @@ function updateProjs(g, dt) {
       p.done = true;
       if (p.hitSpawn) for (let i = 0; i < p.hitSpawn.count; i++) spawn(g, p.hitSpawn.unit, p.side, clamp(p.tx + (i - (p.hitSpawn.count - 1) / 2) * 0.6, 0.4, W - 0.4), offRiver(clamp(p.ty, 0.4, H - 0.4)), { deployT: p.hitSpawn.deploy ?? 0.3 }, p.hitSpawn.lvl);   // Evolution: mit dem Geschoss landet jemand
       if (p.burst) { // zerspringt am Ziel; die Kerne fliegen in der Schussrichtung weiter
-        const bx = p.tx - p.sx, by = p.ty - p.sy, L = Math.hypot(bx, by) || 1;
-        g.projs.push({ line: true, x: p.tx - (bx / L) * 0.5, y: p.ty - (by / L) * 0.5, ox: p.tx, oy: p.ty, vx: bx / L, vy: by / L, left: p.burst.len, len: p.burst.len, back: false, w: p.burst.w, speed: 13, dmg: p.dmg, knock: 0,
-          side: p.side, hitsAir: p.hitsAir, from: p.from + '_kern', hit: new Set(), towerFactor: 1, srcId: p.srcId });
-      } else if (p.splash) areaDamage(g, p.side, p.tx, p.ty, p.splash, p.dmg, p.hitsAir, 1, p.slow, { src });
+        // jeder Splitter ist ein eigenes Geschoss und trifft für sich: nah am Einschlag treffen alle, weiter hinten nur einzelne
+        const bx = p.tx - p.sx, by = p.ty - p.sy, L = Math.hypot(bx, by) || 1, nb = p.burst.n || 1, a0 = Math.atan2(by, bx);
+        for (let i = 0; i < nb; i++) {
+          const a = a0 + (i - (nb - 1) / 2) * (p.burst.fan || 0), vx = Math.cos(a), vy = Math.sin(a);
+          g.projs.push({ line: true, x: p.tx - (bx / L) * 0.5, y: p.ty - (by / L) * 0.5, ox: p.tx, oy: p.ty, vx, vy, left: p.burst.len, len: p.burst.len, back: false, w: p.burst.w, speed: p.burst.speed || 13, dmg: p.dmg, knock: 0,
+            side: p.side, hitsAir: p.hitsAir, from: p.from + '_kern', hit: new Set(), towerFactor: 1, srcId: p.srcId });
+        }
+      } else if (p.splash) areaDamage(g, p.side, p.tx, p.ty, p.splash, p.dmg, p.hitsAir, p.towerF ?? 1, p.slow, { src });
       else if (alive) {
         if (p.slow && t.kind === 'unit') t.slowT = Math.max(t.slowT, p.slow);
         if (p.stun && t.kind !== 'tower') stun(t, p.stun);
         if (p.root && t.kind === 'unit') t.rootT = Math.max(t.rootT, p.root);
-        if (p.curse && t.kind === 'unit') { t.curseT = p.curse.dur; t.curseSide = p.curse.side; t.curseUnit = p.curse.unit; t.curseLvl = p.curse.lvl; }
+        if (p.snare && t.kind === 'unit') snare(t, p.snare.dur, p.snare.f);
+        if (p.curse && t.kind === 'unit') { t.curseT = p.curse.dur; t.curseSide = p.curse.side; t.curseUnit = p.curse.unit; t.curseLvl = p.curse.lvl; t.curseWait = p.curse.wait; t.curseHit1 = 0; }
         damage(g, t, p.dmg, p.side, src);
       }
       emit(g, { t: 'hit', from: p.from, x: p.tx, y: p.ty, splash: p.splash, frost: !!p.slow, root: !!p.root, curse: !!p.curse });
@@ -1306,6 +1438,7 @@ export function step(g, dt = DT) {
   }
   for (const e of g.ents) { e.ox = e.x; e.oy = e.y; }
   updateZones(g, dt);
+  formWorld(FORM_API, g, dt);
   for (let i = 0, n = g.ents.length; i < n; i++) { const e = g.ents[i]; if (e.hp > 0) updateEnt(g, e, dt); }
   separate(g);
   updateProjs(g, dt);
