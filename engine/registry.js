@@ -7,7 +7,8 @@
 import { THREE } from './deps.js';
 import { CELL } from './fx.js';
 
-// ---- Geschosse: kind 'arrow' | 'orb' | 'rock'; y0 = Abschusshöhe, arc = Bogenhöhe, color 'team' = Farbe der Seite
+// ---- Geschosse: kind 'arrow' | 'orb' | 'rock' (leuchtet nicht) | 'blade' (kreisender Wurfstern); y0 = Abschusshöhe, arc = Bogenhöhe,
+//      color 'team' = Farbe der Seite, trail 'smoke' | 'fuse' = Spur aus Rauch oder Funken statt Leuchten
 export const PROJECTILES = {
   waldlaeufer: { kind: 'arrow', y0: 1.15, arc: 0.5, hit: 'arrow' },
   aussenturm: { kind: 'orb', y0: 3.1, arc: 0.25, size: 0.2, color: 'team', hit: 'orb' },
@@ -15,10 +16,16 @@ export const PROJECTILES = {
   ballista: { kind: 'arrow', y0: 0.95, arc: 0.15, scale: 1.5, hit: 'arrow' },
   dornwerfer: { kind: 'arrow', y0: 0.45, arc: 0.35, scale: 0.55, hit: 'bite' },
   funkenweberin: { kind: 'orb', y0: 1.45, arc: 0.7, size: 0.2, color: '#ffd45a', glow: '#ffb347', hit: 'spark' },
+  geschuetzturm: { kind: 'rock', y0: 3.0, arc: 1.1, size: 0.26, color: '#2a2d35', trail: 'smoke', hit: 'shell' },
+  klingenturm: { kind: 'blade', y0: 2.9, arc: 0.25, hit: 'slash' },
+  segensturm: { kind: 'orb', y0: 2.9, arc: 0.3, size: 0.19, color: '#ffe9a8', glow: '#ffb347', hit: 'spark' },
+  bolzenschuetzin: { kind: 'arrow', y0: 1.0, arc: 0.12, scale: 0.9, hit: 'arrow' },
+  zuendler: { kind: 'rock', y0: 1.3, arc: 1.5, size: 0.15, color: '#c2452c', trail: 'fuse', hit: 'bomb' },
   _: { kind: 'orb', y0: 1.0, arc: 0.4, size: 0.16, color: '#fff3c4', hit: 'orb' },
 };
 // ---- Nahkampf-Treffer je Angreifer (sonst 'punch')
-export const MELEE = { raufbold: 'punch', steinhueter: 'slam', wicht: 'bite', kraehe: 'bite', raeuber: 'punch', wueterich: 'slash', eisenwaechter: 'slash', kiesel: 'bite' };
+export const MELEE = { raufbold: 'punch', steinhueter: 'slam', wicht: 'bite', kraehe: 'bite', raeuber: 'punch', wueterich: 'slash', eisenwaechter: 'slash', kiesel: 'bite',
+  hammerschmied: 'slam', schildknappe: 'slash', torknacker: 'slam', klingentaenzerin: 'slash' };   // Rundumschläge (ev.spin) nehmen stets HITS.spin
 
 export const HITS = {
   punch(fx, ev, C) {
@@ -53,6 +60,31 @@ export const HITS = {
   arrow(fx, ev) {
     fx.burst({ x: ev.x, y: 0.9, z: ev.y, n: 1, cell: CELL.star, color: '#ffffff', hdr: 1.8, size: 0.5, size2: 0.12, life: 0.1 });
     fx.burst({ x: ev.x, y: 0.9, z: ev.y, n: 4, cell: CELL.shard, add: 0, color: '#d9b98a', size: [0.07, 0.12], life: [0.25, 0.4], speed: [1.5, 3.5], up: [1.5, 3.5], gravity: -14, spin: [6, 14] });
+  },
+  // Mörserkugel schlägt ein (Geschützturm): Feuerball, Druckring, Rauch, Brandfleck
+  shell(fx, ev, C) {
+    fx.burst({ x: ev.x, y: 0.7, z: ev.y, n: 1, cell: CELL.glow, color: '#ffe2a0', hdr: 3, size: 1.9, size2: 0.5, life: 0.2 });
+    fx.ring({ x: ev.x, z: ev.y, r0: 0.2, r: 1.3, dur: 0.3, color: '#ffd27a', hdr: 2, width: 0.2 });
+    fx.burst({ x: ev.x, y: 0.5, z: ev.y, n: 12, cell: CELL.spark, color: '#fff1b8', color2: '#ff7a1a', hdr: 2.8, size: [0.1, 0.22], life: [0.3, 0.6], speed: [2.5, 6.5], up: [1.5, 5], gravity: -14, drag: 1.5, floor: true });
+    fx.burst({ x: ev.x, y: 0.4, z: ev.y, n: 6, cell: CELL.smoke, add: 0, color: '#d9d4c8', color2: '#6f7380', alpha: 0.8, size: [0.4, 0.6], size2: [0.9, 1.3], life: [0.5, 0.9], speed: [0.6, 1.8], up: [0.6, 2], drag: 2.5, spin: [0.4, 1.5], spread: 0.3 });
+    fx.decal({ x: ev.x, z: ev.y, r: 0.8, dur: 5, strength: 0.5 });
+    C.shake(0.22);
+  },
+  // Bombe platzt (Zündler): Feuerball über die Fläche, Funken, Rauch
+  bomb(fx, ev, C) {
+    const r = ev.splash || 1.2;
+    fx.burst({ x: ev.x, y: 0.6, z: ev.y, n: 1, cell: CELL.glow, color: '#ffd9a0', hdr: 3, size: r * 1.7, size2: r * 0.5, life: 0.2 });
+    fx.burst({ x: ev.x, y: 0.5, z: ev.y, n: 1, cell: CELL.star, color: '#ffffff', hdr: 2.4, size: r * 1.2, size2: r * 0.3, life: 0.14, spin: 2 });
+    fx.burst({ x: ev.x, y: 0.5, z: ev.y, n: 10, cell: CELL.spark, color: '#fff1b8', color2: '#ff5a2a', hdr: 2.8, size: [0.09, 0.2], life: [0.3, 0.55], speed: [2, 5.5], up: [1.5, 4.5], gravity: -13, drag: 1.5, floor: true });
+    fx.burst({ x: ev.x, y: 0.4, z: ev.y, n: 5, cell: CELL.smoke, add: 0, color: '#e6ddd0', color2: '#7d7f8c', alpha: 0.75, size: [0.35, 0.5], size2: [0.8, 1.1], life: [0.4, 0.8], speed: [0.5, 1.5], up: [0.5, 1.8], drag: 2.5, spin: [0.4, 1.5], spread: r * 0.3 });
+    C.shake(0.14);
+  },
+  // Rundumschlag (Klingentänzerin): heller Schnittkreis um die Figur (ev.spin = Radius)
+  spin(fx, ev) {
+    const r = ev.spin;
+    fx.ring({ x: ev.x, z: ev.y, r0: r * 0.35, r, dur: 0.22, color: '#ffffff', hdr: 2.2, width: 0.1 });
+    fx.ring({ x: ev.x, z: ev.y, r0: r * 0.2, r: r * 0.85, dur: 0.3, color: '#cfe4ff', hdr: 1.4, width: 0.3, delay: 0.03 });
+    for (let i = 0; i < 6; i++) { const a = i / 6 * 6.283 + Math.random(); fx.burst({ x: ev.x + Math.cos(a) * r * 0.8, y: 0.8, z: ev.y + Math.sin(a) * r * 0.8, n: 1, cell: CELL.spark, color: '#ffffff', hdr: 2.4, size: [0.5, 0.7], size2: 0.2, life: 0.12, rot: a }); }
   },
   orb(fx, ev, C) {
     fx.burst({ x: ev.x, y: 0.9, z: ev.y, n: 1, cell: CELL.glow, color: C.team.light, hdr: 3, size: 1.1, size2: 0.2, life: 0.16 });
@@ -131,6 +163,104 @@ export const SPELLS = {
     },
   },
 };
+
+// Gezackter Blitz vom Himmel bis zum Boden (aus kurzen Strahlen)
+function bolt(fx, x, z, color = '#fff9b0', top = 9) {
+  let p = [x + (Math.random() - 0.5) * 1.6, top, z + (Math.random() - 0.5) * 0.8];
+  for (let i = 1; i <= 5; i++) { const k = 1 - i / 5, j = i < 5 ? 0.5 : 0, q = [x + (Math.random() - 0.5) * j + (p[0] - x) * k * 0.5, top * k + 0.15, z + (Math.random() - 0.5) * j * 0.6];
+    fx.beam({ from: p, to: q, color, hdr: 2.0, width: 0.06, dur: 0.24 }); fx.beam({ from: p, to: q, color: '#ffffff', hdr: 2.4, width: 0.022, dur: 0.18 }); p = q; }
+}
+const lump = (r, color, hdr = 1) => () => new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), hdr > 1 ? new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(hdr) }) : new THREE.MeshLambertMaterial({ color, flatShading: true }));
+
+Object.assign(SPELLS, {
+  // Hagelschauer: Eiskörner prasseln schräg herab, am Ende ein kalter Stoß über die ganze Fläche
+  hagelschauer: {
+    cast(fx, ev, C) {
+      fx.zone({ x: ev.x, z: ev.y, r: ev.r, dur: ev.delay, color: '#cfeaff', hdr: 1.3, fill: 0.22 });
+      const n = Math.max(4, Math.round((ev.delay + 0.25) / 0.07));
+      for (let i = 0; i < n; i++) fx.after(i * 0.07, () => {
+        fx.burst({ x: ev.x - 0.9, y: 5.2, z: ev.y - 0.45, n: 8, cell: CELL.spark, color: '#f2fbff', color2: '#bfe6ff', hdr: 1.5, alpha: 0.9, size: [0.5, 0.75], size2: [0.5, 0.7], life: [0.4, 0.45], fade: 0.2, rot: 0.17, dir: [0.17, -1, 0.09], cone: 0.03, speed: [11.5, 13], spread: ev.r * 0.95 });
+        fx.burst({ x: ev.x - 0.9, y: 5.2, z: ev.y - 0.45, n: 4, cell: CELL.shard, add: 0, color: '#ffffff', size: [0.13, 0.2], size2: [0.13, 0.2], life: [0.4, 0.45], fade: 0.2, dir: [0.17, -1, 0.09], cone: 0.03, speed: [11.5, 13], spread: ev.r * 0.95, spin: [4, 9] });
+      });
+    },
+    impact(fx, ev, C) {
+      const { x, y: z, r } = ev;
+      fx.ring({ x, z, r0: r * 0.4, r: r * 1.05, dur: 0.4, color: '#e6f6ff', hdr: 2, width: 0.12 });
+      fx.burst({ x, y: 0.25, z, n: 22, cell: CELL.star, color: '#ffffff', color2: '#bfe6ff', hdr: 2.2, size: [0.25, 0.45], size2: 0.05, life: [0.12, 0.3], spread: r * 0.95, spin: 3 });
+      fx.burst({ x, y: 0.2, z, n: 18, cell: CELL.shard, add: 0, color: '#f2fbff', size: [0.07, 0.13], life: [0.3, 0.55], speed: [0.8, 2.4], up: [1.5, 3.5], gravity: -14, spin: [6, 14], spread: r * 0.9 });
+      fx.burst({ x, y: 0.3, z, n: 10, cell: CELL.smoke, add: 0, color: '#eaf6ff', alpha: 0.5, size: [0.6, 0.9], size2: [1.2, 1.7], life: [0.5, 0.9], speed: [0.3, 1], up: [0.2, 0.8], drag: 2, spread: r * 0.7 });
+      C.shake(0.2);
+    },
+  },
+  // Eiswurf: ein Eisbrocken fliegt herab und zerspringt; Splitter fliegen nach außen (er stößt zurück und bremst)
+  eiswurf: {
+    cast(fx, ev, C) {
+      fx.zone({ x: ev.x, z: ev.y, r: ev.r, dur: ev.delay, color: '#cfeaff', hdr: 1.3, fill: 0.25 });
+      let acc = 0;
+      fx.fall({ make: lump(0.5, '#cfeeff', 1.5), dur: ev.delay, from: [ev.x + 3.5, 12, ev.y - 2.5], to: [ev.x, 0.4, ev.y],
+        trail(p, dt) { acc += dt; while (acc > 0.03) { acc -= 0.03; fx.burst({ x: p.x, y: p.y, z: p.z, n: 1, cell: CELL.glow, color: '#dff3ff', color2: '#8fd0ff', hdr: 1.4, alpha: 0.8, size: [0.3, 0.45], size2: 0.06, life: [0.16, 0.26], spread: 0.08 }); } } });
+    },
+    impact(fx, ev, C) {
+      const { x, y: z, r } = ev;
+      fx.burst({ x, y: 0.7, z, n: 1, cell: CELL.glow, color: '#cfeaff', hdr: 1.7, alpha: 0.85, size: r * 1.5, size2: r * 0.6, life: 0.22 });
+      fx.ring({ x, z, r0: r * 0.25, r: r * 1.2, dur: 0.35, color: '#ffffff', hdr: 1.9, width: 0.14 });
+      fx.ring({ x, z, r0: r * 0.2, r, dur: 0.55, color: '#8fd0ff', hdr: 1.6, width: 0.3, delay: 0.04 });
+      fx.burst({ x, y: 0.4, z, n: 20, cell: CELL.shard, add: 0, color: '#f2fbff', color2: '#bfe6ff', size: [0.1, 0.2], life: [0.4, 0.75], speed: [3, 7], up: [1.5, 5], gravity: -15, spin: [6, 14], floor: true });
+      fx.burst({ x, y: 0.4, z, n: 10, cell: CELL.star, color: '#ffffff', hdr: 2.4, size: [0.14, 0.26], size2: 0.02, life: [0.4, 0.8], speed: [1, 3], up: [2, 4.5], gravity: -6, drag: 1.2, spin: [3, 8], spread: r * 0.4 });
+      fx.burst({ x, y: 0.3, z, n: 8, cell: CELL.smoke, add: 0, color: '#eaf6ff', alpha: 0.55, size: [0.5, 0.8], size2: [1.1, 1.6], life: [0.5, 0.9], speed: [0.8, 2.2], up: [0.3, 1], drag: 2.2, spread: r * 0.5 });
+      C.shake(0.3);
+    },
+  },
+  // Funkenschlag: drei gezackte Blitze schlagen ein, kurzer gelber Schein (lähmt kurz)
+  funkenschlag: {
+    cast(fx, ev, C) { fx.zone({ x: ev.x, z: ev.y, r: ev.r, dur: Math.max(0.12, ev.delay), color: '#fff27a', hdr: 1.4, fill: 0.2 }); },
+    impact(fx, ev, C) {
+      const { x, y: z, r } = ev;
+      for (let i = 0; i < 3; i++) { const a = i * 2.1 + Math.random(), bx = x + Math.cos(a) * r * 0.45, bz = z + Math.sin(a) * r * 0.45; bolt(fx, bx, bz);
+        fx.burst({ x: bx, y: 0.3, z: bz, n: 1, cell: CELL.glow, color: '#fff9b0', hdr: 2.2, size: 0.95, size2: 0.25, life: 0.16 });
+        fx.burst({ x: bx, y: 0.3, z: bz, n: 6, cell: CELL.spark, color: '#ffffff', color2: '#ffe45a', hdr: 3, size: [0.09, 0.18], life: [0.2, 0.45], speed: [2, 5.5], up: [1, 4], gravity: -12, drag: 2, floor: true }); }
+      fx.burst({ x, y: 0.6, z, n: 1, cell: CELL.glow, color: '#fff27a', hdr: 1.2, alpha: 0.55, size: r * 1.8, size2: r * 1.1, life: 0.18 });
+      fx.ring({ x, z, r0: r * 0.3, r: r * 1.05, dur: 0.3, color: '#fff9b0', hdr: 2.2, width: 0.12 });
+      C.shake(0.25); C.flash(0.1);
+    },
+  },
+  // Frostnacht: kalter Schein, ein Reifring bleibt stehen, Schneeflocken sinken, solange der Frost hält
+  frostnacht: {
+    cast(fx, ev, C) { fx.zone({ x: ev.x, z: ev.y, r: ev.r, dur: Math.max(0.15, ev.delay), color: '#bfeaff', hdr: 1.4, fill: 0.3 }); },
+    impact(fx, ev, C) {
+      const { x, y: z, r } = ev;
+      fx.burst({ x, y: 0.7, z, n: 1, cell: CELL.glow, color: '#bfe6ff', hdr: 1.4, alpha: 0.7, size: r * 1.9, size2: r * 1.3, life: 0.4 });
+      fx.ring({ x, z, r0: r * 0.2, r, dur: 0.45, color: '#ffffff', hdr: 1.8, width: 0.16 });
+      fx.ring({ x, z, r0: r * 0.985, r, dur: 3.8, color: '#bfeaff', hdr: 1.3, width: 0.05, alpha: 0.9 });
+      fx.burst({ x, y: 0.25, z, n: 16, cell: CELL.smoke, add: 0, color: '#eaf6ff', alpha: 0.5, size: [0.7, 1.0], size2: [1.4, 2.0], life: [0.9, 1.6], speed: [0.2, 0.8], up: [0.1, 0.5], drag: 2, spread: r * 0.85 });
+      fx.burst({ x, y: 0.3, z, n: 14, cell: CELL.shard, add: 0, color: '#f2fbff', size: [0.08, 0.15], life: [0.4, 0.7], speed: [1, 3], up: [2, 4.5], gravity: -13, spin: [6, 14], spread: r * 0.8 });
+      for (let i = 0; i < 14; i++) fx.after(i * 0.25, () => fx.burst({ x, y: 2.4, z, n: 7, cell: CELL.star, color: '#ffffff', color2: '#bfeaff', hdr: 1.8, size: [0.16, 0.26], size2: 0.06, life: [1.0, 1.5], speed: [0.1, 0.4], up: [-1.6, -1.0], drag: 0.4, spin: [1, 3], spread: r * 0.9, jitterY: 0.8 }));
+      C.shake(0.15);
+    },
+  },
+  // Felssturz: ein großer Brocken stürzt herab – sein Schatten wächst am Boden –, dann Staubwelle, Trümmer und Krater
+  felssturz: {
+    cast(fx, ev, C) {
+      fx.zone({ x: ev.x, z: ev.y, r: ev.r, dur: ev.delay, color: C.team.light, hdr: 1.3, fill: 0.34 });
+      fx.ring({ x: ev.x, z: ev.y, r0: ev.r * 1.3, r: ev.r * 0.3, dur: ev.delay, color: '#1c1f26', hdr: 0.5, width: 0.9, alpha: 0.5 });
+      let acc = 0;
+      fx.after(Math.max(0, ev.delay - 0.75), () => fx.fall({ make: lump(1.05, '#8d939c'), dur: Math.min(0.75, ev.delay), from: [ev.x - 2.2, 17, ev.y - 1.6], to: [ev.x, 0.7, ev.y],
+        trail(p, dt) { acc += dt; while (acc > 0.03) { acc -= 0.03; fx.burst({ x: p.x, y: p.y, z: p.z, n: 1, cell: CELL.dust, add: 0, color: '#d9d2c2', alpha: 0.5, size: [0.4, 0.6], size2: [0.9, 1.2], life: [0.25, 0.4], spread: 0.3 }); } } }));
+    },
+    impact(fx, ev, C) {
+      const { x, y: z, r } = ev;
+      fx.burst({ x, y: 0.7, z, n: 1, cell: CELL.glow, color: '#fff0d0', hdr: 2.6, size: r * 2.6, size2: r * 0.9, life: 0.22 });
+      fx.ring({ x, z, r0: r * 0.3, r: r * 1.7, dur: 0.45, color: '#ffffff', hdr: 2.2, width: 0.14 });
+      fx.ring({ x, z, r0: r * 0.2, r: r * 1.15, dur: 0.7, color: '#e9dfc8', hdr: 1.4, width: 0.4, delay: 0.05 });
+      for (let i = 0; i < 14; i++) { const a = i / 14 * 6.283; fx.burst({ x: x + Math.cos(a) * r * 0.4, y: 0.2, z: z + Math.sin(a) * r * 0.4, n: 1, cell: CELL.dust, add: 0, color: '#e9dfc8', alpha: 0.7, size: [0.6, 0.85], size2: [1.5, 2.0], life: [0.6, 0.95], dir: [Math.cos(a), 0.14, Math.sin(a)], cone: 0.2, speed: [3, 4.6], drag: 3.5 }); }
+      fx.burst({ x, y: 0.5, z, n: 14, cell: CELL.smoke, add: 0, color: '#e8e2d6', color2: '#8b8f9a', alpha: 0.85, size: [0.7, 1.0], size2: [1.6, 2.3], life: [0.8, 1.4], speed: [0.6, 2.2], up: [0.8, 3], drag: 2.2, spin: [0.3, 1.5], spread: r * 0.5 });
+      fx.burst({ x, y: 0.5, z, n: 16, cell: CELL.shard, add: 0, color: '#b4bac6', size: [0.12, 0.24], life: [0.5, 0.9], speed: [2, 6], up: [3, 7], gravity: -16, spin: [5, 12], floor: true });
+      fx.debris({ x, z, n: 16, power: 1.2, size: 1.3 });
+      fx.decal({ x, z, r: r * 1.25, dur: 14, strength: 0.75 });
+      C.shake(0.8); C.flash(0.1);
+    },
+  },
+});
 
 // Standard für Zauber ohne eigenes Rezept: Farbe aus der Art der Karte, Größe aus ihrem Radius
 export function defaultSpell(card) {

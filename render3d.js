@@ -13,7 +13,7 @@ import { createFx } from './engine/fx.js';
 import { createActors } from './engine/actors.js';
 
 const PI = Math.PI;
-const BUILDING_ART = ['ballista']; // Gebäude mit eigenem Kartenbild aus Blender (engine/assets/units/<modell>_k.webp)
+const BUILDING_ART = ['ballista', 'aussenturm', 'geschuetzturm', 'klingenturm', 'segensturm']; // Gebäude und Türme mit eigenem Kartenbild aus Blender (engine/assets/units/<modell>_k.webp)
 const RUNE_COLOR = '#c98bff', GOLD = '#f5c542';
 const ease = t => 1 - (1 - t) * (1 - t);
 const LEAN = -0.3; // Figuren leicht zur Kamera kippen, damit man Gesichter statt Scheitel sieht
@@ -849,7 +849,7 @@ export function createRenderer3D(canvas, overlay) {
     const card = CARDS[id];
     if (card.type === 'spell') return null;
     const u = UNITS[card.unit], model = u.model || card.unit;
-    if (!u.tower && !u.hero && !card.mix && hasPortrait(model)) return portrait(model, w, h, u.building ? 1 : Math.min(card.count, 5));
+    if (!u.hero && !card.mix && hasPortrait(model)) return portrait(model, w, h, u.building || u.tower ? 1 : Math.min(card.count, 5));
     const def = getDef(model, 0);
     const solid = u.building || u.tower;
     const holder = new THREE.Group(), cel = !u.hero && !solid, stage = cel ? celScene : snapScene;
