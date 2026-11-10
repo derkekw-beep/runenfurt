@@ -24,51 +24,88 @@
 <body>
 <div id="probe" aria-hidden="true"></div>
 
-<section id="home" class="screen">
+<section id="menu" class="screen">
   <header class="bar">
-    <div class="pill" id="lvlPill"><span class="lvl"><b id="lvlNum">1</b></span><span class="xp"><i id="xpFill"></i></span></div>
+    <button class="pill" id="lvlPill" aria-label="Profil"><span class="lvl"><b id="lvlNum">1</b></span><span class="xp"><i id="xpFill"></i></span></button>
     <div class="pill gold"><span class="ico coin"></span><b id="goldNum">0</b></div>
-    <button class="round" id="soundBtn" aria-label="Ton an oder aus"></button>
+    <div class="pill"><span class="ico gem"></span><b id="gemNum">0</b></div>
   </header>
-  <div class="hero">
-    <canvas id="emblem" width="320" height="320" aria-hidden="true"></canvas>
-    <h1>Runenfurt</h1>
-  </div>
-  <div class="arenaBox">
-    <div class="arenaName"><small id="arenaNo">Arena 1</small><b id="arenaName">Moosgrund</b></div>
-    <div class="trophies"><span class="ico trophy"></span><b id="trophyNum">0</b></div>
-    <div class="track"><i id="trophyFill"></i></div>
-    <div class="hint" id="arenaHint"></div>
-  </div>
-  <div class="seg" id="levelSeg" role="group" aria-label="Schwierigkeit">
-    <button data-level="leicht">Leicht</button><button data-level="mittel">Mittel</button><button data-level="schwer">Schwer</button>
-  </div>
-  <button class="big" id="playBtn">Kampf</button>
-  <div class="row">
-    <button class="btn" id="deckBtn">Karten &amp; Deck<span class="dot" id="deckDot" hidden></span></button>
-    <button class="btn" id="helpBtn">So geht’s</button>
-  </div>
-  <div class="stats" id="stats"></div>
-</section>
 
-<section id="deck" class="screen" hidden>
-  <header class="bar">
-    <button class="round back" id="deckBack" aria-label="Zurück"></button>
-    <h2>Karten &amp; Deck</h2>
-    <div class="pill gold"><span class="ico coin"></span><b id="goldNum2">0</b></div>
-  </header>
-  <div class="scroll">
-    <div class="sub"><b>Dein Deck</b><span id="avgCost"></span></div>
-    <div class="swapHint" id="swapHint" hidden></div>
-    <div class="grid" id="deckGrid"></div>
-    <div class="sub"><b>Sammlung</b><span id="collCount"></span></div>
-    <div class="grid" id="collGrid"></div>
+  <!-- Kampf -->
+  <div class="tab" id="tabHome">
+    <div class="hero">
+      <canvas id="emblem" width="320" height="320" aria-hidden="true"></canvas>
+      <h1>Runenfurt</h1>
+      <div class="who" id="who"></div>
+    </div>
+    <button class="arenaBox" id="arenaBox">
+      <div class="arenaName"><small id="arenaNo">Arena 1</small><b id="arenaName">Moosgrund</b></div>
+      <div class="trophies"><span class="ico trophy"></span><b id="trophyNum">0</b></div>
+      <div class="track"><i id="trophyFill"></i></div>
+      <div class="hint" id="arenaHint"></div>
+    </button>
+    <div class="row">
+      <button class="btn tile" id="questBtn"><span class="ico qico"></span><span><b>Aufgaben</b><small id="questInfo"></small></span><span class="dot" id="questDot" hidden></span></button>
+      <button class="btn tile" id="crownBtn"><span class="ico crown"></span><span><b>Kronentruhe</b><small id="crownInfo"></small></span><span class="dot" id="crownDot" hidden></span></button>
+    </div>
+    <div class="seg" id="levelSeg" role="group" aria-label="Schwierigkeit">
+      <button data-level="leicht">Leicht</button><button data-level="mittel">Mittel</button><button data-level="schwer">Schwer</button>
+    </div>
+    <div class="playRow">
+      <button class="big" id="playBtn">Kampf</button>
+      <button class="btn side" id="trainBtn">Übung</button>
+    </div>
+    <div class="stats" id="stats"></div>
   </div>
+
+  <!-- Karten -->
+  <div class="tab" id="tabCards" hidden>
+    <div class="scroll">
+      <div id="upBox" hidden>
+        <div class="sub"><b>Bereit zum Aufwerten</b><span id="upSum"></span></div>
+        <div class="upRow" id="upRow"></div>
+      </div>
+      <div class="row helpers">
+        <button class="btn tile" id="wishBtn"><span class="ico star"></span><span><b>Wunschkarte</b><small id="wishInfo"></small></span></button>
+        <button class="btn tile" id="jokerBtn"><span class="ico joker"></span><span><b id="jokerNum">0 Joker</b><small>ersetzen fehlende Karten</small></span></button>
+      </div>
+      <div class="sub"><b>Dein Deck</b><span id="avgCost"></span></div>
+      <div class="seg small" id="slotSeg" role="group" aria-label="Deck-Platz"></div>
+      <div class="swapHint" id="swapHint" hidden></div>
+      <div class="grid" id="deckGrid"></div>
+      <div class="sub"><b>Sammlung</b><span id="collCount"></span></div>
+      <div class="chips" id="filterChips"></div>
+      <div class="grid" id="collGrid"></div>
+    </div>
+  </div>
+
+  <!-- Laden -->
+  <div class="tab" id="tabShop" hidden>
+    <div class="scroll" id="shopBody"></div>
+  </div>
+
+  <!-- Trophäenweg -->
+  <div class="tab" id="tabRoad" hidden>
+    <div class="scroll" id="roadBody"></div>
+  </div>
+
+  <!-- Mehr -->
+  <div class="tab" id="tabMore" hidden>
+    <div class="scroll" id="moreBody"></div>
+  </div>
+
+  <nav id="nav">
+    <button data-tab="shop"><span class="ico nshop"></span><small>Laden</small><span class="dot" hidden></span></button>
+    <button data-tab="cards"><span class="ico ncards"></span><small>Karten</small><span class="dot" hidden></span></button>
+    <button data-tab="home" class="on"><span class="ico nfight"></span><small>Kampf</small><span class="dot" hidden></span></button>
+    <button data-tab="road"><span class="ico nroad"></span><small>Weg</small><span class="dot" hidden></span></button>
+    <button data-tab="more"><span class="ico nmore"></span><small>Mehr</small><span class="dot" hidden></span></button>
+  </nav>
 </section>
 
 <section id="battle" class="screen" hidden>
   <div id="hud">
-    <div class="score foe"><span class="ico crown"></span><b id="crownFoe">0</b></div>
+    <div class="score foe"><span class="ico crown"></span><b id="crownFoe">0</b><small id="foeName"></small></div>
     <div id="clock"><b id="time">3:00</b><small id="phase"></small></div>
     <div class="score me"><b id="crownMe">0</b><span class="ico crown"></span></div>
     <button class="round pause" id="pauseBtn" aria-label="Pause"></button>
@@ -77,6 +114,7 @@
     <canvas id="arena"></canvas>
     <canvas id="labels" aria-hidden="true"></canvas>
     <div id="abilities"></div>
+    <div id="fps" hidden></div>
     <div id="banner" hidden></div>
     <div id="toast" hidden></div>
   </div>
@@ -90,5 +128,6 @@
 </section>
 
 <div id="overlay" hidden><div id="sheet"></div></div>
+<div id="fx" hidden></div>
 </body>
 </html>

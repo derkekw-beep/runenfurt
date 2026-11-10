@@ -1,6 +1,6 @@
 // Zeichnet Spielfeld, Einheiten, Geschosse und Effekte auf ein Canvas. Alles ist gezeichnet, es gibt keine Bilddateien.
 import { CARDS, UNITS } from './cards.js';
-import { W, H, RIVER_TOP, RIVER_BOT, BRIDGES, BRIDGE_HALF, clampDeploy, outerTower } from './sim.js';
+import { W, H, RIVER_TOP, RIVER_BOT, BRIDGES, BRIDGE_HALF, OUTER_Y, MAIN_Y, POCKET, clampDeploy, outerTower } from './sim.js';
 
 export const TEAM = [
   { main: '#2ec4b6', dark: '#0f6b63', light: '#a8f3ea' },
@@ -188,7 +188,10 @@ function tower(c, e, T, time, main) {
 }
 
 // Der 2D-Zeichner ist nur der Rückfall ohne WebGL: neuere Figuren leihen sich dort eine vorhandene Zeichnung.
-const ALIAS = { glutling: 'wicht', kiesel: 'wicht', klingentaenzerin: 'eisenwaechter', bolzenschuetzin: 'waldlaeufer', donnerkaefer: 'rochen', frostschamane: 'funkenweberin', erzritter: 'eisenwaechter', wurzelmutter: 'funkenweberin', hornbulle: 'torknacker', steinling: 'steinhueter', marschall: 'eisenwaechter', sturmrufer: 'funkenweberin', steinschleuder: 'ballista' };
+const ALIAS = { dornwerfer: 'wicht', blasrohrwicht: 'wicht', sprengkaefer: 'wicht', wuehler: 'wicht', nachtfalter: 'kraehe', panzerhornisse: 'kraehe', laternenfisch: 'rochen', schildknappe: 'eisenwaechter', nebelschleicher: 'eisenwaechter', windlaeufer: 'eisenwaechter',
+  trommelschlaeger: 'raufbold', fasstraeger: 'hammerschmied', wurzelkoenig: 'hammerschmied', kegler: 'hammerschmied', brockenwerfer: 'hammerschmied', zuendler: 'raufbold', sternschuetzin: 'waldlaeufer', weitschuetzin: 'waldlaeufer', schattenjaegerin: 'waldlaeufer',
+  blitzfaenger: 'funkenweberin', feldheilerin: 'funkenweberin', eisbrocken: 'steinhueter', basaltriese: 'steinhueter', panzerbaer: 'torknacker', gewitterkarren: 'ballista', sonnenspiegel: 'ballista', kesselturm: 'ballista', fernschleuder: 'ballista', glutofen: 'erdloch', kraftquell: 'erdloch',
+  glutling: 'wicht', kiesel: 'wicht', klingentaenzerin: 'eisenwaechter', bolzenschuetzin: 'waldlaeufer', donnerkaefer: 'rochen', frostschamane: 'funkenweberin', erzritter: 'eisenwaechter', wurzelmutter: 'funkenweberin', hornbulle: 'torknacker', steinling: 'steinhueter', marschall: 'eisenwaechter', sturmrufer: 'funkenweberin', steinschleuder: 'ballista' };
 const drawer = model => DRAW[model] || DRAW[ALIAS[model]] || DRAW.raufbold;
 
 function drawFigure(c, e, time, moving) {
@@ -233,6 +236,39 @@ function spellIcon(c, spell, time = 0) {
     for (const [x, y, r, col] of [[-0.4, 0.1, 0.5, '#6fa83a'], [0.35, 0.2, 0.55, '#7fbd45'], [0, -0.3, 0.55, '#93d152'], [-0.1, 0.35, 0.45, '#a6d94a']]) circ(c, x, y, r, col, '#3d6b1f', 0.05);
     for (const [x, y, r] of [[-0.55, -0.7, 0.12], [0.6, -0.55, 0.16], [0.1, -0.95, 0.09]]) circ(c, x, y, r, 'rgba(200,240,130,.6)', '#eaffc0', 0.04);
     circ(c, -0.15, -0.05, 0.11, '#2f4f1a'); circ(c, 0.25, -0.05, 0.11, '#2f4f1a'); line(c, -0.1, 0.35, 0.25, 0.35, '#2f4f1a', 0.08);
+  } else if (spell === 'frostnacht') {
+    c.shadowColor = '#bfeaff'; c.shadowBlur = 12;
+    for (let i = 0; i < 3; i++) {
+      const a = i * Math.PI / 3, dx = Math.cos(a), dy = Math.sin(a);
+      line(c, -dx * 0.9, -dy * 0.9, dx * 0.9, dy * 0.9, '#eaf8ff', 0.13);
+      for (const s of [-1, 1]) for (const q of [0.5, -0.5]) { const bx = dx * 0.55 * s, by = dy * 0.55 * s, b = a + q * 1.5; line(c, bx, by, bx + Math.cos(b) * 0.28 * s, by + Math.sin(b) * 0.28 * s, '#bfeaff', 0.09); }
+    }
+    c.shadowBlur = 0; circ(c, 0, 0, 0.16, '#ffffff', '#6fa8c8', 0.04);
+  } else if (spell === 'donnerkeil') {
+    ell(c, 0, -0.72, 0.9, 0.3, '#59647a', '#2a313b', 0.05); circ(c, -0.4, -0.86, 0.3, '#6b768c'); circ(c, 0.2, -0.95, 0.36, '#6b768c');
+    c.shadowColor = '#fff27a'; c.shadowBlur = 16;
+    for (const [x, k] of [[-0.5, 0.8], [0.05, 1.15], [0.6, 0.8]]) poly(c, [x + 0.12 * k, -0.55, x - 0.2 * k, 0.05, x + 0.02 * k, 0.05, x - 0.12 * k, 0.75 * k, x + 0.26 * k, -0.1, x + 0.05 * k, -0.1], '#fff27a', '#e08a1f', 0.04);
+    c.shadowBlur = 0;
+  } else if (spell === 'felssturz') {
+    for (const x of [-0.75, -0.45, -0.15]) line(c, x, -1.0, x + 0.35, -0.35, 'rgba(255,255,255,.35)', 0.1);
+    poly(c, [-0.55, -0.15, 0.05, -0.6, 0.7, -0.25, 0.85, 0.4, 0.3, 0.85, -0.45, 0.65, -0.8, 0.2], '#8d939c', '#3a4048', 0.07);
+    poly(c, [0.05, -0.6, 0.7, -0.25, 0.25, 0.05, -0.2, -0.1], '#b4bbc4'); line(c, -0.2, -0.1, -0.45, 0.65, '#646b75', 0.06); line(c, 0.25, 0.05, 0.3, 0.85, '#646b75', 0.06);
+  } else if (spell === 'wichtwurf') {
+    poly(c, [-0.2, -0.75, 0.2, -0.75, 0.3, -0.45, -0.3, -0.45], '#7a5a34', '#3b2716', 0.05);
+    c.beginPath(); c.moveTo(-0.28, -0.45); c.bezierCurveTo(-1.0, 0.1, -0.8, 0.9, 0, 0.9); c.bezierCurveTo(0.8, 0.9, 1.0, 0.1, 0.28, -0.45); c.closePath();
+    c.fillStyle = '#b08350'; c.fill(); c.strokeStyle = '#3b2716'; c.lineWidth = 0.06; c.stroke();
+    line(c, -0.3, -0.45, 0.3, -0.45, TEAM[0].main, 0.1);
+    circ(c, -0.2, 0.25, 0.1, '#ffe26a', '#3b2716', 0.03); circ(c, 0.25, 0.25, 0.1, '#ffe26a', '#3b2716', 0.03);
+    poly(c, [-0.45, -0.1, -0.32, -0.42, -0.2, -0.1], TEAM[0].main, '#3b2716', 0.03); poly(c, [0.2, -0.1, 0.32, -0.42, 0.45, -0.1], TEAM[0].main, '#3b2716', 0.03);
+  } else if (spell === 'rollstein') {
+    for (const y of [-0.35, 0.05, 0.45]) line(c, -1.0, y + 0.45, -0.55, y + 0.45, 'rgba(255,255,255,.35)', 0.08);
+    rrect(c, -0.5, -0.35, 1.45, 0.9, 0.42, '#8d939c', '#3a4048', 0.07);
+    ell(c, 0.75, 0.1, 0.24, 0.45, '#b4bbc4', '#3a4048', 0.06); ell(c, 0.75, 0.1, 0.1, 0.2, '#646b75');
+    for (const x of [-0.2, 0.2]) line(c, x, -0.33, x, 0.53, '#646b75', 0.06);
+  } else if (spell === 'wirbelwind') {
+    c.strokeStyle = '#eaf8ff'; c.lineCap = 'round';
+    for (const [y, w, t] of [[-0.7, 0.85, 0.16], [-0.3, 0.65, 0.15], [0.08, 0.46, 0.14], [0.42, 0.3, 0.12], [0.72, 0.16, 0.1]]) { c.lineWidth = t; c.beginPath(); c.ellipse(Math.sin(y * 4) * 0.12, y, w, 0.16, 0, 0.3, Math.PI * 1.85); c.stroke(); }
+    circ(c, -0.75, 0.55, 0.06, '#c5d1de'); circ(c, 0.7, 0.3, 0.05, '#c5d1de'); circ(c, 0.55, 0.8, 0.07, '#c5d1de');
   } else if (spell === 'kriegstrommel') {
     ell(c, 0, 0.45, 0.75, 0.3, '#7a4f2a', '#3b2716', 0.06);
     c.fillStyle = '#9a6634'; c.fillRect(-0.75, -0.2, 1.5, 0.65); c.strokeStyle = '#3b2716'; c.lineWidth = 0.06; c.strokeRect(-0.75, -0.2, 1.5, 0.65);
@@ -298,7 +334,7 @@ export function drawIcon(c, size, pad = 0) {
 
 // ---- Spielfeld ---------------------------------------------------------------------------------
 
-export const RUNE_STONES = [[0.7, 9.5], [17.3, 9.5], [0.7, 18.5], [17.3, 18.5], [9, 11.4], [9, 16.6]];
+export const RUNE_STONES = [[0.7, RIVER_TOP - 3.5], [17.3, RIVER_TOP - 3.5], [0.7, RIVER_BOT + 3.5], [17.3, RIVER_BOT + 3.5], [9, RIVER_TOP - 1.6], [9, RIVER_BOT + 1.6]];
 function hash(x, y) { let h = (x * 374761393 + y * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
 
 // Bodenfarben je Arena: [gegnerische Hälfte, eigene Hälfte]
@@ -311,6 +347,12 @@ const GROUND = [
   [[214, 138, 98], [208, 154, 100]],  // Glutkessel
   [[112, 122, 204], [106, 134, 212]], // Sternwarte
   [[178, 138, 214], [162, 148, 220]], // Runenthron
+  [[206, 226, 238], [192, 230, 242]], // Frostzinnen
+  [[104, 132, 122], [96, 142, 128]],  // Schattenmoor
+  [[186, 170, 132], [176, 180, 136]], // Donnerschlucht
+  [[128, 196, 206], [118, 206, 214]], // Kristallgrotte
+  [[168, 150, 140], [160, 160, 146]], // Aschenfeld
+  [[236, 208, 150], [228, 216, 156]], // Himmelsbrücke
 ];
 
 export function paintField(c, k, arena = 0, plain = false) {
@@ -326,12 +368,13 @@ export function paintField(c, k, arena = 0, plain = false) {
   // Trampelpfade von den Brücken zu den Türmen
   c.strokeStyle = 'rgba(232,196,120,.6)'; c.lineWidth = 1.5; c.lineCap = 'round'; c.lineJoin = 'round';
   for (const bx of BRIDGES) {
-    c.beginPath(); c.moveTo(bx, 5.5); c.lineTo(bx, H - 5.5); c.stroke();
-    c.beginPath(); c.moveTo(bx, 5.5); c.quadraticCurveTo(bx, 2.6, 9, 2.6); c.stroke();
-    c.beginPath(); c.moveTo(bx, H - 5.5); c.quadraticCurveTo(bx, H - 2.6, 9, H - 2.6); c.stroke();
+    const a = OUTER_Y - 0.5, b = MAIN_Y + 0.1;
+    c.beginPath(); c.moveTo(bx, a); c.lineTo(bx, H - a); c.stroke();
+    c.beginPath(); c.moveTo(bx, a); c.quadraticCurveTo(bx, b, 9, b); c.stroke();
+    c.beginPath(); c.moveTo(bx, H - a); c.quadraticCurveTo(bx, H - b, 9, H - b); c.stroke();
   }
   // helle Plätze unter den Türmen
-  for (const [x, y, r] of [[3.5, 6, 1.9], [14.5, 6, 1.9], [9, 2.5, 2.5], [3.5, H - 6, 1.9], [14.5, H - 6, 1.9], [9, H - 2.5, 2.5]]) { ell(c, x, y, r, r, 'rgba(236,214,160,.7)', 'rgba(150,120,70,.35)', 0.08); ell(c, x, y, r * 0.72, r * 0.72, null, 'rgba(150,120,70,.25)', 0.05); }
+  for (const [x, y, r] of [[3.5, OUTER_Y, 1.9], [14.5, OUTER_Y, 1.9], [9, MAIN_Y, 2.5], [3.5, H - OUTER_Y, 1.9], [14.5, H - OUTER_Y, 1.9], [9, H - MAIN_Y, 2.5]]) { ell(c, x, y, r, r, 'rgba(236,214,160,.7)', 'rgba(150,120,70,.35)', 0.08); ell(c, x, y, r * 0.72, r * 0.72, null, 'rgba(150,120,70,.25)', 0.05); }
   // Blumen
   for (let i = 0; i < 60; i++) {
     const x = hash(i, 41) * W, y = hash(i, 57) * H;
@@ -455,11 +498,11 @@ export function createRenderer(canvas) {
 
     // Auswahl: gesperrten Bereich abdunkeln
     const sel = ui && ui.sel != null ? g.sides[0].hand[ui.sel] : null;
-    if (sel && CARDS[sel].type !== 'spell') {
+    if (sel && CARDS[sel].type !== 'spell' && !CARDS[sel].anywhere) {
       c.fillStyle = 'rgba(190,40,60,.22)';
       for (const lane of [0, 1]) {
         const open = !outerTower(g, 1, lane);
-        c.fillRect(lane * W / 2, 0, W / 2, open ? 9.5 : RIVER_BOT + 0.2);
+        c.fillRect(lane * W / 2, 0, W / 2, open ? POCKET : RIVER_BOT + 0.2);
         if (open) c.fillRect(lane * W / 2, RIVER_TOP - 0.2, W / 2, RIVER_BOT - RIVER_TOP + 0.4);
       }
       c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 0.06; c.setLineDash([0.3, 0.25]);
@@ -493,6 +536,7 @@ export function createRenderer(canvas) {
     // Geschosse
     for (const p of g.projs) {
       const x = p.ox + (p.x - p.ox) * a, y = p.oy + (p.y - p.oy) * a - (p.air ? 0.5 : 0.4);
+      if (p.line) { if (p.from === 'rollstein') rrect(c, x - p.w / 2, y, p.w, 0.8, 0.35, '#8d939c', '#3a4048', 0.08); else circ(c, x, y, p.from === 'kegler' ? 0.4 : 0.14, p.from === 'kegler' ? '#8d939c' : '#fff27a', '#3a4048', 0.05); continue; }
       const ang = Math.atan2(p.ty - p.y, p.tx - p.x), dx = Math.cos(ang), dy = Math.sin(ang);
       if (p.from === 'waldlaeufer') line(c, x - dx * 0.45, y - dy * 0.45, x, y, '#f3ead2', 0.07);
       else if (p.from === 'ballista') line(c, x - dx * 0.7, y - dy * 0.7, x, y, '#e6e9ee', 0.11);
@@ -522,5 +566,5 @@ export function createRenderer(canvas) {
     return x >= -0.5 && x <= W + 0.5 && y >= -0.5 && y <= H + 0.3 ? { x, y } : null;
   }
 
-  return { resize, reset, onEvent, draw, toField, snapshot: () => null, prepare: null };
+  return { resize, reset, onEvent, draw, toField, snapshot: () => null, prepare: null, setOptions: () => {} };
 }

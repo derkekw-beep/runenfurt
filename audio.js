@@ -2,7 +2,10 @@
 let ctx = null, master = null, enabled = true, noiseBuf = null;
 const lastAt = {};
 
-export function setSound(on) { enabled = !!on; if (master) master.gain.value = enabled ? 0.5 : 0; }
+let volume = 0.8;
+const level = () => (enabled ? 0.62 * volume : 0);
+export function setSound(on) { enabled = !!on; if (master) master.gain.value = level(); }
+export function setVolume(v) { volume = Math.min(1, Math.max(0, Number(v) || 0)); if (master) master.gain.value = level(); }
 
 // Muss in einer Berührung aufgerufen werden (iOS gibt den Ton erst dann frei).
 export function unlock() {
@@ -11,7 +14,7 @@ export function unlock() {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
       ctx = new AC();
-      master = ctx.createGain(); master.gain.value = enabled ? 0.5 : 0; master.connect(ctx.destination);
+      master = ctx.createGain(); master.gain.value = level(); master.connect(ctx.destination);
       noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
       const d = noiseBuf.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -59,6 +62,21 @@ const SOUNDS = {
   funkenschlag: () => { noise(0.15, 0.35, 5000, 'highpass'); tone(1500, 300, 0.12, 'square', 0.12); },
   sumpfdunst: () => { noise(0.6, 0.25, 300); tone(180, 120, 0.4, 'sine', 0.15); tone(240, 160, 0.3, 'sine', 0.1, 0.2); },
   kriegstrommel: () => [0, 0.14, 0.28].forEach(d => { tone(120, 50, 0.16, 'sine', 0.45, d); noise(0.05, 0.15, 800, 'lowpass', d); }),
+  frostnacht: () => { noise(0.5, 0.3, 6000, 'highpass'); tone(1800, 900, 0.4, 'sine', 0.12); tone(2400, 1200, 0.3, 'sine', 0.08, 0.08); },
+  donnerkeil: () => { noise(0.5, 0.55, 3000, 'highpass'); tone(2000, 120, 0.25, 'square', 0.14); tone(80, 35, 0.6, 'sine', 0.5, 0.05); },
+  felssturz: () => { noise(0.7, 0.6, 450); tone(110, 28, 0.7, 'sine', 0.6); },
+  wichtwurf: () => { tone(300, 120, 0.15, 'triangle', 0.3); noise(0.12, 0.2, 900); },
+  rollstein: () => { noise(0.9, 0.3, 260); tone(70, 55, 0.9, 'sawtooth', 0.12); },
+  wirbelwind: () => { noise(1.2, 0.25, 1800, 'bandpass'); tone(300, 700, 1.0, 'sine', 0.06); },
+  schleier: () => { tone(900, 300, 0.35, 'sine', 0.14); noise(0.3, 0.12, 4000, 'highpass'); },
+  wurzelheer: () => { tone(120, 260, 0.3, 'sawtooth', 0.14); noise(0.3, 0.18, 700); },
+  sturmlauf: () => { noise(0.3, 0.3, 2600, 'bandpass'); tone(500, 1400, 0.25, 'triangle', 0.14); },
+  shield: () => { tone(1400, 500, 0.12, 'triangle', 0.2); noise(0.08, 0.2, 5000, 'highpass'); },
+  kraft: () => { tone(660, 1320, 0.18, 'sine', 0.12); },
+  fuse: () => { noise(0.4, 0.1, 5000, 'highpass'); },
+  buy: () => { tone(880, 880, 0.07, 'square', 0.1); tone(1175, 1175, 0.07, 'square', 0.1, 0.07); tone(1568, 1568, 0.18, 'square', 0.1, 0.14); },
+  chest: () => [392, 523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.2, 'triangle', 0.18, i * 0.08)),
+  charge: () => { tone(200, 900, 0.6, 'sawtooth', 0.07); noise(0.6, 0.05, 2400, 'bandpass'); },
   coin: () => { tone(1320, 1320, 0.08, 'square', 0.1); tone(1760, 1760, 0.2, 'square', 0.1, 0.07); },
   upgrade: () => [440, 554, 659, 880].forEach((f, i) => tone(f, f, 0.18, 'square', 0.1, i * 0.07)),
 };

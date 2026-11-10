@@ -2,7 +2,7 @@
 // Gleiche Schnittstelle wie der 2D-Zeichner in render.js (resize, reset, onEvent, draw, toField, snapshot).
 import * as THREE from './vendor/three.module.min.js';
 import { CARDS, UNITS, RUNES } from './cards.js';
-import { W, H, RIVER_TOP, RIVER_BOT, BRIDGES, BRIDGE_HALF, clampDeploy, outerTower } from './sim.js';
+import { W, H, RIVER_TOP, RIVER_BOT, BRIDGES, BRIDGE_HALF, OUTER_Y, MAIN_Y, POCKET, clampDeploy, outerTower } from './sim.js';
 import { TEAM, paintField, RUNE_STONES } from './render.js';
 import { getDef, merge, P, box, cyl, cone, sph, rock, FLY, USCALE, STONE, STONE_D, STONE_L, WOOD_D } from './models3d.js';
 
@@ -10,6 +10,10 @@ const PI = Math.PI;
 const RUNE_COLOR = '#c98bff', GOLD = '#f5c542';
 const ease = t => 1 - (1 - t) * (1 - t);
 const LEAN = -0.3; // Figuren leicht zur Kamera kippen, damit man Gesichter statt Scheitel sieht
+// Wie eine menschliche Figur zuschlägt
+const STYLE = { raufbold: 'punch', fasstraeger: 'punch', waldlaeufer: 'bow', sternschuetzin: 'bow', weitschuetzin: 'bow', schattenjaegerin: 'bow', bolzenschuetzin: 'xbow', torknacker: 'ram',
+  eisenwaechter: 'slash', marschall: 'slash', schildknappe: 'slash', nebelschleicher: 'slash', windlaeufer: 'slash', hammerschmied: 'smash', erzritter: 'smash', wurzelkoenig: 'smash',
+  klingentaenzerin: 'spin', brockenwerfer: 'throw', zuendler: 'throw', kegler: 'bowl', trommelschlaeger: 'drum' };
 
 export function createRenderer3D(canvas, overlay) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -24,7 +28,7 @@ export function createRenderer3D(canvas, overlay) {
   const sun = new THREE.DirectionalLight('#fff1d2', 2.6);
   sun.position.set(W / 2 - 9, 20, H / 2 + 7); sun.target.position.set(W / 2, 0, H / 2);
   sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -13, right: 13, top: 18, bottom: -18, near: 1, far: 60 });
+  Object.assign(sun.shadow.camera, { left: -13, right: 13, top: 20, bottom: -20, near: 1, far: 64 });
   sun.shadow.bias = -0.0008; sun.shadow.normalBias = 0.03;
   scene.add(hemi, sun, sun.target);
 
@@ -32,6 +36,8 @@ export function createRenderer3D(canvas, overlay) {
   const matHit = new THREE.MeshLambertMaterial({ vertexColors: true, emissive: '#ffffff', emissiveIntensity: 0.7 }); // kurzes Aufblitzen bei Treffern
   const matGlow = new THREE.MeshBasicMaterial({ vertexColors: true });
   const matDim = new THREE.MeshBasicMaterial({ vertexColors: true, color: '#7d8791' });
+  const matGhost = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.4, depthWrite: false }); // Unsichtbare schimmern nur
+  const opt = { maxDpr: 3, shadows: true, shake: true };
   // Kontur: dieselbe Form noch einmal, leicht aufgebläht und von innen gezeichnet
   const matLine = new THREE.MeshBasicMaterial({ color: '#141b26', side: THREE.BackSide });
   matLine.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n\ttransformed += normalize( normal ) * 0.026;'); };
@@ -107,7 +113,7 @@ export function createRenderer3D(canvas, overlay) {
     camera.aspect = width / height;
     const dir = new THREE.Vector3(0, -Math.sin(PITCH), -Math.cos(PITCH));
     const target = new THREE.Vector3(W / 2, 0, H / 2);
-    const pts = [[-0.45, 0, -0.5], [W + 0.45, 0, -0.5], [-0.45, 0, H + 0.45], [W + 0.45, 0, H + 0.45], [W / 2 - 1.6, 4.6, 2.5], [W / 2 + 1.6, 4.6, 2.5], [2, 3.4, 6], [W - 2, 3.4, 6]];
+    const pts = [[-0.45, 0, -0.5], [W + 0.45, 0, -0.5], [-0.45, 0, H + 0.45], [W + 0.45, 0, H + 0.45], [W / 2 - 1.6, 4.6, MAIN_Y], [W / 2 + 1.6, 4.6, MAIN_Y], [2, 3.4, OUTER_Y], [W - 2, 3.4, OUTER_Y]];
     let dist = 60;
     for (let it = 0; it < 14; it++) {
       camera.position.copy(target).addScaledVector(dir, -dist);
@@ -123,7 +129,7 @@ export function createRenderer3D(canvas, overlay) {
   }
 
   function resize(w, h, ratio, arenaIdx = 0) {
-    width = Math.max(50, Math.floor(w)); height = Math.max(50, Math.floor(h)); dpr = Math.min(3, ratio);
+    width = Math.max(50, Math.floor(w)); height = Math.max(50, Math.floor(h)); dpr = Math.min(opt.maxDpr, ratio);
     renderer.setPixelRatio(dpr); renderer.setSize(width, height, false);
     canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
     overlay.width = Math.round(width * dpr); overlay.height = Math.round(height * dpr);
@@ -152,7 +158,7 @@ export function createRenderer3D(canvas, overlay) {
   const flatMat = (color, opacity) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide });
   const flat = (geo, color, opacity) => { const m = new THREE.Mesh(geo, flatMat(color, opacity)); m.rotation.x = -PI / 2; return m; };
   const runeMat = new THREE.MeshBasicMaterial({ color: RUNE_COLOR }), runeAura = flatMat(RUNE_COLOR, 0.55), heroAura = flatMat(GOLD, 0.45);
-  const STATUS = { stun: '#fff27a', root: '#4fa646', slow: '#9fdcff', haste: '#ffa53d' };
+  const STATUS = { ice: '#e6f7ff', stun: '#fff27a', root: '#4fa646', slow: '#9fdcff', haste: '#ffa53d' };
 
   const insts = new Map();
   let dying = [];
@@ -172,7 +178,7 @@ export function createRenderer3D(canvas, overlay) {
     }
     const scale = def.s * (e.kind === 'unit' ? USCALE : 1);
     group.scale.setScalar(scale);
-    const inst = { group, inner, parts, lit, def, scale, staged: !!staged, yaw: e.side === 0 ? PI : 0, age: 0, hp: e.hp, flash: 0, flashing: false, spin: 0, status: null, statusKey: '', extras: [], air: e.air, model: e.model || e.type };
+    const inst = { group, inner, parts, lit, def, scale, staged: !!staged, yaw: e.side === 0 ? PI : 0, age: 0, hp: e.hp, flash: 0, flashing: 0, spin: 0, status: null, statusKey: '', extras: [], air: e.air, model: e.model || e.type };
     if (e.rune || e.hero) {
       const aura = new THREE.Mesh(auraGeo, e.rune ? runeAura : heroAura); aura.rotation.x = -PI / 2; aura.scale.setScalar(e.r * 1.5);
       inst.aura = aura; inst.extras.push(aura);
@@ -182,11 +188,12 @@ export function createRenderer3D(canvas, overlay) {
     if (!staged) world.add(group);
     return inst;
   }
-  function removeInst(inst) { world.remove(inst.group); for (const m of inst.extras) world.remove(m); if (inst.status) { world.remove(inst.status); inst.status.material.dispose(); } }
+  function dropBeam(i) { if (i.beam) { world.remove(i.beam); i.beam.material.dispose(); i.beam = null; } }
+  function removeInst(inst) { dropBeam(inst); world.remove(inst.group); for (const m of inst.extras) world.remove(m); if (inst.status) { world.remove(inst.status); inst.status.material.dispose(); } }
   // Verschwundene Figur: kurz zusammensacken lassen statt einfach zu verschwinden
   function dropInst(id, animated) {
     const i = insts.get(id); if (!i) return;
-    insts.delete(id);
+    insts.delete(id); dropBeam(i);
     if (i.sprite) {
       if (i.status) { world.remove(i.status); i.status.material.dispose(); i.status = null; }
       if (i.blob) world.remove(i.blob);
@@ -222,23 +229,26 @@ export function createRenderer3D(canvas, overlay) {
     if (def.kind === 'human') {
       if (p.legL) { p.legL.rotation.x = w * 0.8; p.legR.rotation.x = -w * 0.8; }
       let aL = -w * 0.55, aR = w * 0.55;
-      const m = inst.model;
-      if (m === 'raufbold') { aR = w * 0.5 + wind * 1.0 - s * 2.0; aL = e.inRange ? -0.9 + s * 0.3 : aL; lunge = s * 0.18 - wind * 0.08; }
-      else if (m === 'waldlaeufer') { aL = -1.4; aR = -1.2 + wind * 0.9 - s * 0.2; }
-      else if (m === 'bolzenschuetzin') { aR = -1.35 + s * 0.25; aL = -1.1; lunge = -s * 0.1; }
+      const st = STYLE[inst.model];
+      if (st === 'punch') { aR = w * 0.5 + wind * 1.0 - s * 2.0; aL = e.inRange ? -0.9 + s * 0.3 : aL; lunge = s * 0.18 - wind * 0.08; }
+      else if (st === 'bow') { aL = -1.4; aR = -1.2 + wind * 0.9 - s * 0.2; }
+      else if (st === 'xbow') { aR = -1.35 + s * 0.25; aL = -1.1; lunge = -s * 0.1; }
       else if (p.gOrb) { // Zauberkundige: Stab oder Kugel heben, beim Wirken aufleuchten
         aR = -1.0 - wind * 0.5 + s * 0.5; aL = -w * 0.4 - wind * 0.6;
         p.gOrb.position.y = def.piv.gOrb[1] + Math.sin(time * 4 + e.id) * 0.03 + wind * 0.12;
         p.gOrb.scale.setScalar(1 + wind * 0.7 + s * 0.4);
         p.gOrb.rotation.y = time * 2;
       }
-      else if (m === 'torknacker') { aR = -0.9; aL = -0.6; lunge = s * 0.35 - wind * 0.15; }
-      else if (m === 'eisenwaechter' || m === 'marschall') { aL = -0.9; aR = -0.5 + wind * 1.1 - s * 1.5; lunge = s * 0.12; }
-      else if (m === 'hammerschmied' || m === 'erzritter') { aR = -1.2 - wind * 1.3 + s * 1.9; tilt += s * 0.3 - wind * 0.18; }
-      else if (m === 'klingentaenzerin') {
+      else if (st === 'ram') { aR = -0.9; aL = -0.6; lunge = s * 0.35 - wind * 0.15; }
+      else if (st === 'slash') { aL = -0.9; aR = -0.5 + wind * 1.1 - s * 1.5; lunge = s * 0.12; }
+      else if (st === 'smash') { aR = -1.2 - wind * 1.3 + s * 1.9; tilt += s * 0.3 - wind * 0.18; }
+      else if (st === 'spin') {
         p.armL.rotation.z = -1.25 - wind * 0.3; p.armR.rotation.z = 1.25 + wind * 0.3; aL = -0.3; aR = -0.3;
         inst.spin = s > 0 ? (1 - s) * PI * 2 : 0;
       }
+      else if (st === 'throw') { aR = w * 0.4 - wind * 2.7 - s * 1.1; aL = -w * 0.4 + wind * 0.5; tilt += s * 0.28 - wind * 0.16; lunge = s * 0.1; }  // über Kopf werfen
+      else if (st === 'bowl') { aR = w * 0.3 + wind * 1.1 - s * 1.5; aL = -w * 0.4 - s * 0.4; tilt += s * 0.4 - wind * 0.1; lunge = s * 0.12; }        // Kugel von unten rollen
+      else if (st === 'drum') { const b = Math.sin(time * (moving ? 16 : 7) + e.id) * 0.32; aL = -0.95 + b - s * 0.6 + wind * 0.5; aR = -0.95 - b - s * 0.6 + wind * 0.5; lunge = s * 0.15; }
       p.armL.rotation.x = aL; p.armR.rotation.x = aR;
       p.body.scale.y = breathe;
       y = Math.abs(w) * 0.06;
@@ -252,13 +262,17 @@ export function createRenderer3D(canvas, overlay) {
       const hop = moving ? Math.abs(Math.sin(time * (9 + pace * 2) + e.id)) : 0;
       y = hop * 0.14; sy = 1 - s * 0.2 + hop * 0.08 - (1 - hop) * (moving ? 0.08 : 0) + wind * 0.12; lunge = s * 0.25 - wind * 0.1;
       if (p.gFlame) p.gFlame.scale.set(1, 1 + Math.sin(time * 14 + e.id) * 0.25 + wind * 0.8, 1);
-    } else if (def.kind === 'bird') { const f = 0.25 + Math.sin(time * 18 + e.id) * 0.75; p.wingL.rotation.z = -f; p.wingR.rotation.z = f; y = FLY.kraehe + Math.sin(time * 3 + e.id) * 0.08 - wind * 0.15; lunge = s * 0.3; tilt = 0.15 + wind * 0.3; }
-    else if (def.kind === 'ray') { const f = Math.sin(time * 4 + e.id) * 0.35; p.wingL.rotation.z = -f; p.wingR.rotation.z = f; y = FLY.rochen + Math.sin(time * 2 + e.id) * 0.08; tilt = s * -0.2; }
-    else if (def.kind === 'beetle') { const f = 0.5 + Math.sin(time * 40 + e.id) * 0.45; p.wingL.rotation.z = -f; p.wingR.rotation.z = f; y = FLY.donnerkaefer + Math.sin(time * 2.5 + e.id) * 0.1 - s * 0.25; tilt = 0.12; }
+    } else if (def.kind === 'bird') { const f = 0.25 + Math.sin(time * 18 + e.id) * 0.75; p.wingL.rotation.z = -f; p.wingR.rotation.z = f; y = (FLY[inst.model] || 1.5) + Math.sin(time * 3 + e.id) * 0.08 - wind * 0.15; lunge = s * 0.3; tilt = 0.15 + wind * 0.3; }
+    else if (def.kind === 'ray') { const f = Math.sin(time * 4 + e.id) * 0.35; p.wingL.rotation.z = -f; p.wingR.rotation.z = f; y = (FLY[inst.model] || 1.7) + Math.sin(time * 2 + e.id) * 0.08; tilt = s * -0.2; if (p.gOrb) p.gOrb.scale.setScalar(1 + (e.inRange ? 0.45 : 0) + Math.sin(time * 5 + e.id) * 0.1); }
+    else if (def.kind === 'beetle') { const f = 0.5 + Math.sin(time * 40 + e.id) * 0.45; p.wingL.rotation.z = -f; p.wingR.rotation.z = f; y = (FLY[inst.model] || 1.9) + Math.sin(time * 2.5 + e.id) * 0.1 - s * 0.25; tilt = 0.12 + wind * 0.2; lunge = inst.model === 'donnerkaefer' ? 0 : s * 0.3; }
     else if (def.kind === 'beast') {
       const k = e.charging ? 1.1 : 0.75;
       p.legFL.rotation.x = w * k; p.legBR.rotation.x = w * k; p.legFR.rotation.x = -w * k; p.legBL.rotation.x = -w * k;
       y = Math.abs(w) * (e.charging ? 0.12 : 0.05); tilt = (e.charging ? 0.22 : 0) + s * 0.3 - wind * 0.15; lunge = s * 0.4 - wind * 0.15;
+    } else if (def.kind === 'cart') { // rollt, der Kristall lädt sich sichtbar auf
+      const load = e.atk ? 1 - Math.min(1, (e.cd || 0) / e.atk) : 0.5, c = p.gCrystal;
+      y = moving ? Math.abs(Math.sin(time * 14 + e.id)) * 0.03 : 0; tilt = -s * 0.14;
+      c.rotation.y = time * (1 + load * 7); c.scale.setScalar(0.45 + load * 0.75 + s * 0.7); c.position.y = def.piv.gCrystal[1] + Math.sin(time * 3 + e.id) * 0.03;
     } else if (def.kind === 'turret') {
       if (t) inst.yaw = Math.atan2(t.x - e.x, t.y - e.y);
       p.top.rotation.y = inst.yaw; p.top.rotation.x = -wind * 0.15 + s * 0.2;
@@ -267,7 +281,7 @@ export function createRenderer3D(canvas, overlay) {
       const c = p.gCrystal, awake = e.active !== false;
       c.material = awake ? matGlow : matDim;
       if (awake) { c.rotation.y = time * 1.2 + e.x; c.position.y = def.piv.gCrystal[1] + Math.sin(time * 2 + e.x) * 0.08 + s * 0.15; c.scale.setScalar(1 + s * 0.25); }
-    } else if (def.kind === 'static') { sy = 1 + s * 0.08; }
+    } else if (def.kind === 'static') { sy = 1 + s * 0.08; if (p.gGlow) p.gGlow.scale.setScalar(1 + Math.sin(time * 3 + e.id) * 0.035 + s * 0.12); }
 
     // Aufmarsch: vom Himmel fallen, landen, kurz stauchen
     let scale = inst.scale;
@@ -286,8 +300,8 @@ export function createRenderer3D(canvas, overlay) {
     if (e.hp < inst.hp - (e.life ? 30 : 0.5)) inst.flash = 0.09;
     inst.hp = e.hp;
     if (inst.flash > 0) inst.flash -= dt;
-    const fl = inst.flash > 0;
-    if (fl !== inst.flashing) { inst.flashing = fl; for (const m of inst.lit) m.material = fl ? matHit : matLit; }
+    const mode = inst.staged ? 0 : e.hidden ? 2 : inst.flash > 0 ? 1 : 0;
+    if (mode !== inst.flashing) { inst.flashing = mode; for (const m of inst.lit) { m.material = mode === 2 ? matGhost : mode === 1 ? matHit : matLit; m.children[0].visible = mode !== 2; m.castShadow = mode !== 2; } }
 
     // Runen- oder Heldenkranz, Zustandsring (betäubt, festgehalten, gebremst, angetrieben)
     if (inst.aura) { inst.aura.position.set(e._x, 0.035, e._y); inst.aura.rotation.z = time * 1.5; }
@@ -300,7 +314,9 @@ export function createRenderer3D(canvas, overlay) {
   // (flächig in zwei Tönen, dicke Kontur; stehen, laufen, ausholen, zuschlagen – von vorn, von der Seite, von
   // hinten) und im Spiel als Tafel gezeigt, die immer zur Kamera steht. Helden und Runenformen bleiben plastisch.
   const isFlat = e => e.kind === 'unit' && !e.hero && !e.rune;
-  const SPRITE_R = { wicht: 1.6, kiesel: 1.3, glutling: 1.6, kraehe: 2.0, rochen: 3.4, donnerkaefer: 3.0, steinhueter: 4.0, steinling: 2.6, erzritter: 4.8, hornbulle: 3.6, hammerschmied: 2.9, klingentaenzerin: 2.9, torknacker: 2.7 };
+  const SPRITE_R = { wicht: 1.6, kiesel: 1.3, glutling: 1.6, kraehe: 2.0, rochen: 3.4, donnerkaefer: 3.0, steinhueter: 4.0, steinling: 2.6, erzritter: 4.8, hornbulle: 3.6, hammerschmied: 2.9, klingentaenzerin: 2.9, torknacker: 2.7,
+    dornwerfer: 1.9, nachtfalter: 1.7, schildknappe: 2.5, brockenwerfer: 4.6, gewitterkarren: 3.6, kegler: 4.3, sternschuetzin: 2.8, wuehler: 2.4, trommelschlaeger: 2.7, eisbrocken: 3.0, panzerbaer: 4.0, basaltriese: 4.8,
+    weitschuetzin: 3.0, blasrohrwicht: 2.1, panzerhornisse: 2.6, laternenfisch: 3.2, zuendler: 2.4, sprengkaefer: 1.8, fasstraeger: 4.4 };
   const DIRS = [0.55, PI / 2, PI - 0.55]; // Blick nach vorn, zur Seite, nach hinten (jeweils rechts; links wird gespiegelt)
   const WALK = 6, WIND = 2, STRIKE = 4, PER = 1 + WALK + WIND + STRIKE, COLS = 8, ROWS = Math.ceil(3 * PER / COLS);
   const ANCHOR = 0.3; // Standpunkt liegt 30 % über der Unterkante des Bilds
@@ -312,6 +328,25 @@ export function createRenderer3D(canvas, overlay) {
   bakeCam.position.set(0, 30 * Math.sin(PITCH), 30 * Math.cos(PITCH)); bakeCam.lookAt(0, 0, 0);
   const sheets = new Map();
   let bakeQueue = [];
+
+  // Bildfolgen und Kartenbilder zeichnet ein zweiter, kleiner Zeichner. So muss die große Spielfläche dafür nie
+  // umgestellt werden – das hat beim Kampfbeginn sonst für jede Figur einmal geruckelt.
+  let baker = null;
+  function shoot(scn, cam, w, h, ctx, dx, dy) {
+    if (baker === null) { try { baker = new THREE.WebGLRenderer({ antialias: true, alpha: true }); baker.setPixelRatio(1); } catch { baker = false; } }
+    if (baker) {
+      if (baker.domElement.width !== w || baker.domElement.height !== h) baker.setSize(w, h, false);
+      baker.render(scn, cam);
+      ctx.drawImage(baker.domElement, dx, dy);
+      return;
+    }
+    // Rückfall, falls kein zweiter WebGL-Kontext zu bekommen ist: die Spielfläche kurz umstellen
+    const old = renderer.getSize(new THREE.Vector2()), oldRatio = renderer.getPixelRatio();
+    renderer.setPixelRatio(1); renderer.setSize(w, h, false); renderer.shadowMap.enabled = false;
+    renderer.render(scn, cam);
+    ctx.drawImage(renderer.domElement, dx, dy);
+    renderer.shadowMap.enabled = true; renderer.setPixelRatio(oldRatio); renderer.setSize(old.x, old.y, false);
+  }
 
   function getSheet(model, side) {
     const key = model + side;
@@ -325,9 +360,6 @@ export function createRenderer3D(canvas, overlay) {
     const kind = inst.def.kind, world0 = { byId: new Map() };
     celScene.add(inst.group);
     Object.assign(bakeCam, { left: -R / 2, right: R / 2, top: R * (1 - ANCHOR), bottom: -R * ANCHOR }); bakeCam.updateProjectionMatrix();
-    const old = renderer.getSize(new THREE.Vector2()), oldRatio = renderer.getPixelRatio();
-    renderer.setPixelRatio(1); renderer.setSize(px, px, false);
-    renderer.shadowMap.enabled = false;
     const cycle = f => (LOOPED[kind] ? (2 * PI * f) / LOOPED[kind] : kind === 'blob' ? (PI * f) / 11 : (2 * PI * f) / 10.5); // Zeitpunkt für Schrittphase f
     DIRS.forEach((yaw, d) => {
       for (let k = 0; k < PER; k++) {
@@ -339,13 +371,10 @@ export function createRenderer3D(canvas, overlay) {
         inst.yaw = yaw; inst.spin = 0;
         animate(fake, inst, time, 0, world0, moving);
         if (fake.air) inst.group.position.y -= FLY[model] || 1.5;
-        renderer.render(celScene, bakeCam);
         const i = d * PER + k;
-        ctx.drawImage(renderer.domElement, (i % COLS) * px, Math.floor(i / COLS) * px);
+        shoot(celScene, bakeCam, px, px, ctx, (i % COLS) * px, Math.floor(i / COLS) * px);
       }
     });
-    renderer.shadowMap.enabled = true;
-    renderer.setPixelRatio(oldRatio); renderer.setSize(old.x, old.y, false);
     celScene.remove(inst.group);
     const tex = new THREE.CanvasTexture(cv);
     tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
@@ -362,7 +391,7 @@ export function createRenderer3D(canvas, overlay) {
   quadGeo.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, ANCHOR, 1, ANCHOR, 0, 1, 1, 1], 2));
   quadGeo.setIndex([0, 1, 2, 2, 1, 3, 2, 3, 4, 4, 3, 5]);
   const spriteMat = new THREE.ShaderMaterial({
-    uniforms: { map: { value: null }, uRect: { value: new THREE.Vector4(0, 0, 1, 1) }, uSize: { value: new THREE.Vector2(1, 1) }, uFlip: { value: 0 }, uFlash: { value: 0 }, uTrig: { value: new THREE.Vector2(1 / Math.cos(PITCH), 1 / Math.sin(PITCH)) } },
+    uniforms: { map: { value: null }, uRect: { value: new THREE.Vector4(0, 0, 1, 1) }, uSize: { value: new THREE.Vector2(1, 1) }, uFlip: { value: 0 }, uFlash: { value: 0 }, uGhost: { value: 0 }, uTrig: { value: new THREE.Vector2(1 / Math.cos(PITCH), 1 / Math.sin(PITCH)) } },
     vertexShader: `
       uniform vec4 uRect; uniform vec2 uSize; uniform float uFlip; uniform vec2 uTrig;
       varying vec2 vUv;
@@ -371,17 +400,19 @@ export function createRenderer3D(canvas, overlay) {
         vec4 foot = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
         float s = position.y * uSize.y;
         vec4 clip = projectionMatrix * (foot + vec4(position.x * uSize.x, s, 0.0, 0.0));
-        vec3 off = s >= 0.0 ? vec3(0.0, s * uTrig.x, 0.0) : vec3(0.0, 0.04, -s * uTrig.y);
+        vec3 off = s >= 0.0 ? vec3(0.0, s * uTrig.x, 0.0) : vec3(0.0, 0.04 - s * 0.14, -s * uTrig.y); // unterer Teil: knapp über dem Boden, nach vorn leicht ansteigend (sonst verdeckt ihn der Boden bei großen Figuren hinten)
         vec4 virt = projectionMatrix * (foot + viewMatrix * vec4(off, 0.0));
         clip.z = virt.z / virt.w * clip.w;
         gl_Position = clip;
       }`,
     fragmentShader: `
-      uniform sampler2D map; uniform float uFlash;
+      uniform sampler2D map; uniform float uFlash; uniform float uGhost;
       varying vec2 vUv;
       void main() {
         vec4 c = texture2D(map, vUv);
         if (c.a < 0.5) discard;
+        if (uGhost > 0.5 && mod(floor(gl_FragCoord.x * 0.5) + floor(gl_FragCoord.y * 0.5), 2.0) < 0.5) discard; // Unsichtbare: nur ein Raster aus Punkten
+        c.rgb = mix(c.rgb, vec3(0.75, 0.85, 1.0), uGhost * 0.45);
         gl_FragColor = vec4(mix(c.rgb, vec3(1.0), uFlash), 1.0);
       }`,
   });
@@ -437,12 +468,14 @@ export function createRenderer3D(canvas, overlay) {
     inst.hp = e.hp;
     if (inst.flash > 0) inst.flash -= dt;
     u.uFlash.value = inst.flash > 0 ? 0.8 : 0;
+    u.uGhost.value = e.hidden ? 1 : 0;
+    if (inst.blob) inst.blob.visible = !e.hidden;
     statusRing(e, inst, time);
   }
 
   // Zustandsring am Boden (betäubt, festgehalten, gebremst, angetrieben) – für 2D- und 3D-Figuren
   function statusRing(e, inst, time) {
-    const key = e.stunT > 0 ? 'stun' : e.rootT > 0 ? 'root' : e.slowT > 0 ? 'slow' : e.hasteT > 0 ? 'haste' : '';
+    const key = e.iceT > 0 ? 'ice' : e.stunT > 0 ? 'stun' : e.rootT > 0 ? 'root' : e.slowT > 0 ? 'slow' : e.hasteT > 0 ? 'haste' : '';
     if (key !== inst.statusKey) {
       inst.statusKey = key;
       if (key && !inst.status) { inst.status = flat(ringGeo, '#fff', 0.9); world.add(inst.status); }
@@ -460,7 +493,7 @@ export function createRenderer3D(canvas, overlay) {
       if (u.deathSpawn) add(u.deathSpawn.unit, side);
     };
     bakeQueue = [];
-    g.sides.forEach((S, side) => { for (const id of [...S.hand, S.next, ...S.queue]) { const c = CARDS[id]; if (c.type === 'spell') continue; add(c.unit, side); if (RUNES[id]) add(RUNES[id].unit, side); } });
+    g.sides.forEach((S, side) => { for (const id of [...S.hand, S.next, ...S.queue]) { const c = CARDS[id]; if (c.type === 'spell') { if (c.summon) add(c.summon.unit, side); continue; } add(c.unit, side); if (RUNES[id]) add(RUNES[id].unit, side); if (c.ability && c.ability.unit) add(c.ability.unit, side); } });
   }
 
 
@@ -469,15 +502,25 @@ export function createRenderer3D(canvas, overlay) {
   let fx = [], ruins = [], shake = 0, last = 0;
   const arrowGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.6, 5).rotateX(PI / 2), boltGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.9, 5).rotateX(PI / 2);
   const pm = c => new THREE.MeshBasicMaterial({ color: c });
-  const projMats = { arrow: pm('#f3ead2'), spark: pm('#ffb347'), mist: pm('#cdbdf5'), frost: pm('#bfeaff'), thorn: pm('#9be564'), bolt: pm('#fff27a'), stone: new THREE.MeshLambertMaterial({ color: STONE }), rune: pm(RUNE_COLOR), t0: pm(TEAM[0].light), t1: pm(TEAM[1].light) };
-  const BALL = { funkenweberin: ['spark', 0.2], rochen: ['mist', 0.24], frostschamane: ['frost', 0.2], wurzelmutter: ['thorn', 0.17], sturmrufer: ['bolt', 0.17], steinschleuder: ['stone', 0.2] };
-  const LAUNCH = { aussenturm: 2.7, hauptturm: 3.6, rochen: FLY.rochen, ballista: 0.7, steinschleuder: 1.0 };
+  const rollGeo = new THREE.CylinderGeometry(0.45, 0.45, 1, 10).rotateZ(PI / 2);
+  const ARROWS = new Set(['waldlaeufer', 'weitschuetzin', 'blasrohrwicht', 'schattenjaegerin']);
+  const ARC = { steinschleuder: 2.2, fernschleuder: 4.5, kesselturm: 1.8, brockenwerfer: 1.6, zuendler: 1.5 };
+  const projMats = { tar: pm('#2a2118'), star: pm('#fff27a'), arrow: pm('#f3ead2'), spark: pm('#ffb347'), mist: pm('#cdbdf5'), frost: pm('#bfeaff'), thorn: pm('#9be564'), bolt: pm('#fff27a'), stone: new THREE.MeshLambertMaterial({ color: STONE }), rune: pm(RUNE_COLOR), t0: pm(TEAM[0].light), t1: pm(TEAM[1].light) };
+  const BALL = { dornwerfer: ['thorn', 0.1], brockenwerfer: ['stone', 0.3], gewitterkarren: ['bolt', 0.32], zuendler: ['spark', 0.18], blitzfaenger: ['bolt', 0.12], kesselturm: ['tar', 0.22], fernschleuder: ['stone', 0.3], funkenweberin: ['spark', 0.2], rochen: ['mist', 0.24], frostschamane: ['frost', 0.2], wurzelmutter: ['thorn', 0.17], sturmrufer: ['bolt', 0.17], steinschleuder: ['stone', 0.2] };
+  const LAUNCH = { aussenturm: 2.7, hauptturm: 3.6, rochen: FLY.rochen, ballista: 0.7, steinschleuder: 1.0, brockenwerfer: 1.9, kesselturm: 1.3, fernschleuder: 1.6, gewitterkarren: 1.3 };
   function makeProj(p) {
     let m;
-    if (p.from === 'waldlaeufer') m = new THREE.Mesh(arrowGeo, p.rune ? projMats.rune : projMats.arrow);
+    if (p.line) { // Bahn-Geschosse: Steinwalze, Kegelkugel, Sternenpfeil
+      if (p.from === 'rollstein') { m = new THREE.Mesh(rollGeo, projMats.stone); m.scale.set(p.w, 1, 1); m.castShadow = true; }
+      else if (p.from === 'kegler') { m = new THREE.Mesh(ballGeo, projMats.stone); m.scale.setScalar(0.42); m.castShadow = true; }
+      else { m = new THREE.Mesh(boltGeo, projMats.star); m.scale.set(1.4, 1.4, 1.5); }
+      world.add(m);
+      return m;
+    }
+    if (ARROWS.has(p.from)) { m = new THREE.Mesh(arrowGeo, p.rune ? projMats.rune : projMats.arrow); if (p.from === 'blasrohrwicht') m.scale.setScalar(0.6); }
     else if (p.from === 'ballista' || p.from === 'bolzenschuetzin') m = new THREE.Mesh(boltGeo, p.rune ? projMats.rune : projMats.arrow);
     else { const [mat, size] = BALL[p.from] || ['t' + p.side, 0.14]; m = new THREE.Mesh(ballGeo, projMats[mat]); m.scale.setScalar(size); }
-    m.userData = { y0: LAUNCH[p.from] ?? 1.0, d0: Math.max(0.5, Math.hypot(p.tx - p.ox, p.ty - p.oy)), arc: p.from === 'steinschleuder' ? 2.2 : p.splash ? 1.2 : 0.25 };
+    m.userData = { y0: LAUNCH[p.from] ?? 1.0, d0: Math.max(0.5, Math.hypot(p.tx - p.ox, p.ty - p.oy)), arc: ARC[p.from] ?? (p.splash ? 1.2 : 0.25) };
     world.add(m);
     return m;
   }
@@ -521,24 +564,40 @@ export function createRenderer3D(canvas, overlay) {
         addFx({ k: 'fade', meshes: [m], t: 0, d: 0.7, o: 0.6 });
       }
     } else if (ev.t === 'wake') ringFx(ev.x, ev.y, TEAM[ev.side].light, 2.4, 0.6);
-    else if (ev.t === 'burst') { ringFx(ev.x, ev.y, '#ffd27a', ev.r, 0.35); pop(ev.x, 0.5, ev.y, '#ffb347', ev.r * 0.8, 0.3); }
-    else if (ev.t === 'impact') { pop(ev.x, 0.7, ev.y, '#ffffff', 1.1, 0.25); ringFx(ev.x, ev.y, '#ffffff', 1.6, 0.3); shake = Math.max(shake, 0.18); }
+    else if (ev.t === 'burst') { ringFx(ev.x, ev.y, ev.frost ? '#bfeaff' : '#ffd27a', ev.r, ev.big ? 0.5 : 0.35); pop(ev.x, 0.5, ev.y, ev.frost ? '#dff3ff' : '#ffb347', ev.r * (ev.big ? 1 : 0.8), ev.big ? 0.5 : 0.3); if (ev.big) shake = Math.max(shake, 0.35); }
+    else if (ev.t === 'impact') { pop(ev.x, 0.7, ev.y, '#ffffff', 1.1, 0.25); ringFx(ev.x, ev.y, '#ffffff', ev.r || 1.6, 0.3); shake = Math.max(shake, 0.18); }
+    else if (ev.t === 'shield') { ringFx(ev.x, ev.y, '#bfeaff', 0.9, 0.3); pop(ev.x, 0.7, ev.y, '#dff3ff', 0.5, 0.25); }
+    else if (ev.t === 'kraft') { const m = new THREE.Mesh(ballGeo, flatMat('#8fe0ff', 0.95)); m.position.set(ev.x, 1.0, ev.y); m.scale.setScalar(0.16); addFx({ k: 'rise', mesh: m, t: 0, d: 0.8, y0: 1.0 }); ringFx(ev.x, ev.y, '#58c7f3', 1.1, 0.4); }
+    else if (ev.t === 'fuse') {
+      const disc = flat(discGeo, '#ff5a3a', 0.25), ring = flat(ringGeo, '#ffd27a', 0.9);
+      disc.position.set(ev.x, 0.05, ev.y); ring.position.set(ev.x, 0.06, ev.y); disc.scale.setScalar(ev.r); ring.scale.setScalar(ev.r);
+      const keg = new THREE.Mesh(ballGeo, new THREE.MeshBasicMaterial({ color: '#7a4f2a' })); keg.position.set(ev.x, 0.3, ev.y); keg.scale.set(0.34, 0.42, 0.34);
+      for (const m of [disc, ring, keg]) world.add(m);
+      fx.push({ k: 'cast', meshes: [disc, ring, keg], spell: 'fuse', x: ev.x, y: ev.y, r: ev.r, t: 0, d: ev.delay });
+    } else if (ev.t === 'bolts') {
+      for (const h of ev.hits) { const ty = h.air ? 1.5 : 0.3; beam([h.x + 0.8, 9, h.y - 0.6], [h.x, ty, h.y], '#fffbd0', 0.12, 0.35); pop(h.x, ty + 0.3, h.y, '#fff27a', 1.0, 0.35); ringFx(h.x, h.y, '#fff27a', 1.1, 0.3); }
+      shake = Math.max(shake, 0.3);
+    }
     else if (ev.t === 'charge') ringFx(ev.x, ev.y, '#f3ead2', 0.9, 0.3);
     else if (ev.t === 'ability') {
-      if (ev.id === 'schlachtruf') { ringFx(ev.x, ev.y, GOLD, ev.r, 0.6); ringFx(ev.x, ev.y, '#fff3c4', ev.r * 0.6, 0.45); for (const h of ev.hits) pop(h.x, 1.2, h.y, GOLD, 0.5, 0.35, 0.7); }
+      if (ev.id === 'schleier') { pop(ev.x, 0.9, ev.y, '#c98bff', 1.3, 0.45, 0.7); ringFx(ev.x, ev.y, '#c98bff', 1.4, 0.4); }
+      else if (ev.id === 'wurzelheer') { ringFx(ev.x, ev.y, '#7fd069', 2.4, 0.5); for (const h of ev.hits) { ringFx(h.x, h.y, '#9be564', 0.7, 0.4); pop(h.x, 0.3, h.y, '#6b4a2b', 0.5, 0.3, 0.7); } }
+      else if (ev.id === 'sturmlauf') { let from = [ev.x, 0.8, ev.y]; for (const h of ev.hits) { const to = [h.x, h.air ? 1.5 : 0.8, h.y]; beam(from, to, '#ffffff', 0.1, 0.4); pop(to[0], to[1], to[2], '#dffaff', 0.7, 0.3); from = to; } shake = Math.max(shake, 0.1); }
+      else if (ev.id === 'schlachtruf') { ringFx(ev.x, ev.y, GOLD, ev.r, 0.6); ringFx(ev.x, ev.y, '#fff3c4', ev.r * 0.6, 0.45); for (const h of ev.hits) pop(h.x, 1.2, h.y, GOLD, 0.5, 0.35, 0.7); }
       else { for (const h of ev.hits) { beam([ev.x, 1.9, ev.y], [h.x, h.air ? 1.5 : 0.5, h.y], '#fff9b0', 0.07, 0.3); pop(h.x, h.air ? 1.5 : 0.5, h.y, '#fff27a', 0.7, 0.3); } shake = Math.max(shake, 0.12); }
     } else if (ev.t === 'cast') {
       const disc = flat(discGeo, TEAM[ev.side].main, 0.3), ring = flat(ringGeo, TEAM[ev.side].light, 0.9);
       disc.position.set(ev.x, 0.05, ev.y); ring.position.set(ev.x, 0.06, ev.y); disc.scale.setScalar(ev.r); ring.scale.setScalar(ev.r);
       const meshes = [disc, ring];
-      if (ev.spell === 'sternschlag') meshes.push(new THREE.Mesh(new THREE.OctahedronGeometry(0.45), new THREE.MeshBasicMaterial({ color: '#ffe08a' })));
+      if (FALL[ev.spell]) meshes.push(new THREE.Mesh(ev.spell === 'sternschlag' ? new THREE.OctahedronGeometry(FALL[ev.spell][1]) : new THREE.IcosahedronGeometry(FALL[ev.spell][1], 0), new THREE.MeshBasicMaterial({ color: FALL[ev.spell][0] })));
       if (ev.spell === 'hagelschauer') for (let i = 0; i < 14; i++) { const h = new THREE.Mesh(ballGeo, new THREE.MeshBasicMaterial({ color: '#eaf6ff' })); h.scale.set(0.07, 0.3, 0.07); h.userData = { a: i * 2.4, q: Math.sqrt((i + 0.5) / 14), o: i / 14 }; meshes.push(h); }
       for (const m of meshes) world.add(m);
       fx.push({ k: 'cast', meshes, spell: ev.spell, x: ev.x, y: ev.y, r: ev.r, t: 0, d: Math.max(0.05, ev.delay) });
     } else if (ev.t === 'spell') {
-      const col = { sternschlag: '#ffcf5a', hagelschauer: '#dff1ff', wurzelgriff: '#7fd069', heilquell: '#7dffa8', funkenschlag: '#fff27a', sumpfdunst: '#a6d94a', kriegstrommel: '#ffa53d' }[ev.spell];
-      const m = flat(discGeo, col, 0.7); m.position.set(ev.x, 0.07, ev.y);
-      addFx({ k: 'blast', mesh: m, t: 0, d: 0.45, r: ev.r });
+      const col = { sternschlag: '#ffcf5a', hagelschauer: '#dff1ff', wurzelgriff: '#7fd069', heilquell: '#7dffa8', funkenschlag: '#fff27a', sumpfdunst: '#a6d94a', kriegstrommel: '#ffa53d', frostnacht: '#dff3ff', donnerkeil: '#fff27a', felssturz: '#ffb347', wichtwurf: '#c79a5e', wirbelwind: '#e6f7ff' }[ev.spell];
+      if (col) { const m = flat(discGeo, col, 0.7); m.position.set(ev.x, 0.07, ev.y); addFx({ k: 'blast', mesh: m, t: 0, d: 0.45, r: ev.r }); }
+      if (ev.spell === 'felssturz') { shake = Math.max(shake, 0.4); pop(ev.x, 0.6, ev.y, '#ffd27a', ev.r * 1.1, 0.45, 0.85); ringFx(ev.x, ev.y, '#ffffff', ev.r * 1.5, 0.4); }
+      if (ev.spell === 'frostnacht') { pop(ev.x, 0.6, ev.y, '#dff3ff', ev.r * 0.9, 0.5, 0.6); ringFx(ev.x, ev.y, '#ffffff', ev.r, 0.5); }
       if (ev.spell === 'sternschlag') { shake = Math.max(shake, 0.25); pop(ev.x, 0.5, ev.y, '#ffd27a', ev.r * 0.8, 0.4, 0.8); }
       if (ev.spell === 'funkenschlag') for (let i = 0; i < 3; i++) { const a = i * 2.1; beam([ev.x + Math.cos(a) * 0.6, 7, ev.y + Math.sin(a) * 0.6], [ev.x + Math.cos(a) * ev.r * 0.5, 0.2, ev.y + Math.sin(a) * ev.r * 0.5], '#fff9b0', 0.06, 0.25); }
       if (ev.spell === 'kriegstrommel') ringFx(ev.x, ev.y, '#ffa53d', ev.r, 0.5);
@@ -555,11 +614,12 @@ export function createRenderer3D(canvas, overlay) {
       if (f.k === 'pop') { f.mesh.scale.setScalar(f.r * (0.3 + ease(p) * 0.7)); f.mesh.material.opacity = f.o * (1 - p); }
       else if (f.k === 'ring') { f.mesh.scale.setScalar(f.r * (0.3 + ease(p) * 0.7)); f.mesh.material.opacity = 1 - p; }
       else if (f.k === 'blast') { f.mesh.scale.setScalar(f.r * (0.6 + p * 0.4)); f.mesh.material.opacity = 0.7 * (1 - p); }
-      else if (f.k === 'rise') { f.mesh.position.y = 0.8 + p * 0.8; f.mesh.material.opacity = 1 - p; }
+      else if (f.k === 'rise') { f.mesh.position.y = (f.y0 || 0.8) + p * 0.8; f.mesh.material.opacity = 1 - p; }
       else if (f.k === 'fade') { for (const m of f.meshes) m.material.opacity = (f.o || 1) * (1 - p); }
       else if (f.k === 'cast') {
         for (const m of f.meshes.slice(2)) {
-          if (f.spell === 'sternschlag') { m.position.set(f.x - (1 - p) * 3, 0.4 + (1 - p) * 14, f.y - (1 - p) * 2); m.rotation.set(time * 5, time * 7, 0); }
+          if (FALL[f.spell]) { m.position.set(f.x - (1 - p) * 3, 0.4 + (1 - p) * 14, f.y - (1 - p) * 2); m.rotation.set(time * 5, time * 7, 0); }
+          else if (f.spell === 'fuse') { m.scale.set(0.34, 0.42 + Math.sin(time * 30) * 0.03, 0.34); f.meshes[0].material.opacity = 0.2 + p * 0.3 + Math.sin(time * (10 + p * 30)) * 0.08; }
           else { const u = m.userData, q = (p * 2 + u.o) % 1; m.position.set(f.x + Math.cos(u.a) * u.q * f.r, 4 * (1 - q), f.y + Math.sin(u.a) * u.q * f.r); }
         }
       }
@@ -585,7 +645,21 @@ export function createRenderer3D(canvas, overlay) {
   for (const m of [ghostDisc, ghostRing, rangeRing]) { m.visible = false; world.add(m); }
   const border = flat(new THREE.PlaneGeometry(W, 0.08), '#ffffff', 0.6); border.position.set(W / 2, 0.05, RIVER_BOT + 0.2); border.visible = false; world.add(border);
   const setRect = (m, x0, x1, z0, z1) => { m.visible = true; m.position.set((x0 + x1) / 2, 0.04, (z0 + z1) / 2); m.scale.set(x1 - x0, z1 - z0, 1); };
-  const ZONE_COLOR = { heilquell: '#58d68d', sumpfdunst: '#a6d94a' };
+  const ZONE_COLOR = { heilquell: '#58d68d', sumpfdunst: '#a6d94a', wirbelwind: '#d7f2ff' };
+  const FALL = { sternschlag: ['#ffe08a', 0.45], felssturz: ['#8d939c', 0.8], wichtwurf: ['#9a6634', 0.42] };
+  const va = new THREE.Vector3(), vb = new THREE.Vector3();
+  // Brennstrahl (Laternenfisch, Sonnenspiegel): steht, solange das Ziel getroffen wird, und wird sichtbar heißer
+  function rampBeam(e, inst, g, time) {
+    const t = e.inRange && e.targetId && e.deployT <= 0 && !(e.stunT > 0) ? g.byId.get(e.targetId) : null;
+    if (!t) { if (inst.beam) inst.beam.visible = false; return; }
+    if (!inst.beam) { inst.beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: '#ffe08a', transparent: true, opacity: 0.9, depthWrite: false })); world.add(inst.beam); }
+    const hot = e.rampT >= e.d.ramp[1][0] ? 2 : e.rampT >= e.d.ramp[0][0] ? 1 : 0, b = inst.beam;
+    va.set(e._x, e.air ? (FLY[inst.model] || 1.5) + 0.35 : 1.2, e._y); vb.set(t._x ?? t.x, t.air ? 1.5 : t.kind === 'tower' ? 1.8 : 0.6, t._y ?? t.y);
+    const w = [0.045, 0.085, 0.15][hot] * (1 + Math.sin(time * 40) * 0.15);
+    b.visible = true; b.position.lerpVectors(va, vb, 0.5); b.lookAt(vb); b.scale.set(w, w, va.distanceTo(vb));
+    b.material.color.set(['#ffe08a', '#ffb347', '#fff6d8'][hot]);
+    if (hot && Math.random() < 0.3) pop(vb.x, vb.y, vb.z, '#ffb347', 0.25 * hot, 0.2, 0.8);
+  }
 
   const dropDying = i => { if (i.sprite) { world.remove(i.mesh); i.mat.dispose(); } else world.remove(i.group); };
 
@@ -612,6 +686,7 @@ export function createRenderer3D(canvas, overlay) {
       let inst = insts.get(e.id);
       if (!inst) { inst = isFlat(e) ? makeSprite(e) : makeInst(e); insts.set(e.id, inst); }
       if (inst.sprite) animateSprite(e, inst, time, dt, g, moving); else animate(e, inst, time, dt, g, moving);
+      if (e.d.ramp) rampBeam(e, inst, g, time);
     }
     if (insts.size !== g.ents.length) for (const id of [...insts.keys()]) if (!g.byId.has(id)) dropInst(id, true);
     // Geschosse
@@ -621,6 +696,12 @@ export function createRenderer3D(canvas, overlay) {
       let m = projs.get(p);
       if (!m) { m = makeProj(p); projs.set(p, m); }
       const x = p.ox + (p.x - p.ox) * a, z = p.oy + (p.y - p.oy) * a;
+      if (p.line) {
+        const yy = m.geometry === boltGeo ? 0.9 : 0.45;
+        m.position.set(x, yy, z);
+        if (m.geometry === boltGeo) m.lookAt(x + p.vx, yy, z + p.vy); else m.rotation.x += dt * 10 * (p.vy < 0 ? -1 : 1);
+        continue;
+      }
       const left = Math.hypot(p.tx - x, p.ty - z), u = Math.min(1, left / m.userData.d0);
       const ty = p.air ? 1.5 : 0.6;
       m.position.set(x, ty + (m.userData.y0 - ty) * u + Math.sin(u * PI) * m.userData.arc, z);
@@ -635,6 +716,7 @@ export function createRenderer3D(canvas, overlay) {
       let m = zones.get(z);
       if (!m) { m = flat(discGeo, ZONE_COLOR[z.spell], 0.25); m.position.set(z.x, 0.05, z.y); m.scale.setScalar(z.r); world.add(m); zones.set(z, m); }
       m.material.opacity = 0.24 + 0.08 * Math.sin(time * 6);
+      if (z.spell === 'wirbelwind' && Math.random() < dt * 40) { const q = time * 6 + Math.random() * PI * 2, r = (0.2 + Math.random() * 0.8) * z.r; pop(z.x + Math.cos(q) * r, 0.3 + Math.random() * 1.6, z.y + Math.sin(q) * r, '#ffffff', 0.22, 0.35, 0.6); }
       if (z.spell === 'sumpfdunst' && Math.random() < dt * 14) { const q = Math.random() * PI * 2, r = Math.sqrt(Math.random()) * z.r; pop(z.x + Math.cos(q) * r, 0.3, z.y + Math.sin(q) * r, '#c5ee6a', 0.3, 0.5, 0.5); }
     }
     for (const [z, m] of zones) if (!seen.has(z)) { world.remove(m); m.material.dispose(); zones.delete(z); }
@@ -644,12 +726,12 @@ export function createRenderer3D(canvas, overlay) {
 
     // Auswahl
     const sel = ui && ui.sel != null ? g.sides[0].hand[ui.sel] : null;
-    const troop = sel && CARDS[sel].type !== 'spell';
+    const troop = sel && CARDS[sel].type !== 'spell' && !CARDS[sel].anywhere;
     for (const m of lock) m.visible = false;
     border.visible = !!troop;
     if (troop) for (const lane of [0, 1]) {
       const open = !outerTower(g, 1, lane), x0 = lane * W / 2, x1 = x0 + W / 2;
-      setRect(lock[lane * 2], x0, x1, 0, open ? 9.5 : RIVER_BOT + 0.2);
+      setRect(lock[lane * 2], x0, x1, 0, open ? POCKET : RIVER_BOT + 0.2);
       if (open) setRect(lock[lane * 2 + 1], x0, x1, RIVER_TOP - 0.2, RIVER_BOT + 0.2);
     }
     let label = null;
@@ -665,6 +747,7 @@ export function createRenderer3D(canvas, overlay) {
       label = { text: card.name, x: p.x, z: p.y - r - 0.2 };
     }
 
+    if (shake > 0 && !opt.shake) shake = 0;
     if (shake > 0) { shake -= dt; world.position.set((Math.random() - 0.5) * shake * 0.5, 0, (Math.random() - 0.5) * shake * 0.5); } else world.position.set(0, 0, 0);
     renderer.render(scene, camera);
 
@@ -674,7 +757,7 @@ export function createRenderer3D(canvas, overlay) {
     o2.textAlign = 'center'; o2.textBaseline = 'middle'; o2.lineJoin = 'round';
     for (const e of g.ents) {
       const tower = e.kind === 'tower';
-      if (!tower && !e.hero && e.hp >= e.maxHp) continue;
+      if (!tower && !e.hero && e.hp >= e.maxHp && !e.maxShield) continue;
       const inst = insts.get(e.id); if (!inst) continue;
       const top = inst.def.h * inst.scale + (e.air ? FLY[inst.model] || 1.5 : 0) + 0.15;
       const [sx, sy] = project(e._x, top, e._y), [sx2] = project(e._x + 1, top, e._y);
@@ -684,6 +767,7 @@ export function createRenderer3D(canvas, overlay) {
       o2.fillStyle = e.hero ? GOLD : e.rune ? RUNE_COLOR : 'rgba(15,20,26,.9)'; o2.fillRect(sx - w / 2 - 1.5, y - 1.5, w + 3, h + 3);
       o2.fillStyle = 'rgba(15,20,26,.9)'; o2.fillRect(sx - w / 2, y, w, h);
       o2.fillStyle = TEAM[e.side].main; o2.fillRect(sx - w / 2, y, Math.max(1, w * e.hp / e.maxHp), h);
+      if (e.shield > 0) { o2.fillStyle = 'rgba(15,20,26,.9)'; o2.fillRect(sx - w / 2 - 1, y - h * 0.7 - 2, w + 2, h * 0.7 + 1); o2.fillStyle = '#dff3ff'; o2.fillRect(sx - w / 2, y - h * 0.7 - 1, w * e.shield / e.maxShield, h * 0.7 - 1); }
       if (tower) {
         o2.font = `800 ${Math.max(10, Math.round(ppt * 0.5))}px -apple-system, system-ui, "Segoe UI", sans-serif`;
         o2.lineWidth = 3; o2.strokeStyle = 'rgba(15,20,26,.9)'; o2.strokeText(String(Math.ceil(e.hp)), sx, y + h / 2 + 0.5);
@@ -728,17 +812,18 @@ export function createRenderer3D(canvas, overlay) {
     snapCam.updateProjectionMatrix();
     const cy = tall * (u.air ? 0.2 : 0.42) + (u.air ? 0.3 : 0);
     snapCam.position.set(0, cy + 5, 9); snapCam.lookAt(0, cy - 0.12 * span, 0);
-    const old = renderer.getSize(new THREE.Vector2()), oldRatio = renderer.getPixelRatio();
-    renderer.setPixelRatio(1); renderer.setSize(w, h, false);
-    renderer.shadowMap.enabled = false;
-    renderer.render(stage, snapCam);
     const out = document.createElement('canvas'); out.width = w; out.height = h;
-    out.getContext('2d').drawImage(renderer.domElement, 0, 0);
-    renderer.shadowMap.enabled = true;
-    renderer.setPixelRatio(oldRatio); renderer.setSize(old.x, old.y, false);
+    shoot(stage, snapCam, w, h, out.getContext('2d'), 0, 0);
     stage.remove(holder);
     return out;
   }
 
-  return { resize, reset, onEvent, draw, toField, snapshot, prepare, three: true, info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }) };
+  // Grafik-Einstellungen: Auflösung, Schatten, Bildschirmwackeln
+  function setOptions(o) {
+    opt.maxDpr = o.quality === 'niedrig' ? 1.5 : o.quality === 'mittel' ? 2 : 3;
+    opt.shadows = o.quality !== 'niedrig'; opt.shake = o.shake !== false;
+    sun.castShadow = opt.shadows;
+  }
+
+  return { resize, reset, onEvent, draw, toField, snapshot, prepare, setOptions, sheet: (m, side) => getSheet(m, side).tex.image, three: true, info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }) };
 }

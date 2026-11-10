@@ -1,7 +1,7 @@
 // Offline-Cache für den Spiel-Code. Spielstände liegen NICHT hier, sondern im localStorage.
 // Das Spiel kommt immer komplett aus dem Cache EINER Version – nie halb alt, halb neu.
 // Bei jeder Änderung die Versionsnummer erhöhen (macht tools/deploy.mjs).
-const VERSION = 'runenfurt-v3';
+const VERSION = 'runenfurt-v4';
 const FILES = [
   './',
   './index.html',
