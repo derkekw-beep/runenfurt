@@ -1,0 +1,36 @@
+# Veröffentlicht den Inhalt dieses Repositories als GitHub-Pages-Seite.
+# Eigener Ablauf statt des eingebauten Seitenbaus: der bricht nach zehn Minuten ab, und so lange braucht GitHub inzwischen,
+# um die Bildfolgen der Figuren (rund 80 MB) zu verteilen. Hier gilt eine Frist von 40 Minuten.
+name: Seite veröffentlichen
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          timeout: 2400000
