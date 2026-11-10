@@ -2,9 +2,10 @@
 // Gleiche Schnittstelle wie der 2D-Zeichner in render.js (resize, reset, onEvent, draw, toField, snapshot).
 import * as THREE from './vendor/three.module.min.js';
 import { CARDS, UNITS, RUNES } from './cards.js';
-import { W, H, RIVER_TOP, RIVER_BOT, BRIDGES, BRIDGE_HALF, OUTER_Y, MAIN_Y, POCKET, clampDeploy, outerTower } from './sim.js';
+import { W, H, RIVER_TOP, RIVER_BOT, BRIDGES, BRIDGE_HALF, OUTER_Y, MAIN_Y, POCKET, clampDeploy, cardCost, outerTower } from './sim.js';
 import { TEAM, paintField, RUNE_STONES } from './render.js';
 import { getDef, merge, P, box, cyl, cone, sph, rock, FLY, USCALE, STONE, STONE_D, STONE_L, WOOD_D } from './models3d.js';
+import { THEMES } from './scenery.js';
 
 const PI = Math.PI;
 const RUNE_COLOR = '#c98bff', GOLD = '#f5c542';
@@ -13,7 +14,9 @@ const LEAN = -0.3; // Figuren leicht zur Kamera kippen, damit man Gesichter stat
 // Wie eine menschliche Figur zuschlägt
 const STYLE = { raufbold: 'punch', fasstraeger: 'punch', waldlaeufer: 'bow', sternschuetzin: 'bow', weitschuetzin: 'bow', schattenjaegerin: 'bow', bolzenschuetzin: 'xbow', torknacker: 'ram',
   eisenwaechter: 'slash', marschall: 'slash', schildknappe: 'slash', nebelschleicher: 'slash', windlaeufer: 'slash', hammerschmied: 'smash', erzritter: 'smash', wurzelkoenig: 'smash',
-  klingentaenzerin: 'spin', brockenwerfer: 'throw', zuendler: 'throw', kegler: 'bowl', trommelschlaeger: 'drum' };
+  klingentaenzerin: 'spin', brockenwerfer: 'throw', zuendler: 'throw', kegler: 'bowl', trommelschlaeger: 'drum',
+  raeuber: 'smash', sturmbruder: 'slash', speerwache: 'ram', muellerbursche: 'smash', steinwerferin: 'throw', wueterich: 'drum', distelritter: 'smash', sichelwerfer: 'throw', splitterjaeger: 'xbow',
+  wegelagerin: 'slash', falterhueterin: 'smash', seilwerfer: 'slash', stollenmeister: 'ram', flussmoench: 'punch', jungfuerst: 'xbow', leibwaechterin: 'slash' };
 
 export function createRenderer3D(canvas, overlay) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -37,7 +40,7 @@ export function createRenderer3D(canvas, overlay) {
   const matGlow = new THREE.MeshBasicMaterial({ vertexColors: true });
   const matDim = new THREE.MeshBasicMaterial({ vertexColors: true, color: '#7d8791' });
   const matGhost = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.4, depthWrite: false }); // Unsichtbare schimmern nur
-  const opt = { maxDpr: 3, shadows: true, shake: true };
+  const opt = { maxDpr: 3, shadows: true, shake: true, fxRate: 1 };
   // Kontur: dieselbe Form noch einmal, leicht aufgebläht und von innen gezeichnet
   const matLine = new THREE.MeshBasicMaterial({ color: '#141b26', side: THREE.BackSide });
   matLine.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n\ttransformed += normalize( normal ) * 0.026;'); };
@@ -51,9 +54,24 @@ export function createRenderer3D(canvas, overlay) {
   let width = 300, height = 400, dpr = 1, arena = -1;
   let ground = null, groundTex = null;
 
-  // -- feste Kulisse --
+  // -- feste Kulisse: je Arena eigenes Umland, Licht, Fluss, Brücken und Schwebeteilchen (scenery.js) --
+  let theme = THEMES[0], motes = null, clouds = [], stormT = 5, flashT = 0;
+  const dotTex = (() => { // weicher runder Punkt für Schnee, Glut, Irrlichter
+    const cv = document.createElement('canvas'); cv.width = cv.height = 32;
+    const c = cv.getContext('2d'), g = c.createRadialGradient(16, 16, 0, 16, 16, 16);
+    g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.45, 'rgba(255,255,255,.75)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = g; c.fillRect(0, 0, 32, 32);
+    return new THREE.CanvasTexture(cv);
+  })();
+  const cloudMat = new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, opacity: 0.9 });
   function buildArena(arenaIdx) {
     if (ground) { world.remove(ground); ground.traverse(o => { if (o.geometry) o.geometry.dispose(); }); groundTex.dispose(); }
+    if (motes) { scene.remove(motes.pts); motes.pts.geometry.dispose(); motes.pts.material.dispose(); motes = null; }
+    clouds = [];
+    theme = THEMES[arenaIdx] || THEMES[0];
+    scene.background.set(theme.sky);
+    hemi.color.set(theme.hemi[0]); hemi.groundColor.set(theme.hemi[1]); hemi.intensity = theme.hemi[2];
+    sun.color.set(theme.sun[0]); sun.intensity = theme.sun[1];
     ground = new THREE.Group();
     const cv = document.createElement('canvas'); const K = 64;
     cv.width = W * K; cv.height = H * K;
@@ -72,39 +90,91 @@ export function createRenderer3D(canvas, overlay) {
     const px = cv.getContext('2d').getImageData(8, 8, 1, 1).data;
     const grass = new THREE.Color().setRGB(px[0] / 255, px[1] / 255, px[2] / 255, THREE.SRGBColorSpace);
     const hex = c => '#' + c.getHexString();
-    const earth = hex(grass.clone().multiplyScalar(0.5)), outer = hex(grass.clone().multiplyScalar(0.7)), leaf = hex(grass.clone().multiplyScalar(0.55).offsetHSL(0.02, 0.1, 0)), leaf2 = hex(grass.clone().multiplyScalar(0.8).offsetHSL(-0.02, 0.1, 0));
-    const st = [];
-    // Uferkanten, Brücken, Randmauer mit Fahnen, Runensteine, Umland
+    const earth = hex(grass.clone().multiplyScalar(0.5)), outer = theme.outer || hex(grass.clone().multiplyScalar(0.7)), leaf = hex(grass.clone().multiplyScalar(0.55).offsetHSL(0.02, 0.1, 0)), leaf2 = hex(grass.clone().multiplyScalar(0.8).offsetHSL(-0.02, 0.1, 0));
+    const st = [], gl = [];
+    const [wallD, wallL] = theme.wall, [plank, slit, rail, post] = theme.bridge, [runeRock, runeSign] = theme.rune || [STONE, '#cfe9e5'];
+    // Uferkanten, Brücken, Randmauer mit Fahnen, Runensteine
     st.push(P(box(W, 0.3, 0.06), earth, [W / 2, -0.15, RIVER_TOP + 0.03]), P(box(W, 0.3, 0.06), earth, [W / 2, -0.15, RIVER_BOT - 0.03]));
     for (const bx of BRIDGES) {
-      st.push(P(box(BRIDGE_HALF * 2, 0.16, RIVER_BOT - RIVER_TOP + 0.7), '#b3aca0', [bx, -0.03, (RIVER_TOP + RIVER_BOT) / 2]));
-      for (let i = 0; i < 5; i++) st.push(P(box(BRIDGE_HALF * 2 - 0.3, 0.02, 0.05), '#7c766c', [bx, 0.055, RIVER_TOP - 0.1 + i * 0.55]));
+      st.push(P(box(BRIDGE_HALF * 2, 0.16, RIVER_BOT - RIVER_TOP + 0.7), plank, [bx, -0.03, (RIVER_TOP + RIVER_BOT) / 2]));
+      for (let i = 0; i < 5; i++) st.push(P(box(BRIDGE_HALF * 2 - 0.3, 0.02, 0.05), slit, [bx, 0.055, RIVER_TOP - 0.1 + i * 0.55]));
       for (const s of [-1, 1]) {
-        st.push(P(box(0.24, 0.42, RIVER_BOT - RIVER_TOP + 0.7), '#8d877c', [bx + s * (BRIDGE_HALF + 0.02), 0.16, (RIVER_TOP + RIVER_BOT) / 2]));
-        for (const z of [RIVER_TOP - 0.35, RIVER_BOT + 0.35]) st.push(P(box(0.34, 0.62, 0.34), '#9f998d', [bx + s * (BRIDGE_HALF + 0.02), 0.26, z]), P(sph(0.13), TEAM[z < H / 2 ? 1 : 0].main, [bx + s * (BRIDGE_HALF + 0.02), 0.64, z]));
+        st.push(P(box(0.24, 0.42, RIVER_BOT - RIVER_TOP + 0.7), rail, [bx + s * (BRIDGE_HALF + 0.02), 0.16, (RIVER_TOP + RIVER_BOT) / 2]));
+        for (const z of [RIVER_TOP - 0.35, RIVER_BOT + 0.35]) st.push(P(box(0.34, 0.62, 0.34), post, [bx + s * (BRIDGE_HALF + 0.02), 0.26, z]), P(sph(0.13), TEAM[z < H / 2 ? 1 : 0].main, [bx + s * (BRIDGE_HALF + 0.02), 0.64, z]));
       }
     }
-    for (const [x, z, w, d] of [[W / 2, -0.2, W + 0.8, 0.4], [W / 2, H + 0.2, W + 0.8, 0.4], [-0.2, RIVER_TOP / 2, 0.4, RIVER_TOP], [W + 0.2, RIVER_TOP / 2, 0.4, RIVER_TOP], [-0.2, (RIVER_BOT + H) / 2, 0.4, H - RIVER_BOT], [W + 0.2, (RIVER_BOT + H) / 2, 0.4, H - RIVER_BOT]]) st.push(P(box(w, 0.36, d), STONE_D, [x, 0.12, z]), P(box(w + 0.06, 0.08, d + 0.06), STONE_L, [x, 0.33, z]));
+    for (const [x, z, w, d] of [[W / 2, -0.2, W + 0.8, 0.4], [W / 2, H + 0.2, W + 0.8, 0.4], [-0.2, RIVER_TOP / 2, 0.4, RIVER_TOP], [W + 0.2, RIVER_TOP / 2, 0.4, RIVER_TOP], [-0.2, (RIVER_BOT + H) / 2, 0.4, H - RIVER_BOT], [W + 0.2, (RIVER_BOT + H) / 2, 0.4, H - RIVER_BOT]]) st.push(P(box(w, 0.36, d), wallD, [x, 0.12, z]), P(box(w + 0.06, 0.08, d + 0.06), wallL, [x, 0.33, z]));
     for (const [x, z, side] of [[-0.2, 1, 1], [W + 0.2, 1, 1], [-0.2, RIVER_TOP - 1.2, 1], [W + 0.2, RIVER_TOP - 1.2, 1], [-0.2, RIVER_BOT + 1.2, 0], [W + 0.2, RIVER_BOT + 1.2, 0], [-0.2, H - 1, 0], [W + 0.2, H - 1, 0]]) {
-      st.push(P(box(0.5, 0.6, 0.5), STONE, [x, 0.3, z]), P(cyl(0.04, 0.04, 1.6, 6), WOOD_D, [x, 1.3, z]), P(box(0.03, 0.5, 0.75), TEAM[side].main, [x, 1.75, z + 0.4]), P(box(0.035, 0.12, 0.75), TEAM[side].dark, [x, 1.56, z + 0.4]), P(sph(0.07), GOLD, [x, 2.12, z]));
+      st.push(P(box(0.5, 0.6, 0.5), wallD, [x, 0.3, z]), P(cyl(0.04, 0.04, 1.6, 6), WOOD_D, [x, 1.3, z]), P(box(0.03, 0.5, 0.75), TEAM[side].main, [x, 1.75, z + 0.4]), P(box(0.035, 0.12, 0.75), TEAM[side].dark, [x, 1.56, z + 0.4]), P(sph(0.07), GOLD, [x, 2.12, z]));
     }
-    for (const [x, z] of RUNE_STONES) st.push(P(rock(0.36), STONE, [x, 0.34, z], [0.2, x, 0.1], [0.8, 1.5, 0.6]), P(box(0.05, 0.3, 0.03), '#cfe9e5', [x, 0.42, z + 0.2]));
+    for (const [x, z] of RUNE_STONES) { st.push(P(rock(0.36), runeRock, [x, 0.34, z], [0.2, x, 0.1], [0.8, 1.5, 0.6])); (theme.rune ? gl : st).push(P(box(0.05, 0.3, 0.03), runeSign, [x, 0.42, z + 0.2])); }
     st.push(P(box(80, 0.2, 80), outer, [W / 2, -0.4, H / 2]));
+    // Umland nach der Streu-Regel der Arena, dazu ihre festen Blickfänge
     let s = 7 + arenaIdx * 13;
     const r = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+    const ctx = { st, gl, r, leaf, leaf2, W, H };
     for (let i = 0; i < 90; i++) {
       const side = i % 3, t = r();
       const x = side === 0 ? -1.6 - r() * 9 : side === 1 ? W + 1.6 + r() * 9 : -8 + t * (W + 16);
       const z = side === 2 ? -1.7 - r() * 9 : -6 + t * (H + 8);
-      const k = 0.8 + r() * 0.9;
-      if (i % 5 === 0) st.push(P(rock(0.5 * k), STONE_D, [x, 0, z], [r(), r() * 3, 0], [1.2, 0.8, 1]));
-      else st.push(P(cyl(0.12 * k, 0.16 * k, 0.6 * k, 6), WOOD_D, [x, 0.3 * k - 0.3, z]), P(cone(0.75 * k, 1.5 * k, 7), i % 2 ? leaf : leaf2, [x, 1.2 * k - 0.3, z]), P(cone(0.55 * k, 1.2 * k, 7), i % 2 ? leaf2 : leaf, [x, 1.9 * k - 0.3, z]));
+      theme.prop(ctx, x, z, 0.8 + r() * 0.9, i);
     }
+    for (let i = 0; i < 18; i++) theme.prop(ctx, -5 + r() * (W + 10), H + 2.4 + r() * 3.6, 0.42 + r() * 0.3, i * 7 + 2); // niedriger Streifen vor dem Feld
+    if (theme.mark) theme.mark(ctx);
     const deco = new THREE.Mesh(merge(st), matLit); deco.castShadow = true; deco.receiveShadow = true;
     ground.add(deco);
-    const water = new THREE.Mesh(new THREE.PlaneGeometry(W, RIVER_BOT - RIVER_TOP), new THREE.MeshBasicMaterial({ color: '#b8e6ff', transparent: true, opacity: 0.16, depthWrite: false }));
+    if (gl.length) ground.add(new THREE.Mesh(merge(gl), matGlow));
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(W, RIVER_BOT - RIVER_TOP), new THREE.MeshBasicMaterial({ color: theme.water[0], transparent: true, opacity: theme.water[1], depthWrite: false }));
     water.rotation.x = -PI / 2; water.position.set(W / 2, -0.12, (RIVER_TOP + RIVER_BOT) / 2); ground.add(water); ground.userData.water = water;
+    // ziehende Wolken (Sturmhöhe, Himmelsbrücke)
+    for (let i = 0; i < (theme.clouds || 0); i++) {
+      const k = 1.1 + r() * 0.9;
+      const parts = [P(sph(0.9 * k), '#ffffff', [0, 0, 0], [0, 0, 0], [1.6, 0.5, 1]), P(sph(0.7 * k), '#ffffff', [0.9 * k, 0.1, 0.2], [0, 0, 0], [1.3, 0.55, 1]), P(sph(0.6 * k), '#ffffff', [-0.9 * k, -0.05, -0.1], [0, 0, 0], [1.3, 0.5, 1])];
+      const m = new THREE.Mesh(merge(parts), cloudMat);
+      m.position.set(-12 + r() * (W + 24), 2.4 + r() * 2.2, i % 3 === 2 ? H + 3 + r() * 2 : -2.5 - r() * 7);
+      ground.add(m); clouds.push({ m, v: 0.25 + r() * 0.4 });
+    }
     world.add(ground);
+    // Schwebeteilchen
+    const M = theme.motes;
+    if (M) {
+      const pos = new Float32Array(M.n * 3), seed = new Float32Array(M.n * 3);
+      for (let i = 0; i < M.n; i++) { pos[i * 3] = -7 + r() * (W + 14); pos[i * 3 + 1] = 0.3 + r() * 5; pos[i * 3 + 2] = -9 + r() * (H + 12); seed[i * 3] = r(); seed[i * 3 + 1] = r(); seed[i * 3 + 2] = pos[i * 3 + 1]; }
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: M.color, size: M.size * 2.2, map: dotTex, transparent: true, opacity: M.opacity, depthWrite: false, sizeAttenuation: true }));
+      pts.frustumCulled = false; scene.add(pts);
+      motes = { pts, pos, seed, kind: M.kind, n: M.n, base: M.opacity };
+    }
+    stormT = 4; flashT = 0;
+  }
+
+  // Bewegung der Kulisse: Teilchen, Wolken, Wetterleuchten
+  function updateScenery(dt, time) {
+    if (motes) {
+      const { pos, seed, kind, n } = motes;
+      for (let i = 0; i < n; i++) {
+        const a = seed[i * 3], b = seed[i * 3 + 1], j = i * 3;
+        if (kind === 'snow' || kind === 'ash') {
+          pos[j + 1] -= dt * (kind === 'snow' ? 0.7 + a * 0.7 : 0.25 + a * 0.3); pos[j] += Math.sin(time * 0.9 + b * 6.3) * dt * (kind === 'snow' ? 0.35 : 0.6);
+          if (pos[j + 1] < 0) pos[j + 1] = 5.4;
+        } else if (kind === 'ember') {
+          pos[j + 1] += dt * (0.5 + a * 0.9); pos[j] += Math.sin(time * 2 + b * 6.3) * dt * 0.4;
+          if (pos[j + 1] > 5.4) pos[j + 1] = 0.1;
+        } else { // Irrlicht, Staubkorn, Stern: sachte auf der Stelle schweben
+          pos[j + 1] = seed[j + 2] + Math.sin(time * (0.5 + a) + b * 6.3) * (kind === 'star' ? 0.08 : 0.35);
+          if (kind !== 'star') pos[j] += Math.cos(time * 0.4 + b * 6.3) * dt * 0.18;
+        }
+      }
+      motes.pts.geometry.attributes.position.needsUpdate = true;
+      if (kind === 'star' || kind === 'wisp') motes.pts.material.opacity = motes.base * (0.75 + 0.25 * Math.sin(time * 2.3));
+    }
+    for (const c of clouds) { c.m.position.x += c.v * dt; if (c.m.position.x > W + 14) c.m.position.x = -14; }
+    if (theme.storm) { // fernes Wetterleuchten hinter dem Feld
+      stormT -= dt;
+      if (stormT <= 0) { stormT = 5 + Math.random() * 7; flashT = 0.16; const x = Math.random() * W; beam([x, 13, -9 - Math.random() * 3], [x + (Math.random() - 0.5) * 4, 0.2, -4 - Math.random() * 4], '#fffbd0', 0.13, 0.32); }
+      if (flashT > 0) flashT -= dt;
+      hemi.intensity = theme.hemi[2] + (flashT > 0 ? 0.7 : 0);
+    }
   }
 
   // -- Kamera so legen, dass das ganze Feld ins Bild passt --
@@ -158,7 +228,7 @@ export function createRenderer3D(canvas, overlay) {
   const flatMat = (color, opacity) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide });
   const flat = (geo, color, opacity) => { const m = new THREE.Mesh(geo, flatMat(color, opacity)); m.rotation.x = -PI / 2; return m; };
   const runeMat = new THREE.MeshBasicMaterial({ color: RUNE_COLOR }), runeAura = flatMat(RUNE_COLOR, 0.55), heroAura = flatMat(GOLD, 0.45);
-  const STATUS = { ice: '#e6f7ff', stun: '#fff27a', root: '#4fa646', slow: '#9fdcff', haste: '#ffa53d' };
+  const STATUS = { ice: '#e6f7ff', stun: '#fff27a', root: '#4fa646', slow: '#9fdcff', haste: '#ffa53d', curse: '#b06adf', ward: '#ffffff' };
 
   const insts = new Map();
   let dying = [];
@@ -273,10 +343,17 @@ export function createRenderer3D(canvas, overlay) {
       const load = e.atk ? 1 - Math.min(1, (e.cd || 0) / e.atk) : 0.5, c = p.gCrystal;
       y = moving ? Math.abs(Math.sin(time * 14 + e.id)) * 0.03 : 0; tilt = -s * 0.14;
       c.rotation.y = time * (1 + load * 7); c.scale.setScalar(0.45 + load * 0.75 + s * 0.7); c.position.y = def.piv.gCrystal[1] + Math.sin(time * 3 + e.id) * 0.03;
+    } else if (def.kind === 'wagon') { // rollt und ruckt beim Schuss zurück
+      y = moving ? Math.abs(Math.sin(time * 14 + e.id)) * 0.03 : 0; tilt = -s * 0.12; lunge = -s * 0.12;
     } else if (def.kind === 'turret') {
       if (t) inst.yaw = Math.atan2(t.x - e.x, t.y - e.y);
       p.top.rotation.y = inst.yaw; p.top.rotation.x = -wind * 0.15 + s * 0.2;
       sy = 1 + s * 0.04;
+      if (e.d && e.d.burrow) { // vergraben: nur die Spitze schaut heraus
+        inst.sink = (inst.sink || 0) + ((e.buried ? 1 : 0) - (inst.sink || 0)) * Math.min(1, dt * 9);
+        y = -inst.sink * 1.15 * inst.scale;
+        if (p.gOrb) p.gOrb.scale.setScalar(e.buried ? 0.5 : 1 + wind * 0.6 + s * 0.5 + Math.sin(time * 9 + e.id) * 0.08);
+      }
     } else if (def.kind === 'tower') {
       const c = p.gCrystal, awake = e.active !== false;
       c.material = awake ? matGlow : matDim;
@@ -316,7 +393,11 @@ export function createRenderer3D(canvas, overlay) {
   const isFlat = e => e.kind === 'unit' && !e.hero && !e.rune;
   const SPRITE_R = { wicht: 1.6, kiesel: 1.3, glutling: 1.6, kraehe: 2.0, rochen: 3.4, donnerkaefer: 3.0, steinhueter: 4.0, steinling: 2.6, erzritter: 4.8, hornbulle: 3.6, hammerschmied: 2.9, klingentaenzerin: 2.9, torknacker: 2.7,
     dornwerfer: 1.9, nachtfalter: 1.7, schildknappe: 2.5, brockenwerfer: 4.6, gewitterkarren: 3.6, kegler: 4.3, sternschuetzin: 2.8, wuehler: 2.4, trommelschlaeger: 2.7, eisbrocken: 3.0, panzerbaer: 4.0, basaltriese: 4.8,
-    weitschuetzin: 3.0, blasrohrwicht: 2.1, panzerhornisse: 2.6, laternenfisch: 3.2, zuendler: 2.4, sprengkaefer: 1.8, fasstraeger: 4.4 };
+    weitschuetzin: 3.0, blasrohrwicht: 2.1, panzerhornisse: 2.6, laternenfisch: 3.2, zuendler: 2.4, sprengkaefer: 1.8, fasstraeger: 4.4,
+    raeuber: 3.0, sturmbruder: 3.3, speerwache: 3.6, muellerbursche: 3.9, steinwerferin: 2.3, wueterich: 2.8, distelritter: 3.3, sichelwerfer: 3.6, splitterjaeger: 3.0, wegelagerin: 2.7, falterhueterin: 3.1, seilwerfer: 2.9, fluchweberin: 2.9, leibwaechterin: 4.0,
+    frostling: 1.6, funkling: 1.6, tauling: 1.6, knallfrosch: 1.9, pulverwicht: 2.2, pulverwicht_k: 2.2, zitterling: 1.9, kraftkloss: 3.0, kraftkloss_m: 2.2, kraftkloss_k: 1.6, irrwisch: 2.0, glutei: 1.9, wanderbusch: 2.2, buschwicht: 1.8,
+    keiler: 2.6, zwingerwolf: 2.9, rankenreiterin: 3.9, stammlaeufer: 4.0, flugsamen: 2.6, jungrochen: 2.6, segelwicht: 2.9, gewitterrochen: 3.6, aschenschwinge: 4.8, aschenfunke: 1.5, glutfalke: 3.1,
+    astriese: 5.4, dornenkoloss: 5.2, runenhuene: 4.6, stelzenkessel: 4.2, armbrustwagen: 3.2 };
   const DIRS = [0.55, PI / 2, PI - 0.55]; // Blick nach vorn, zur Seite, nach hinten (jeweils rechts; links wird gespiegelt)
   const WALK = 6, WIND = 2, STRIKE = 4, PER = 1 + WALK + WIND + STRIKE, COLS = 8, ROWS = Math.ceil(3 * PER / COLS);
   const ANCHOR = 0.3; // Standpunkt liegt 30 % über der Unterkante des Bilds
@@ -391,7 +472,7 @@ export function createRenderer3D(canvas, overlay) {
   quadGeo.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, ANCHOR, 1, ANCHOR, 0, 1, 1, 1], 2));
   quadGeo.setIndex([0, 1, 2, 2, 1, 3, 2, 3, 4, 4, 3, 5]);
   const spriteMat = new THREE.ShaderMaterial({
-    uniforms: { map: { value: null }, uRect: { value: new THREE.Vector4(0, 0, 1, 1) }, uSize: { value: new THREE.Vector2(1, 1) }, uFlip: { value: 0 }, uFlash: { value: 0 }, uGhost: { value: 0 }, uTrig: { value: new THREE.Vector2(1 / Math.cos(PITCH), 1 / Math.sin(PITCH)) } },
+    uniforms: { map: { value: null }, uRect: { value: new THREE.Vector4(0, 0, 1, 1) }, uSize: { value: new THREE.Vector2(1, 1) }, uFlip: { value: 0 }, uFlash: { value: 0 }, uGhost: { value: 0 }, uTint: { value: 0 }, uTrig: { value: new THREE.Vector2(1 / Math.cos(PITCH), 1 / Math.sin(PITCH)) } },
     vertexShader: `
       uniform vec4 uRect; uniform vec2 uSize; uniform float uFlip; uniform vec2 uTrig;
       varying vec2 vUv;
@@ -406,13 +487,14 @@ export function createRenderer3D(canvas, overlay) {
         gl_Position = clip;
       }`,
     fragmentShader: `
-      uniform sampler2D map; uniform float uFlash; uniform float uGhost;
+      uniform sampler2D map; uniform float uFlash; uniform float uGhost; uniform float uTint;
       varying vec2 vUv;
       void main() {
         vec4 c = texture2D(map, vUv);
         if (c.a < 0.5) discard;
         if (uGhost > 0.5 && mod(floor(gl_FragCoord.x * 0.5) + floor(gl_FragCoord.y * 0.5), 2.0) < 0.5) discard; // Unsichtbare: nur ein Raster aus Punkten
         c.rgb = mix(c.rgb, vec3(0.75, 0.85, 1.0), uGhost * 0.45);
+        c.rgb = mix(c.rgb, vec3(0.5, 0.9, 1.0), uTint * 0.55); // Abbild
         gl_FragColor = vec4(mix(c.rgb, vec3(1.0), uFlash), 1.0);
       }`,
   });
@@ -469,13 +551,14 @@ export function createRenderer3D(canvas, overlay) {
     if (inst.flash > 0) inst.flash -= dt;
     u.uFlash.value = inst.flash > 0 ? 0.8 : 0;
     u.uGhost.value = e.hidden ? 1 : 0;
+    u.uTint.value = e.clone ? 1 : 0;
     if (inst.blob) inst.blob.visible = !e.hidden;
     statusRing(e, inst, time);
   }
 
   // Zustandsring am Boden (betäubt, festgehalten, gebremst, angetrieben) – für 2D- und 3D-Figuren
   function statusRing(e, inst, time) {
-    const key = e.iceT > 0 ? 'ice' : e.stunT > 0 ? 'stun' : e.rootT > 0 ? 'root' : e.slowT > 0 ? 'slow' : e.hasteT > 0 ? 'haste' : '';
+    const key = e.wardT > 0 ? 'ward' : e.iceT > 0 ? 'ice' : e.stunT > 0 ? 'stun' : e.rootT > 0 ? 'root' : e.curseT > 0 || e.ampT > 0 ? 'curse' : e.slowT > 0 ? 'slow' : e.hasteT > 0 ? 'haste' : '';
     if (key !== inst.statusKey) {
       inst.statusKey = key;
       if (key && !inst.status) { inst.status = flat(ringGeo, '#fff', 0.9); world.add(inst.status); }
@@ -487,13 +570,20 @@ export function createRenderer3D(canvas, overlay) {
   // Bildfolgen für alle Figuren dieses Spiels vormerken; gezeichnet wird eine je Bild, damit nichts ruckelt
   function prepare(g) {
     const add = (unit, side) => {
-      const u = UNITS[unit]; if (!u || u.tower) return;
+      const u = UNITS[unit]; if (!u || u.tower || done.has(unit + side)) return;
+      done.add(unit + side);
       if (!u.building && !u.hero && !u.rune) bakeQueue.push([u.model || unit, side]);
-      if (u.spawn) add(u.spawn.unit, side);
-      if (u.deathSpawn) add(u.deathSpawn.unit, side);
+      for (const k of ['spawn', 'deathSpawn', 'morph', 'hatch', 'curse']) if (u[k] && !done.has(u[k].unit + side)) add(u[k].unit, side);
     };
+    const done = new Set();
     bakeQueue = [];
-    g.sides.forEach((S, side) => { for (const id of [...S.hand, S.next, ...S.queue]) { const c = CARDS[id]; if (c.type === 'spell') { if (c.summon) add(c.summon.unit, side); continue; } add(c.unit, side); if (RUNES[id]) add(RUNES[id].unit, side); if (c.ability && c.ability.unit) add(c.ability.unit, side); } });
+    g.sides.forEach((S, side) => { for (const id of [...S.hand, S.next, ...S.queue]) {
+      const c = CARDS[id];
+      if (c.type === 'spell') { for (const k of ['summon', 'summonOver', 'rollSpawn']) if (c[k]) add(c[k].unit, side); if (c.curse) add(c.curse, side); continue; }
+      for (const [unit] of c.mix || [[c.unit]]) add(unit, side);
+      if (RUNES[id]) add(RUNES[id].unit, side);
+      if (c.ability && c.ability.unit) add(c.ability.unit, side);
+    } });
   }
 
 
@@ -503,16 +593,22 @@ export function createRenderer3D(canvas, overlay) {
   const arrowGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.6, 5).rotateX(PI / 2), boltGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.9, 5).rotateX(PI / 2);
   const pm = c => new THREE.MeshBasicMaterial({ color: c });
   const rollGeo = new THREE.CylinderGeometry(0.45, 0.45, 1, 10).rotateZ(PI / 2);
-  const ARROWS = new Set(['waldlaeufer', 'weitschuetzin', 'blasrohrwicht', 'schattenjaegerin']);
-  const ARC = { steinschleuder: 2.2, fernschleuder: 4.5, kesselturm: 1.8, brockenwerfer: 1.6, zuendler: 1.5 };
-  const projMats = { tar: pm('#2a2118'), star: pm('#fff27a'), arrow: pm('#f3ead2'), spark: pm('#ffb347'), mist: pm('#cdbdf5'), frost: pm('#bfeaff'), thorn: pm('#9be564'), bolt: pm('#fff27a'), stone: new THREE.MeshLambertMaterial({ color: STONE }), rune: pm(RUNE_COLOR), t0: pm(TEAM[0].light), t1: pm(TEAM[1].light) };
-  const BALL = { dornwerfer: ['thorn', 0.1], brockenwerfer: ['stone', 0.3], gewitterkarren: ['bolt', 0.32], zuendler: ['spark', 0.18], blitzfaenger: ['bolt', 0.12], kesselturm: ['tar', 0.22], fernschleuder: ['stone', 0.3], funkenweberin: ['spark', 0.2], rochen: ['mist', 0.24], frostschamane: ['frost', 0.2], wurzelmutter: ['thorn', 0.17], sturmrufer: ['bolt', 0.17], steinschleuder: ['stone', 0.2] };
-  const LAUNCH = { aussenturm: 2.7, hauptturm: 3.6, rochen: FLY.rochen, ballista: 0.7, steinschleuder: 1.0, brockenwerfer: 1.9, kesselturm: 1.3, fernschleuder: 1.6, gewitterkarren: 1.3 };
+  const sickleGeo = new THREE.TorusGeometry(0.42, 0.06, 6, 14, PI * 1.25).rotateX(PI / 2);
+  const fanGeo = merge([-0.42, -0.21, 0, 0.21, 0.42].map((x, i) => P(sph(0.07), '#ffffff', [x, 0, (i % 2) * 0.25 - 0.1])));
+  const ARROWS = new Set(['waldlaeufer', 'weitschuetzin', 'blasrohrwicht', 'schattenjaegerin', 'klingenturm', 'kurbelbogen', 'jungfuerst']);
+  const ARC = { geschuetzturm: 0.9, steinschleuder: 2.2, fernschleuder: 4.5, kesselturm: 1.8, brockenwerfer: 1.6, zuendler: 1.5, steinwerferin: 0.9, pulverwicht: 1.6, glutbrocken: 2.6, knallfrosch: 0.8, ranke: 0.7 };
+  const projMats = { tar: pm('#2a2118'), star: pm('#fff27a'), arrow: pm('#f3ead2'), spark: pm('#ffb347'), mist: pm('#cdbdf5'), frost: pm('#bfeaff'), thorn: pm('#9be564'), bolt: pm('#fff27a'), stone: new THREE.MeshLambertMaterial({ color: STONE }), wood: new THREE.MeshLambertMaterial({ color: '#9a6634' }), steel: pm('#e3e7ee'), curse: pm('#b06adf'), seed: pm('#b5482c'), ember: pm('#ff8a2a'), rune: pm(RUNE_COLOR), t0: pm(TEAM[0].light), t1: pm(TEAM[1].light) };
+  const BALL = { geschuetzturm: ['tar', 0.27], dornwerfer: ['thorn', 0.1], brockenwerfer: ['stone', 0.3], gewitterkarren: ['bolt', 0.32], zuendler: ['spark', 0.18], blitzfaenger: ['bolt', 0.12], kesselturm: ['tar', 0.22], fernschleuder: ['stone', 0.3], funkenweberin: ['spark', 0.2], rochen: ['mist', 0.24], frostschamane: ['frost', 0.2], wurzelmutter: ['thorn', 0.17], sturmrufer: ['bolt', 0.17], steinschleuder: ['stone', 0.2],
+    steinwerferin: ['stone', 0.11], knallfrosch: ['seed', 0.17], jungrochen: ['mist', 0.17], pulverwicht: ['tar', 0.17], segelwicht: ['thorn', 0.11], zitterling: ['bolt', 0.11], aschenschwinge: ['ember', 0.13], aschenfunke: ['ember', 0.1],
+    ranke: ['thorn', 0.16], fluchweberin: ['curse', 0.15], glutbrocken: ['ember', 0.26], funkenpfahl: ['bolt', 0.16] };
+  const LAUNCH = { funkenpfahl: 1.7, kurbelbogen: 0.9, glutbrocken: 2.2, flugsamen: FLY.flugsamen, jungrochen: FLY.jungrochen, segelwicht: FLY.segelwicht, aschenschwinge: FLY.aschenschwinge, aschenfunke: FLY.aschenfunke, aussenturm: 2.7, geschuetzturm: 3.1, klingenturm: 2.9, segensturm: 2.8, hauptturm: 3.6, rochen: FLY.rochen, ballista: 0.7, steinschleuder: 1.0, brockenwerfer: 1.9, kesselturm: 1.3, fernschleuder: 1.6, gewitterkarren: 1.3 };
   function makeProj(p) {
     let m;
     if (p.line) { // Bahn-Geschosse: Steinwalze, Kegelkugel, Sternenpfeil
-      if (p.from === 'rollstein') { m = new THREE.Mesh(rollGeo, projMats.stone); m.scale.set(p.w, 1, 1); m.castShadow = true; }
+      if (p.from === 'rollstein' || p.from === 'hohlstamm') { m = new THREE.Mesh(rollGeo, p.from === 'hohlstamm' ? projMats.wood : projMats.stone); m.scale.set(p.w, p.from === 'hohlstamm' ? 0.8 : 1, p.from === 'hohlstamm' ? 0.8 : 1); m.castShadow = true; }
       else if (p.from === 'kegler') { m = new THREE.Mesh(ballGeo, projMats.stone); m.scale.setScalar(0.42); m.castShadow = true; }
+      else if (p.from === 'sichelwerfer') { m = new THREE.Mesh(sickleGeo, projMats.steel); m.userData.spin = true; }
+      else if (p.from === 'knallfrosch_kern') { m = new THREE.Mesh(fanGeo, projMats.seed); m.scale.set(p.w, 1, 1); m.userData.fan = true; }
       else { m = new THREE.Mesh(boltGeo, projMats.star); m.scale.set(1.4, 1.4, 1.5); }
       world.add(m);
       return m;
@@ -525,13 +621,14 @@ export function createRenderer3D(canvas, overlay) {
     return m;
   }
 
+  const debrisGeo = new THREE.IcosahedronGeometry(1, 0), debrisMat = new THREE.MeshLambertMaterial({ color: STONE });
   function addFx(f) { for (const m of f.meshes || (f.mesh ? [f.mesh] : [])) world.add(m); fx.push(f); }
-  function endFx(f) { for (const m of f.meshes || (f.mesh ? [f.mesh] : [])) { world.remove(m); m.material.dispose(); } }
+  function endFx(f) { for (const m of f.meshes || (f.mesh ? [f.mesh] : [])) { world.remove(m); if (!f.keep) m.material.dispose(); } }
   const pop = (x, y, z, color, r, d, o = 0.9) => { const m = new THREE.Mesh(ballGeo, flatMat(color, o)); m.position.set(x, y, z); addFx({ k: 'pop', mesh: m, t: 0, d, r, o }); };
   const ringFx = (x, z, color, r, d) => { const m = flat(ringGeo, color, 0.9); m.position.set(x, 0.06, z); addFx({ k: 'ring', mesh: m, t: 0, d, r }); };
   // Gezackter Lichtstrahl zwischen zwei Punkten (Blitz)
-  function beam(a, b, color, wdt, d) {
-    const meshes = [], start = new THREE.Vector3(...a), end = new THREE.Vector3(...b), n = 4;
+  function beam(a, b, color, wdt, d, straight) {
+    const meshes = [], start = new THREE.Vector3(...a), end = new THREE.Vector3(...b), n = straight ? 1 : 4;
     let from = start.clone();
     for (let i = 1; i <= n; i++) {
       const to = new THREE.Vector3().lerpVectors(start, end, i / n);
@@ -546,7 +643,7 @@ export function createRenderer3D(canvas, overlay) {
   function onEvent(ev) {
     if (ev.t === 'hit') {
       if (ev.spin) { ringFx(ev.x, ev.y, '#ffffff', ev.spin, 0.25); return; }
-      pop(ev.x, 0.6, ev.y, ev.frost ? '#bfeaff' : ev.splash ? '#ffd27a' : '#ffffff', ev.splash ? ev.splash * 0.9 : ev.heavy ? 0.55 : 0.3, ev.splash ? 0.3 : 0.16);
+      pop(ev.x, 0.6, ev.y, ev.frost ? '#bfeaff' : ev.root ? '#7fd069' : ev.curse ? '#b06adf' : ev.from === 'tauling' ? '#7dffa8' : ev.splash ? '#ffd27a' : '#ffffff', ev.splash ? ev.splash * 0.9 : ev.heavy ? 0.55 : 0.3, ev.splash ? 0.3 : 0.16);
       if (ev.heavy) ringFx(ev.x, ev.y, '#ffffff', 0.9, 0.22);
     } else if (ev.t === 'die') {
       if (ev.kind === 'tower') {
@@ -554,11 +651,17 @@ export function createRenderer3D(canvas, overlay) {
         for (let i = 0; i < 9; i++) parts.push(P(rock(0.22 + (i % 3) * 0.1), i % 2 ? STONE : STONE_D, [Math.sin(i * 2.4) * r * 0.75, 0.12 + (i % 2) * 0.1, Math.cos(i * 2.4) * r * 0.75], [i, i * 2, 0]));
         parts.push(P(cyl(r * 1.1, r * 1.15, 0.06, 12), '#4a4640', [0, 0.03, 0]));
         const m = new THREE.Mesh(merge(parts), matLit); m.position.set(ev.x, 0, ev.y); m.castShadow = true; world.add(m); ruins.push(m);
-        pop(ev.x, 1, ev.y, '#ffbe5a', 3, 0.7, 0.85); ringFx(ev.x, ev.y, '#ffffff', 3.4, 0.6);
-        shake = 0.5;
+        pop(ev.x, 1, ev.y, '#ffbe5a', 3, 0.7, 0.85); ringFx(ev.x, ev.y, '#ffffff', 3.4, 0.6); ringFx(ev.x, ev.y, '#d9cfc0', r * 2.8, 1.0);
+        for (let i = 0; i < (ev.main ? 18 : 12); i++) { // Trümmer fliegen im Bogen davon
+          const m = new THREE.Mesh(debrisGeo, debrisMat), a = i * 0.52 + Math.random() * 0.4, sp = 1.5 + Math.random() * 3.2;
+          m.position.set(ev.x, 1 + Math.random() * 1.8, ev.y); m.scale.setScalar(0.1 + Math.random() * 0.2); m.castShadow = true;
+          addFx({ k: 'debris', mesh: m, keep: true, t: 0, d: 1.3, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 4 + Math.random() * 4.5 });
+        }
+        shake = ev.main ? 0.8 : 0.5;
       } else pop(ev.x, ev.air ? 1.5 : 0.4, ev.y, '#e9edf2', ev.kind === 'building' ? 1 : 0.5, 0.32, 0.8);
     } else if (ev.t === 'deploy') {
       ringFx(ev.x, ev.y, ev.rune ? RUNE_COLOR : ev.hero ? GOLD : TEAM[ev.side].light, ev.rune || ev.hero ? 1.6 : 1, 0.4);
+      if (ev.echo) { ringFx(ev.x, ev.y, '#e9edf2', 1.6, 0.55); ringFx(ev.x, ev.y, '#e9edf2', 2.2, 0.7); }
       if (ev.rune || ev.hero) { // Lichtsäule
         const m = new THREE.Mesh(beamGeo, flatMat(ev.rune ? RUNE_COLOR : GOLD, 0.6)); m.rotation.x = PI / 2; m.position.set(ev.x, 4, ev.y); m.scale.set(0.9, 0.9, 8);
         addFx({ k: 'fade', meshes: [m], t: 0, d: 0.7, o: 0.6 });
@@ -566,6 +669,10 @@ export function createRenderer3D(canvas, overlay) {
     } else if (ev.t === 'wake') ringFx(ev.x, ev.y, TEAM[ev.side].light, 2.4, 0.6);
     else if (ev.t === 'burst') { ringFx(ev.x, ev.y, ev.frost ? '#bfeaff' : '#ffd27a', ev.r, ev.big ? 0.5 : 0.35); pop(ev.x, 0.5, ev.y, ev.frost ? '#dff3ff' : '#ffb347', ev.r * (ev.big ? 1 : 0.8), ev.big ? 0.5 : 0.3); if (ev.big) shake = Math.max(shake, 0.35); }
     else if (ev.t === 'impact') { pop(ev.x, 0.7, ev.y, '#ffffff', 1.1, 0.25); ringFx(ev.x, ev.y, '#ffffff', ev.r || 1.6, 0.3); shake = Math.max(shake, 0.18); }
+    else if (ev.t === 'bless') { // Segen: Lichtstrahl vom Turm, die Truppe leuchtet golden auf
+      beam([ev.fx, 3.3, ev.fy], [ev.x, 1.0, ev.y], '#ffe08a', 0.1, 0.5); ringFx(ev.x, ev.y, GOLD, 1.4, 0.6); pop(ev.x, 1.1, ev.y, '#fff3c4', 0.9, 0.5, 0.8);
+      const m = new THREE.Mesh(octaGeo, flatMat(GOLD, 1)); m.position.set(ev.x, 1.4, ev.y); m.scale.set(0.2, 0.3, 0.2); addFx({ k: 'rise', mesh: m, t: 0, d: 0.9, y0: 1.4 });
+    }
     else if (ev.t === 'shield') { ringFx(ev.x, ev.y, '#bfeaff', 0.9, 0.3); pop(ev.x, 0.7, ev.y, '#dff3ff', 0.5, 0.25); }
     else if (ev.t === 'kraft') { const m = new THREE.Mesh(ballGeo, flatMat('#8fe0ff', 0.95)); m.position.set(ev.x, 1.0, ev.y); m.scale.setScalar(0.16); addFx({ k: 'rise', mesh: m, t: 0, d: 0.8, y0: 1.0 }); ringFx(ev.x, ev.y, '#58c7f3', 1.1, 0.4); }
     else if (ev.t === 'fuse') {
@@ -579,10 +686,37 @@ export function createRenderer3D(canvas, overlay) {
       shake = Math.max(shake, 0.3);
     }
     else if (ev.t === 'charge') ringFx(ev.x, ev.y, '#f3ead2', 0.9, 0.3);
+    else if (ev.t === 'chain') { // Blitz, der von Ziel zu Ziel springt
+      let from = [ev.x, ev.air ? 1.9 : 0.8, ev.y];
+      for (const h of ev.hits) { const to = [h.x, h.air ? 1.5 : 0.6, h.y]; beam(from, to, '#fff9b0', 0.07, 0.28); pop(to[0], to[1], to[2], '#fff27a', 0.5, 0.25); from = to; }
+    }
+    else if (ev.t === 'scatter') { // Splitterfächer
+      const y0 = ev.air ? 1.5 : 0.9;
+      for (let i = 0; i < 7; i++) { const a = ev.ang + (i / 6 - 0.5) * ev.cone, L = ev.reach * (0.75 + (i % 3) * 0.12); beam([ev.x + Math.cos(a) * 0.5, y0, ev.y + Math.sin(a) * 0.5], [ev.x + Math.cos(a) * L, 0.6, ev.y + Math.sin(a) * L], '#e9edf2', 0.035, 0.16, true); }
+      for (const h of ev.hits) pop(h.x, h.air ? 1.5 : 0.6, h.y, '#ffffff', 0.4, 0.18);
+      pop(ev.x + Math.cos(ev.ang) * 0.5, y0, ev.y + Math.sin(ev.ang) * 0.5, '#ffd27a', 0.5, 0.14);
+    }
+    else if (ev.t === 'hookcast') ringFx(ev.x, ev.y, '#d8c7a0', 1.0, 0.5);
+    else if (ev.t === 'hook') { // gespanntes Seil
+      const m = new THREE.Mesh(beamGeo, flatMat('#d8c7a0', 1)), a = new THREE.Vector3(ev.x, 0.9, ev.y), b = new THREE.Vector3(ev.tx, ev.air ? 1.5 : 0.7, ev.ty);
+      m.position.lerpVectors(a, b, 0.5); m.lookAt(b); m.scale.set(0.06, 0.06, a.distanceTo(b));
+      addFx({ k: 'fade', meshes: [m], t: 0, d: 0.35 }); pop(ev.tx, 0.7, ev.ty, '#ffffff', 0.6, 0.25); ringFx(ev.x, ev.y, '#d8c7a0', 0.8, 0.3);
+    }
+    else if (ev.t === 'morph') { pop(ev.x, 0.7, ev.y, ev.building ? '#d9cfc0' : '#ffb347', 1.0, 0.35, 0.85); ringFx(ev.x, ev.y, ev.building ? '#ffffff' : '#ff8a2a', 1.2, 0.4); }
+    else if (ev.t === 'hatch') { pop(ev.x, 0.6, ev.y, '#ffb347', 1.2, 0.4, 0.85); ringFx(ev.x, ev.y, '#ffe08a', 1.4, 0.45); }
+    else if (ev.t === 'curse') { pop(ev.x, 0.6, ev.y, '#b06adf', 0.9, 0.4, 0.8); ringFx(ev.x, ev.y, '#c98bff', 1.0, 0.4); }
+    else if (ev.t === 'clone') { pop(ev.x + 0.35, ev.air ? 1.5 : 0.7, ev.y, '#8fe0ff', 0.9, 0.4, 0.7); ringFx(ev.x + 0.35, ev.y, '#bfeeff', 1.0, 0.4); }
+    else if (ev.t === 'rise') { pop(ev.x, 0.2, ev.y, '#8a6a43', 0.5, 0.3, 0.8); ringFx(ev.x, ev.y, '#d9cfc0', 0.6, 0.3); }
+    else if (ev.t === 'pulse') { const m = flat(discGeo, '#7a4fd0', 0.75); m.position.set(ev.x, 0.07, ev.y); addFx({ k: 'blast', mesh: m, t: 0, d: 0.4, r: ev.r }); pop(ev.x, 0.5, ev.y, ev.n <= 1 ? '#f0d9ff' : '#b06adf', ev.r * (ev.n <= 1 ? 0.9 : 0.6), 0.3, 0.75); if (ev.n <= 1) shake = Math.max(shake, 0.15); }
+    else if (ev.t === 'ench') { pop(ev.x, ev.air ? 1.5 : 0.7, ev.y, '#c98bff', 0.9, 0.3, 0.9); ringFx(ev.x, ev.y, '#c98bff', 0.9, 0.3); }
+    else if (ev.t === 'rune') { beam([ev.fx, 2.2, ev.fy], [ev.x, 1.0, ev.y], '#c98bff', 0.07, 0.45); ringFx(ev.x, ev.y, '#c98bff', 1.1, 0.5); }
     else if (ev.t === 'ability') {
       if (ev.id === 'schleier') { pop(ev.x, 0.9, ev.y, '#c98bff', 1.3, 0.45, 0.7); ringFx(ev.x, ev.y, '#c98bff', 1.4, 0.4); }
       else if (ev.id === 'wurzelheer') { ringFx(ev.x, ev.y, '#7fd069', 2.4, 0.5); for (const h of ev.hits) { ringFx(h.x, h.y, '#9be564', 0.7, 0.4); pop(h.x, 0.3, h.y, '#6b4a2b', 0.5, 0.3, 0.7); } }
       else if (ev.id === 'sturmlauf') { let from = [ev.x, 0.8, ev.y]; for (const h of ev.hits) { const to = [h.x, h.air ? 1.5 : 0.8, h.y]; beam(from, to, '#ffffff', 0.1, 0.4); pop(to[0], to[1], to[2], '#dffaff', 0.7, 0.3); from = to; } shake = Math.max(shake, 0.1); }
+      else if (ev.id === 'seitenwechsel') { for (const h of ev.hits) { pop(h.x, 0.3, h.y, '#6b4f32', 1.0, 0.4, 0.85); ringFx(h.x, h.y, '#8a6a43', 1.2, 0.4); } pop(ev.x, 0.3, ev.y, '#6b4f32', 1.0, 0.4, 0.85); ringFx(ev.x, ev.y, GOLD, 1.3, 0.5); }
+      else if (ev.id === 'stillewacht') { ringFx(ev.x, ev.y, '#ffffff', 1.5, 0.6); ringFx(ev.x, ev.y, '#8fe0ff', 1.0, 0.45); pop(ev.x, 0.9, ev.y, '#dff3ff', 1.1, 0.45, 0.6); }
+      else if (ev.id === 'leibwache') { for (const h of ev.hits) { ringFx(h.x, h.y, GOLD, 1.6, 0.5); const m = new THREE.Mesh(beamGeo, flatMat(GOLD, 0.6)); m.rotation.x = PI / 2; m.position.set(h.x, 4, h.y); m.scale.set(0.7, 0.7, 8); addFx({ k: 'fade', meshes: [m], t: 0, d: 0.6, o: 0.6 }); } }
       else if (ev.id === 'schlachtruf') { ringFx(ev.x, ev.y, GOLD, ev.r, 0.6); ringFx(ev.x, ev.y, '#fff3c4', ev.r * 0.6, 0.45); for (const h of ev.hits) pop(h.x, 1.2, h.y, GOLD, 0.5, 0.35, 0.7); }
       else { for (const h of ev.hits) { beam([ev.x, 1.9, ev.y], [h.x, h.air ? 1.5 : 0.5, h.y], '#fff9b0', 0.07, 0.3); pop(h.x, h.air ? 1.5 : 0.5, h.y, '#fff27a', 0.7, 0.3); } shake = Math.max(shake, 0.12); }
     } else if (ev.t === 'cast') {
@@ -594,7 +728,11 @@ export function createRenderer3D(canvas, overlay) {
       for (const m of meshes) world.add(m);
       fx.push({ k: 'cast', meshes, spell: ev.spell, x: ev.x, y: ev.y, r: ev.r, t: 0, d: Math.max(0.05, ev.delay) });
     } else if (ev.t === 'spell') {
-      const col = { sternschlag: '#ffcf5a', hagelschauer: '#dff1ff', wurzelgriff: '#7fd069', heilquell: '#7dffa8', funkenschlag: '#fff27a', sumpfdunst: '#a6d94a', kriegstrommel: '#ffa53d', frostnacht: '#dff3ff', donnerkeil: '#fff27a', felssturz: '#ffb347', wichtwurf: '#c79a5e', wirbelwind: '#e6f7ff' }[ev.spell];
+      if (ev.spell === 'eiswurf') { pop(ev.x, 0.6, ev.y, '#dff3ff', ev.r * 0.8, 0.4, 0.7); ringFx(ev.x, ev.y, '#ffffff', ev.r, 0.4); shake = Math.max(shake, 0.15); }
+      if (ev.spell === 'wachkiste') { pop(ev.x, 0.5, ev.y, '#ffd27a', ev.r * 0.8, 0.4, 0.8); ringFx(ev.x, ev.y, '#ffffff', ev.r, 0.4); shake = Math.max(shake, 0.25); }
+      if (ev.spell === 'trugbild') { ringFx(ev.x, ev.y, '#8fe0ff', ev.r, 0.6); ringFx(ev.x, ev.y, '#ffffff', ev.r * 0.6, 0.45); }
+      if (ev.spell === 'bodengrollen') shake = Math.max(shake, 0.5);
+      const col = { hohlstamm: '#9a6634', trugbild: '#8fe0ff', bodengrollen: '#b08a5a', eiswurf: '#dff3ff', wurzelfluch: '#b06adf', geroellfeld: '#939aa5', wachkiste: '#c9a35e', sternenschlund: '#7a4fd0', sternschlag: '#ffcf5a', hagelschauer: '#dff1ff', wurzelgriff: '#7fd069', heilquell: '#7dffa8', funkenschlag: '#fff27a', sumpfdunst: '#a6d94a', kriegstrommel: '#ffa53d', frostnacht: '#dff3ff', donnerkeil: '#fff27a', felssturz: '#ffb347', wichtwurf: '#c79a5e', wirbelwind: '#e6f7ff' }[ev.spell];
       if (col) { const m = flat(discGeo, col, 0.7); m.position.set(ev.x, 0.07, ev.y); addFx({ k: 'blast', mesh: m, t: 0, d: 0.45, r: ev.r }); }
       if (ev.spell === 'felssturz') { shake = Math.max(shake, 0.4); pop(ev.x, 0.6, ev.y, '#ffd27a', ev.r * 1.1, 0.45, 0.85); ringFx(ev.x, ev.y, '#ffffff', ev.r * 1.5, 0.4); }
       if (ev.spell === 'frostnacht') { pop(ev.x, 0.6, ev.y, '#dff3ff', ev.r * 0.9, 0.5, 0.6); ringFx(ev.x, ev.y, '#ffffff', ev.r, 0.5); }
@@ -609,11 +747,18 @@ export function createRenderer3D(canvas, overlay) {
 
   function updateFx(dt, time) {
     for (const f of fx) {
-      f.t += dt;
+      f.t += dt * opt.fxRate;
       const p = Math.min(1, f.t / f.d);
       if (f.k === 'pop') { f.mesh.scale.setScalar(f.r * (0.3 + ease(p) * 0.7)); f.mesh.material.opacity = f.o * (1 - p); }
       else if (f.k === 'ring') { f.mesh.scale.setScalar(f.r * (0.3 + ease(p) * 0.7)); f.mesh.material.opacity = 1 - p; }
       else if (f.k === 'blast') { f.mesh.scale.setScalar(f.r * (0.6 + p * 0.4)); f.mesh.material.opacity = 0.7 * (1 - p); }
+      else if (f.k === 'debris') {
+        const m = f.mesh; f.vy -= 14 * dt;
+        m.position.x += f.vx * dt; m.position.z += f.vz * dt; m.position.y += f.vy * dt;
+        if (m.position.y < 0.1) { m.position.y = 0.1; f.vy = Math.abs(f.vy) * 0.35; f.vx *= 0.55; f.vz *= 0.55; }
+        m.rotation.x += dt * 7; m.rotation.z += dt * 5;
+        if (p > 0.8) m.scale.multiplyScalar(Math.max(0, 1 - dt * 6));
+      }
       else if (f.k === 'rise') { f.mesh.position.y = (f.y0 || 0.8) + p * 0.8; f.mesh.material.opacity = 1 - p; }
       else if (f.k === 'fade') { for (const m of f.meshes) m.material.opacity = (f.o || 1) * (1 - p); }
       else if (f.k === 'cast') {
@@ -645,8 +790,8 @@ export function createRenderer3D(canvas, overlay) {
   for (const m of [ghostDisc, ghostRing, rangeRing]) { m.visible = false; world.add(m); }
   const border = flat(new THREE.PlaneGeometry(W, 0.08), '#ffffff', 0.6); border.position.set(W / 2, 0.05, RIVER_BOT + 0.2); border.visible = false; world.add(border);
   const setRect = (m, x0, x1, z0, z1) => { m.visible = true; m.position.set((x0 + x1) / 2, 0.04, (z0 + z1) / 2); m.scale.set(x1 - x0, z1 - z0, 1); };
-  const ZONE_COLOR = { heilquell: '#58d68d', sumpfdunst: '#a6d94a', wirbelwind: '#d7f2ff' };
-  const FALL = { sternschlag: ['#ffe08a', 0.45], felssturz: ['#8d939c', 0.8], wichtwurf: ['#9a6634', 0.42] };
+  const ZONE_COLOR = { heilquell: '#58d68d', sumpfdunst: '#a6d94a', wirbelwind: '#d7f2ff', bodengrollen: '#b08a5a', wurzelfluch: '#9a2fff', geroellfeld: '#8d939c', sternenschlund: '#5a3aa0' };
+  const FALL = { sternschlag: ['#ffe08a', 0.45], felssturz: ['#8d939c', 0.8], wichtwurf: ['#9a6634', 0.42], eiswurf: ['#dff3ff', 0.5], wachkiste: ['#9a6634', 0.6] };
   const va = new THREE.Vector3(), vb = new THREE.Vector3();
   // Brennstrahl (Laternenfisch, Sonnenspiegel): steht, solange das Ziel getroffen wird, und wird sichtbar heißer
   function rampBeam(e, inst, g, time) {
@@ -684,6 +829,7 @@ export function createRenderer3D(canvas, overlay) {
       e._x = e.ox + (e.x - e.ox) * a; e._y = e.oy + (e.y - e.oy) * a;
       const moving = e.kind === 'unit' && !e.inRange && e.deployT <= 0 && e.rootT <= 0 && !(e.stunT > 0);
       let inst = insts.get(e.id);
+      if (inst && (inst.model !== (e.model || e.type) || !!inst.sprite !== isFlat(e))) { dropInst(e.id, false); inst = null; } // verwandelt
       if (!inst) { inst = isFlat(e) ? makeSprite(e) : makeInst(e); insts.set(e.id, inst); }
       if (inst.sprite) animateSprite(e, inst, time, dt, g, moving); else animate(e, inst, time, dt, g, moving);
       if (e.d.ramp) rampBeam(e, inst, g, time);
@@ -697,9 +843,10 @@ export function createRenderer3D(canvas, overlay) {
       if (!m) { m = makeProj(p); projs.set(p, m); }
       const x = p.ox + (p.x - p.ox) * a, z = p.oy + (p.y - p.oy) * a;
       if (p.line) {
-        const yy = m.geometry === boltGeo ? 0.9 : 0.45;
+        const yy = m.userData.spin || m.userData.fan ? 0.95 : m.geometry === boltGeo ? 0.9 : 0.45;
         m.position.set(x, yy, z);
-        if (m.geometry === boltGeo) m.lookAt(x + p.vx, yy, z + p.vy); else m.rotation.x += dt * 10 * (p.vy < 0 ? -1 : 1);
+        if (m.userData.spin) m.rotation.y += dt * 22;
+        else if (m.geometry === boltGeo || m.userData.fan) m.lookAt(x + p.vx, yy, z + p.vy); else m.rotation.x += dt * 10 * (p.vy < 0 ? -1 : 1);
         continue;
       }
       const left = Math.hypot(p.tx - x, p.ty - z), u = Math.min(1, left / m.userData.d0);
@@ -717,16 +864,21 @@ export function createRenderer3D(canvas, overlay) {
       if (!m) { m = flat(discGeo, ZONE_COLOR[z.spell], 0.25); m.position.set(z.x, 0.05, z.y); m.scale.setScalar(z.r); world.add(m); zones.set(z, m); }
       m.material.opacity = 0.24 + 0.08 * Math.sin(time * 6);
       if (z.spell === 'wirbelwind' && Math.random() < dt * 40) { const q = time * 6 + Math.random() * PI * 2, r = (0.2 + Math.random() * 0.8) * z.r; pop(z.x + Math.cos(q) * r, 0.3 + Math.random() * 1.6, z.y + Math.sin(q) * r, '#ffffff', 0.22, 0.35, 0.6); }
+      if (z.spell === 'bodengrollen' && Math.random() < dt * 22) { const q = Math.random() * PI * 2, r = Math.sqrt(Math.random()) * z.r; pop(z.x + Math.cos(q) * r, 0.15, z.y + Math.sin(q) * r, '#d9c8a8', 0.35, 0.3, 0.7); shake = Math.max(shake, 0.08); }
+      if (z.spell === 'wurzelfluch' && Math.random() < dt * 12) { const q = Math.random() * PI * 2, r = Math.sqrt(Math.random()) * z.r; pop(z.x + Math.cos(q) * r, 0.3 + Math.random() * 0.8, z.y + Math.sin(q) * r, '#c98bff', 0.22, 0.5, 0.6); }
+      if (z.spell === 'sternenschlund' && Math.random() < dt * 16) { const q = time * 5 + Math.random() * PI * 2, r = (0.3 + Math.random() * 0.7) * z.r; pop(z.x + Math.cos(q) * r, 0.2, z.y + Math.sin(q) * r, '#b06adf', 0.2, 0.35, 0.7); }
       if (z.spell === 'sumpfdunst' && Math.random() < dt * 14) { const q = Math.random() * PI * 2, r = Math.sqrt(Math.random()) * z.r; pop(z.x + Math.cos(q) * r, 0.3, z.y + Math.sin(q) * r, '#c5ee6a', 0.3, 0.5, 0.5); }
     }
     for (const [z, m] of zones) if (!seen.has(z)) { world.remove(m); m.material.dispose(); zones.delete(z); }
     updateFx(dt, time);
-    if (ground.userData.water) ground.userData.water.material.opacity = 0.12 + 0.06 * Math.sin(time * 1.5);
+    updateScenery(dt, time);
+    if (ground.userData.water) ground.userData.water.material.opacity = theme.water[1] * (0.8 + 0.3 * Math.sin(time * 1.5));
     runeAura.opacity = 0.45 + 0.2 * Math.sin(time * 5); heroAura.opacity = 0.4 + 0.15 * Math.sin(time * 4);
 
     // Auswahl
     const sel = ui && ui.sel != null ? g.sides[0].hand[ui.sel] : null;
-    const troop = sel && CARDS[sel].type !== 'spell' && !CARDS[sel].anywhere;
+    const selCard = sel ? (CARDS[sel].mirror && g.sides[0].last ? CARDS[g.sides[0].last] : CARDS[sel]) : null; // Widerhall zeigt die Karte, die er wiederholt
+    const troop = sel && (selCard.ownSide || (selCard.type !== 'spell' && !selCard.anywhere));
     for (const m of lock) m.visible = false;
     border.visible = !!troop;
     if (troop) for (const lane of [0, 1]) {
@@ -738,13 +890,13 @@ export function createRenderer3D(canvas, overlay) {
     const showGhost = !!(sel && ui.ghost);
     ghostDisc.visible = ghostRing.visible = showGhost; rangeRing.visible = false;
     if (showGhost) {
-      const card = CARDS[sel], p = clampDeploy(g, 0, sel, ui.ghost.x, ui.ghost.y);
-      const r = card.type === 'spell' ? card.radius : Math.max(0.9, UNITS[card.unit].r * (card.count > 4 ? 6 : card.count > 1 ? 2.4 : 1.4));
-      const ok = g.sides[0].kraft >= card.cost;
+      const card = selCard, p = clampDeploy(g, 0, sel, ui.ghost.x, ui.ghost.y);
+      const r = card.type === 'spell' ? Math.max(0.9, card.roll ? card.roll.w / 2 : card.radius) : Math.max(0.9, UNITS[card.unit].r * (card.count > 4 ? 6 : card.count > 1 ? 2.4 : 1.4));
+      const ok = g.sides[0].kraft >= cardCost(g, 0, sel);
       ghostDisc.material.color.set(ok ? TEAM[0].main : '#cc3333'); ghostRing.material.color.set(ok ? '#ffffff' : '#ffb3b3');
       ghostDisc.position.set(p.x, 0.08, p.y); ghostRing.position.set(p.x, 0.09, p.y); ghostDisc.scale.setScalar(r); ghostRing.scale.setScalar(r);
       if (card.type !== 'spell' && UNITS[card.unit].range >= 2) { const u = UNITS[card.unit]; rangeRing.visible = true; rangeRing.position.set(p.x, 0.07, p.y); rangeRing.scale.setScalar(u.range + u.r); }
-      label = { text: card.name, x: p.x, z: p.y - r - 0.2 };
+      label = { text: CARDS[sel].mirror ? `Widerhall: ${card.name}` : card.name, x: p.x, z: p.y - r - 0.2 };
     }
 
     if (shake > 0 && !opt.shake) shake = 0;
@@ -757,13 +909,17 @@ export function createRenderer3D(canvas, overlay) {
     o2.textAlign = 'center'; o2.textBaseline = 'middle'; o2.lineJoin = 'round';
     for (const e of g.ents) {
       const tower = e.kind === 'tower';
-      if (!tower && !e.hero && e.hp >= e.maxHp && !e.maxShield) continue;
+      const bar = tower || e.hero || e.hp < e.maxHp || e.maxShield;
+      if (!bar && !e.blessed && !e.ench) continue;
       const inst = insts.get(e.id); if (!inst) continue;
       const top = inst.def.h * inst.scale + (e.air ? FLY[inst.model] || 1.5 : 0) + 0.15;
       const [sx, sy] = project(e._x, top, e._y), [sx2] = project(e._x + 1, top, e._y);
       const ppt = sx2 - sx; // Pixel je Feld in dieser Tiefe
       const w = (tower ? 1.9 : e.hero ? 1.5 : Math.max(0.8, e.r * 2.2)) * ppt, h = Math.max(4, (tower ? 0.34 : e.hero ? 0.22 : 0.17) * ppt);
       const y = Math.max(2, sy - h);
+      if (e.blessed) { o2.fillStyle = GOLD; o2.strokeStyle = 'rgba(15,20,26,.9)'; o2.lineWidth = 1.5; const q = Math.max(3.5, ppt * 0.16), my = y - q - 2; o2.beginPath(); o2.moveTo(sx, my - q); o2.lineTo(sx + q, my); o2.lineTo(sx, my + q); o2.lineTo(sx - q, my); o2.closePath(); o2.fill(); o2.stroke(); }
+      if (e.ench) { o2.fillStyle = RUNE_COLOR; o2.strokeStyle = 'rgba(15,20,26,.9)'; o2.lineWidth = 1.5; const q = Math.max(3, ppt * 0.13), mx = sx + (e.blessed ? q * 2.6 : 0), my = y - q - 2; o2.beginPath(); o2.moveTo(mx, my - q); o2.lineTo(mx + q, my); o2.lineTo(mx, my + q); o2.lineTo(mx - q, my); o2.closePath(); o2.fill(); o2.stroke(); }
+      if (!bar) continue;
       o2.fillStyle = e.hero ? GOLD : e.rune ? RUNE_COLOR : 'rgba(15,20,26,.9)'; o2.fillRect(sx - w / 2 - 1.5, y - 1.5, w + 3, h + 3);
       o2.fillStyle = 'rgba(15,20,26,.9)'; o2.fillRect(sx - w / 2, y, w, h);
       o2.fillStyle = TEAM[e.side].main; o2.fillRect(sx - w / 2, y, Math.max(1, w * e.hp / e.maxHp), h);
@@ -772,6 +928,9 @@ export function createRenderer3D(canvas, overlay) {
         o2.font = `800 ${Math.max(10, Math.round(ppt * 0.5))}px -apple-system, system-ui, "Segoe UI", sans-serif`;
         o2.lineWidth = 3; o2.strokeStyle = 'rgba(15,20,26,.9)'; o2.strokeText(String(Math.ceil(e.hp)), sx, y + h / 2 + 0.5);
         o2.fillStyle = '#fff'; o2.fillText(String(Math.ceil(e.hp)), sx, y + h / 2 + 0.5);
+        const bw = h * 1.25, bx = sx - w / 2 - bw - 4; // Turmstufe links neben dem Balken
+        o2.fillStyle = 'rgba(15,20,26,.9)'; o2.fillRect(bx - 1.5, y - 1.5, bw + 3, h + 3); o2.fillStyle = TEAM[e.side].dark; o2.fillRect(bx, y, bw, h);
+        o2.fillStyle = '#fff'; o2.fillText(String(e.lvl), bx + bw / 2, y + h / 2 + 0.5);
         if (e.main && !e.active) { o2.strokeText('z z', sx + w * 0.75, y + h / 2 + Math.sin(time * 2) * 2); o2.fillText('z z', sx + w * 0.75, y + h / 2 + Math.sin(time * 2) * 2); }
       }
     }
@@ -792,13 +951,17 @@ export function createRenderer3D(canvas, overlay) {
     const card = CARDS[id];
     if (card.type === 'spell') return null;
     const u = UNITS[card.unit], model = u.model || card.unit, def = getDef(model, 0);
-    const holder = new THREE.Group(), cel = !u.hero && !u.building, stage = cel ? celScene : snapScene;
+    const solid = u.building || u.tower;
+    const holder = new THREE.Group(), cel = !u.hero && !solid, stage = cel ? celScene : snapScene;
     const n = Math.min(card.count, 5);
+    const mixed = card.mix ? card.mix.flatMap(([m, k]) => Array(Math.min(k, card.mix.length > 1 && card.count > 5 ? 2 : k)).fill(m)) : null; // vorn die Ersten der Liste
+    const order = n === 3 ? [1, 2, 0] : n === 4 ? [2, 3, 0, 1] : n === 5 ? [3, 4, 0, 1, 2] : [0, 1];
     const spots = n === 1 ? [[0, 0]] : n === 2 ? [[-0.5, 0], [0.5, 0.15]] : n === 3 ? [[0, -0.4], [-0.55, 0.3], [0.55, 0.35]] : n === 4 ? [[-0.45, -0.35], [0.45, -0.3], [-0.5, 0.4], [0.45, 0.45]] : [[-0.7, -0.4], [0, -0.5], [0.7, -0.35], [-0.4, 0.4], [0.4, 0.45]];
-    const sc = u.building ? 1 : USCALE, tall = def.h * def.s * sc;
+    const sc = solid ? 1 : USCALE, tall = def.h * def.s * sc;
     const gap = Math.max(0.75, u.r * 2.3) * sc;
     spots.forEach(([x, z], i) => {
-      const fake = { type: card.unit, model, side: 0, id: i + 1, kind: u.building ? 'building' : 'unit', x: x * gap, y: z * gap, _x: x * gap, _y: z * gap, r: u.r, hp: 1, anim: 0, cd: 0, inRange: false, deployT: 0, rootT: 0, active: true, vx: 0, vy: 0, targetId: 0, air: !!u.air };
+      const mu = mixed ? mixed[order.indexOf(i)] || mixed[mixed.length - 1] : card.unit, model = UNITS[mu].model || mu;
+      const fake = { type: mu, model, side: 0, id: i + 1, kind: u.tower ? 'tower' : u.building ? 'building' : 'unit', x: x * gap, y: z * gap, _x: x * gap, _y: z * gap, r: u.r, hp: 1, anim: 0, cd: 0, inRange: false, deployT: 0, rootT: 0, active: true, vx: 0, vy: 0, targetId: 0, air: !!u.air, d: UNITS[mu] };
       const inst = makeInst(fake, true, cel ? 'card' : false); holder.add(inst.group);
       inst.yaw = 0.5; inst.age = 1;
       animate(fake, inst, 0.3 + i * 0.4, 0, { byId: new Map() }, false);
@@ -822,8 +985,12 @@ export function createRenderer3D(canvas, overlay) {
   function setOptions(o) {
     opt.maxDpr = o.quality === 'niedrig' ? 1.5 : o.quality === 'mittel' ? 2 : 3;
     opt.shadows = o.quality !== 'niedrig'; opt.shake = o.shake !== false;
+    if (o.fxRate != null) opt.fxRate = o.fxRate; // Zeitlupe der Effekte – nur für die Foto-Werkzeuge
     sun.castShadow = opt.shadows;
   }
 
-  return { resize, reset, onEvent, draw, toField, snapshot, prepare, setOptions, sheet: (m, side) => getSheet(m, side).tex.image, three: true, info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }) };
+  // Ort eines Feldpunkts auf dem Bildschirm (für Einblendungen über der Spielfläche)
+  function toScreen(x, z, y = 1) { const [sx, sy] = project(x, y, z), r = canvas.getBoundingClientRect(); return { x: r.left + sx * r.width / width, y: r.top + sy * r.height / height }; }
+
+  return { resize, reset, onEvent, draw, toField, toScreen, snapshot, prepare, setOptions, sheet: (m, side) => getSheet(m, side).tex.image, three: true, info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }) };
 }

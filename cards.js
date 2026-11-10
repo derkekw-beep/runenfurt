@@ -7,24 +7,24 @@ const SLOW = 0.75, MEDIUM = 1.0, FAST = 1.5, VERY_FAST = 2.0; // Tempo-Klassen
 const SHORT = 0.6, REACH = 1.0;                                // Nahkampf-Reichweiten
 
 export const UNITS = {
-  raufbold:        { hp: 860,  dmg: 115, atk: 1.0, range: SHORT, speed: FAST, r: 0.42 },
+  raufbold:        { hp: 860,  dmg: 126, atk: 1.0, range: SHORT, speed: FAST, r: 0.42 },
   waldlaeufer:     { hp: 300,  dmg: 108, atk: 0.9, range: 5.0, speed: MEDIUM, r: 0.36, hitsAir: true, proj: 11 },
   steinhueter:     { hp: 3900, dmg: 250, atk: 1.5, range: REACH, speed: SLOW, r: 0.78, targets: 'buildings' },
   wicht:           { hp: 195,  dmg: 115, atk: 1.1, range: SHORT, speed: VERY_FAST, r: 0.28 },
   kraehe:          { hp: 225,  dmg: 105, atk: 1.1, range: REACH, speed: FAST, r: 0.3, air: true, hitsAir: true },
   rochen:          { hp: 1150, dmg: 165, atk: 1.5, range: 3.5, speed: FAST, r: 0.6, air: true, hitsAir: true, proj: 8, splash: 1.2 },
-  funkenweberin:   { hp: 740,  dmg: 295, atk: 1.4, range: 5.5, speed: MEDIUM, r: 0.38, hitsAir: true, proj: 9, splash: 1.5 },
+  funkenweberin:   { hp: 740,  dmg: 280, atk: 1.4, range: 5.5, speed: MEDIUM, r: 0.38, hitsAir: true, proj: 9, splash: 1.5 },
   torknacker:      { hp: 1650, dmg: 310, atk: 1.6, range: SHORT, speed: VERY_FAST, r: 0.5, targets: 'buildings' },
   eisenwaechter:   { hp: 1750, dmg: 200, atk: 1.2, range: REACH, speed: MEDIUM, r: 0.48 },
   hammerschmied:   { hp: 1380, dmg: 740, atk: 1.6, range: SHORT, speed: FAST, r: 0.5 },
   glutling:        { hp: 215,  dmg: 210, atk: 1.0, range: 2.0, speed: VERY_FAST, r: 0.26, hitsAir: true, splash: 1.5, kamikaze: true },
   klingentaenzerin:{ hp: 1850, dmg: 260, atk: 1.5, range: REACH, speed: MEDIUM, r: 0.46, spin: 1.7 },
-  bolzenschuetzin: { hp: 720,  dmg: 195, atk: 1.0, range: 6.0, speed: MEDIUM, r: 0.38, hitsAir: true, proj: 14 },
+  bolzenschuetzin: { hp: 720,  dmg: 186, atk: 1.0, range: 6.0, speed: MEDIUM, r: 0.38, hitsAir: true, proj: 14 },
   donnerkaefer:    { hp: 1650, dmg: 630, atk: 2.0, range: SHORT, speed: MEDIUM, r: 0.62, air: true, targets: 'buildings', deathDmg: { dmg: 240, r: 2.0 } },
   frostschamane:   { hp: 690,  dmg: 90,  atk: 1.7, range: 5.5, speed: MEDIUM, r: 0.38, hitsAir: true, proj: 9, splash: 1.2, slow: 2.5 },
   kiesel:          { hp: 85,   dmg: 85,  atk: 1.1, range: SHORT, speed: FAST, r: 0.2 },
   erzritter:       { hp: 3700, dmg: 820, atk: 1.8, range: REACH, speed: SLOW, r: 0.66 },
-  wurzelmutter:    { hp: 840,  dmg: 135, atk: 1.1, range: 5.5, speed: MEDIUM, r: 0.42, hitsAir: true, proj: 9, splash: 1.0, spawn: { unit: 'wicht', every: 8, count: 2, first: 1 } },
+  wurzelmutter:    { hp: 780,  dmg: 125, atk: 1.1, range: 5.5, speed: MEDIUM, r: 0.42, hitsAir: true, proj: 9, splash: 1.0, spawn: { unit: 'wicht', every: 10, count: 2, first: 1 } },
   hornbulle:       { hp: 1900, dmg: 390, atk: 1.4, range: REACH, speed: MEDIUM, r: 0.6, charge: { after: 2.5, speed: 2, dmg: 2 } },
   steinling:       { hp: 1040, dmg: 85,  atk: 2.5, range: SHORT, speed: SLOW, r: 0.5, targets: 'buildings' },
   // --- Erweiterung: weitere Truppen ---
@@ -33,9 +33,9 @@ export const UNITS = {
   schildknappe:    { hp: 90,   shield: 250, dmg: 115, atk: 1.0, range: REACH, speed: FAST, r: 0.34 },
   brockenwerfer:   { hp: 3100, dmg: 300, atk: 1.7, range: 5.0, speed: SLOW, r: 0.72, targets: 'buildings', proj: 8 },
   gewitterkarren:  { hp: 1450, dmg: 1300, atk: 4.0, load: 3, range: 5.0, speed: SLOW, r: 0.62, proj: 10, splash: 1.8, resetOnStun: true },
-  kegler:          { hp: 2080, dmg: 290, atk: 2.5, range: 4.0, speed: SLOW, r: 0.62, proj: 4.5, line: { len: 7.5, w: 1.8 }, knock: 1.0 },
+  kegler:          { hp: 1780, dmg: 235, atk: 2.5, range: 4.0, speed: SLOW, r: 0.62, proj: 4.5, line: { len: 7.5, w: 1.8 }, knock: 1.0 },
   sternschuetzin:  { hp: 532,  dmg: 120, atk: 1.1, range: 7.0, speed: MEDIUM, r: 0.36, hitsAir: true, proj: 16, line: { len: 11, w: 0.5 } },
-  wuehler:         { hp: 1210, dmg: 190, atk: 1.2, range: SHORT, speed: FAST, r: 0.42, towerDmg: 0.25 },
+  wuehler:         { hp: 1300, dmg: 205, atk: 1.2, range: SHORT, speed: FAST, r: 0.42, towerDmg: 0.25 },
   blitzfaenger:    { hp: 710,  dmg: 110, atk: 1.8, range: 5.0, speed: MEDIUM, r: 0.38, hitsAir: true, proj: 20, multi: 2, stunHit: 0.5 },
   trommelschlaeger:{ hp: 1280, dmg: 256, atk: 0.8, range: SHORT, speed: VERY_FAST, r: 0.44, deathZone: 'kriegstrommel' },
   eisbrocken:      { hp: 1195, dmg: 84,  atk: 2.5, range: SHORT, speed: SLOW, r: 0.5, targets: 'buildings', deathDmg: { dmg: 84, r: 2.0, slow: 2.0 } },
@@ -57,8 +57,73 @@ export const UNITS = {
   sonnenspiegel:   { building: true, hp: 1740, life: 30, dmg: 43, atk: 0.4, range: 6.0, r: 0.8, hitsAir: true, ramp: [[2, 4.3], [4, 20]] },
   kesselturm:      { building: true, hp: 1356, life: 30, dmg: 245, atk: 1.8, range: 6.0, r: 0.8, proj: 8, splash: 1.5, deathDmg: { dmg: 222, r: 2.5 } },
   fernschleuder:   { building: true, hp: 1470, life: 30, dmg: 266, atk: 5.0, load: 2, range: 11.5, minRange: 3.5, r: 0.8, proj: 5, splash: 2.0 },
-  glutofen:        { building: true, hp: 1003, life: 28, r: 0.8, spawn: { unit: 'glutling', every: 7, count: 1, first: 1 } },
+  glutofen:        { building: true, hp: 1100, life: 28, r: 0.8, spawn: { unit: 'glutling', every: 3.6, count: 1, first: 1 } },
   kraftquell:      { building: true, hp: 1070, life: 70, r: 0.8, kraft: { every: 8.5 } },
+  // --- Zweite Erweiterung: die übrigen Rollen des Genres, jede mit eigener Figur ---
+  raeuber:         { hp: 716,  dmg: 192, atk: 1.4, range: SHORT, speed: MEDIUM, r: 0.4 },
+  sturmbruder:     { hp: 1341, dmg: 384, atk: 1.4, range: SHORT, speed: VERY_FAST, r: 0.44 },
+  // schwebt zum Gebäude und platzt dort; die Fracht fällt auch heraus, wenn er vorher abgeschossen wird
+  flugsamen:       { hp: 600,  dmg: 145, atk: 1.0, range: SHORT, speed: MEDIUM, r: 0.55, air: true, targets: 'buildings', splash: 1.5, kamikaze: true, deathDmg: { dmg: 145, r: 1.5 }, deathSpawn: { unit: 'kiesel', count: 7 } },
+  frostling:       { hp: 215,  dmg: 120, atk: 1.0, range: 2.0, speed: VERY_FAST, r: 0.26, hitsAir: true, splash: 1.5, kamikaze: true, stunArea: 1.3, ice: true },
+  funkling:        { hp: 215,  dmg: 99,  atk: 1.0, range: 2.0, speed: VERY_FAST, r: 0.26, hitsAir: true, kamikaze: true, chain: { n: 9, r: 3.0 }, stunHit: 0.5 },
+  tauling:         { hp: 215,  dmg: 110, atk: 1.0, range: 2.0, speed: VERY_FAST, r: 0.26, hitsAir: true, splash: 1.5, kamikaze: true, healBurst: { amt: 330, r: 2.5 } },
+  speerwache:      { hp: 547,  shield: 240, dmg: 133, atk: 1.3, range: 1.6, speed: MEDIUM, r: 0.38 },
+  muellerbursche:  { hp: 1450, dmg: 180, atk: 1.5, range: SHORT, speed: MEDIUM, r: 0.5 },
+  steinwerferin:   { hp: 261,  dmg: 115, atk: 1.2, range: 5.0, speed: MEDIUM, r: 0.32, hitsAir: true, proj: 12 },
+  // die Knallschote zerspringt am Ziel und streut ihre Kerne in einer Bahn dahinter; der Rückstoß wirft ihn zurück
+  knallfrosch:     { hp: 304,  dmg: 160, atk: 3.0, range: 6.0, speed: FAST, r: 0.36, hitsAir: true, proj: 10, burst: { len: 5, w: 2.4 }, recoil: 1.5 },
+  jungrochen:      { hp: 500,  dmg: 142, atk: 2.0, range: 3.5, speed: FAST, r: 0.42, air: true, hitsAir: true, proj: 8, splash: 1.0 },
+  wueterich:       { hp: 896,  dmg: 102, atk: 0.6, range: SHORT, speed: FAST, r: 0.4 },
+  // wirft Pulverbeutel; bei halbem Leben zündet er die Lunte und rennt selbst los
+  pulverwicht:     { hp: 1200, dmg: 186, atk: 1.2, range: 5.0, speed: MEDIUM, r: 0.4, proj: 9, splash: 1.5, morph: { at: 0.5, unit: 'pulverwicht_k' } },
+  pulverwicht_k:   { hp: 600, dmg: 404, atk: 1.0, range: SHORT, speed: VERY_FAST, r: 0.4, targets: 'buildings', splash: 2.5, kamikaze: true, life: 10, deathDmg: { dmg: 404, r: 2.5 } },
+  stammlaeufer:    { hp: 967,  dmg: 286, atk: 1.0, range: SHORT, speed: MEDIUM, r: 0.6, targets: 'buildings', kamikaze: true, charge: { after: 2.0, speed: 2, dmg: 2 }, deathSpawn: { unit: 'raeuber', count: 2 } },
+  segelwicht:      { hp: 614,  dmg: 171, atk: 1.1, range: 6.0, speed: FAST, r: 0.4, air: true, hitsAir: true, proj: 14 },
+  keiler:          { hp: 837,  dmg: 74,  atk: 1.2, range: SHORT, speed: VERY_FAST, r: 0.4, targets: 'buildings', ford: true },
+  zitterling:      { hp: 529,  dmg: 117, atk: 2.2, range: 4.5, speed: MEDIUM, r: 0.34, hitsAir: true, proj: 18, stunHit: 0.5 },
+  // zerfällt zweimal; jedes Stück, das fällt, schenkt dem Gegner Kraft
+  kraftkloss:      { hp: 1569, dmg: 253, atk: 1.1, range: SHORT, speed: SLOW, r: 0.6, targets: 'buildings', bounty: 1, deathSpawn: { unit: 'kraftkloss_m', count: 2 } },
+  kraftkloss_m:    { hp: 762,  dmg: 128, atk: 1.1, range: SHORT, speed: MEDIUM, r: 0.42, targets: 'buildings', bounty: 0.5, deathSpawn: { unit: 'kraftkloss_k', count: 2 } },
+  kraftkloss_k:    { hp: 360,  dmg: 64,  atk: 1.1, range: SHORT, speed: FAST, r: 0.3, targets: 'buildings', bounty: 0.5 },
+  distelritter:    { hp: 1150, shield: 256, dmg: 245, atk: 1.3, range: REACH, speed: MEDIUM, r: 0.5, splash: 1.1, charge: { after: 2.5, speed: 2, dmg: 2 } },
+  sichelwerfer:    { hp: 1200, dmg: 130, atk: 2.4, range: 4.5, speed: MEDIUM, r: 0.48, hitsAir: true, proj: 9, line: { len: 6.5, w: 1.7, back: true } },
+  // bei halbem Leben bricht die Achse: der Wagen bleibt als Gebäude stehen und schießt weiter
+  armbrustwagen:   { hp: 1500, dmg: 212, atk: 0.9, range: 5.5, speed: FAST, r: 0.55, proj: 14, morph: { at: 0.5, unit: 'armbrustwagen_w' } },
+  armbrustwagen_w: { building: true, hp: 905, life: 12, dmg: 212, atk: 0.9, range: 5.5, r: 0.6, proj: 14 },
+  gewitterrochen:  { hp: 1049, dmg: 192, atk: 2.3, range: 3.5, speed: MEDIUM, r: 0.6, air: true, hitsAir: true, chain: { n: 3, r: 4.0 }, stunHit: 0.5 },
+  // zehn Splitter im Fächer: aus der Nähe treffen fast alle, auf Abstand nur wenige
+  splitterjaeger:  { hp: 885,  dmg: 84,  atk: 2.2, range: 4.0, speed: MEDIUM, r: 0.42, hitsAir: true, scatter: { n: 10, cone: 0.7, reach: 6.5 } },
+  astriese:        { hp: 3022, dmg: 176, atk: 1.5, range: REACH, speed: MEDIUM, r: 0.75, targets: 'buildings', deathSpawn: { unit: 'dornwerfer', count: 2 },
+                     second: { dmg: 80, atk: 1.7, range: 5.0, hitsAir: true, count: 2, proj: 11, from: 'dornwerfer' } },
+  dornenkoloss:    { hp: 3952, dmg: 163, atk: 2.1, range: REACH, speed: SLOW, r: 0.8, targets: 'buildings', reflect: { dmg: 192, r: 3.0, stun: 0.5, towerF: 0.5 } },
+  aschenschwinge:  { hp: 3581, dmg: 53,  atk: 1.3, range: 3.5, speed: SLOW, r: 0.8, air: true, targets: 'buildings', proj: 9, deathSpawn: { unit: 'aschenfunke', count: 6 } },
+  aschenfunke:     { hp: 217,  dmg: 81,  atk: 1.7, range: 2.0, speed: MEDIUM, r: 0.26, air: true, hitsAir: true, proj: 10 },
+  wegelagerin:     { hp: 906,  dmg: 194, atk: 1.0, range: SHORT, speed: FAST, r: 0.4, leap: { min: 3.5, max: 6, speed: 3.5, dmg: 2 }, dashGuard: true },
+  falterhueterin:  { hp: 906,  dmg: 314, atk: 1.3, range: REACH, speed: MEDIUM, r: 0.42, spawn: { unit: 'nachtfalter', every: 5, count: 2, first: 1.5 }, deathSpawn: { unit: 'nachtfalter', count: 2 } },
+  rankenreiterin:  { hp: 1766, dmg: 250, atk: 1.8, range: REACH, speed: MEDIUM, r: 0.55, targets: 'buildings', charge: { after: 2.5, speed: 2, dmg: 2 },
+                     second: { dmg: 104, atk: 1.1, range: 5.5, hitsAir: true, root: 2, units: true, proj: 12, from: 'ranke' } },
+  seilwerfer:      { hp: 870,  dmg: 194, atk: 1.3, range: REACH, speed: MEDIUM, r: 0.44, hook: { min: 3.5, max: 7, wind: 1.1, cd: 2.5 } },
+  fluchweberin:    { hp: 529,  dmg: 133, atk: 1.0, range: 5.5, speed: MEDIUM, r: 0.36, hitsAir: true, proj: 11, curse: { dur: 5, unit: 'irrwisch' } },
+  irrwisch:        { hp: 629,  dmg: 53,  atk: 1.2, range: SHORT, speed: VERY_FAST, r: 0.34, targets: 'buildings' },
+  glutfalke:       { hp: 1052, dmg: 217, atk: 1.0, range: 1.6, speed: FAST, r: 0.5, air: true, hitsAir: true, deathDmg: { dmg: 163, r: 2.5 }, deathSpawn: { unit: 'glutei', count: 1 } },
+  glutei:          { hp: 240,  r: 0.4, hatch: { unit: 'glutfalke', after: 4.3 } },
+  stelzenkessel:   { hp: 2150, dmg: 212, atk: 1.2, range: REACH, speed: MEDIUM, r: 0.62,
+                     second: { dmg: 304, atk: 3.5, range: 5.0, minRange: 2.5, splash: 1.5, hitsAir: true, proj: 7, from: 'glutbrocken' } },
+  runenhuene:      { hp: 2662, dmg: 120, atk: 1.5, range: REACH, speed: MEDIUM, r: 0.7, targets: 'buildings', enchant: { count: 2, r: 5, bonus: 220, every: 3 } },
+  wanderbusch:     { hp: 81,   dmg: 60,  atk: 1.0, range: SHORT, speed: MEDIUM, r: 0.36, targets: 'buildings', stealth: 1, kamikaze: true, deathSpawn: { unit: 'buschwicht', count: 2 } },
+  buschwicht:      { hp: 304,  dmg: 256, atk: 1.4, range: SHORT, speed: VERY_FAST, r: 0.28 },
+  zwingerwolf:     { hp: 1080, dmg: 337, atk: 1.1, range: SHORT, speed: FAST, r: 0.44 },
+  leibwaechterin:  { hp: 1300, dmg: 217, atk: 1.2, range: REACH, speed: MEDIUM, r: 0.5, deployDmg: { dmg: 217, r: 2.0, knock: 1.5 } },
+  stollenmeister:  { hp: 2250, dmg: 40,  atk: 0.4, range: REACH, speed: MEDIUM, r: 0.5, ramp: [[2, 5.1], [4, 10.2]], rampMelee: true, hero: true },
+  flussmoench:     { hp: 2000, dmg: 130, atk: 0.8, range: REACH, speed: MEDIUM, r: 0.5, combo: { every: 3, f: 3, knock: 1.5 }, hero: true },
+  jungfuerst:      { hp: 620,  dmg: 104, atk: 1.2, range: 5.5, speed: MEDIUM, r: 0.36, hitsAir: true, proj: 14, frenzy: { max: 4, f: 0.78, reset: true }, hero: true },
+  raeuberlager:    { building: true, hp: 1164, life: 30, r: 0.85, spawn: { unit: 'raeuber', every: 12, count: 2, first: 1 }, deathSpawn: { unit: 'raeuber', count: 1 } },
+  kieselhaufen:    { building: true, hp: 650,  life: 30, r: 0.7, spawn: { unit: 'kiesel', every: 2.5, count: 1, first: 1 }, deathSpawn: { unit: 'kiesel', count: 5 } },
+  wolfszwinger:    { building: true, hp: 780,  life: 20, r: 0.75, deathSpawn: { unit: 'zwingerwolf', count: 1 } },
+  maulwurfshuegel: { building: true, hp: 1313, life: 12, r: 0.75, deployDmg: { dmg: 110, r: 2.0 }, spawn: { unit: 'wicht', every: 2.2, count: 1, first: 1 }, deathSpawn: { unit: 'wicht', count: 2 } },
+  // vergräbt sich, solange kein Ziel da ist – dann ist er weder angreifbar noch von Zaubern zu treffen
+  funkenpfahl:     { building: true, hp: 1250, life: 30, dmg: 255, atk: 1.0, range: 5.5, r: 0.7, hitsAir: true, proj: 22, burrow: true },
+  kurbelbogen:     { building: true, hp: 1600, life: 30, dmg: 46, atk: 0.3, load: 3.5, range: 11.5, r: 0.8, proj: 18 },
   // Helden: eine auslösbare Fähigkeit, nur einmal gleichzeitig auf dem Feld
   marschall:       { hp: 1980, dmg: 178, atk: 0.9, range: REACH, speed: MEDIUM, r: 0.52, hero: true },
   sturmrufer:      { hp: 1000, dmg: 230, atk: 1.2, range: 5.0, speed: MEDIUM, r: 0.42, hitsAir: true, proj: 12, hero: true },
@@ -67,6 +132,11 @@ export const UNITS = {
   steinschleuder:  { building: true, hp: 830,  life: 30, dmg: 230, atk: 1.0, range: 5.5, r: 0.75, proj: 10 },
   erdloch:         { building: true, hp: 1300, life: 30, r: 0.8, spawn: { unit: 'wicht', every: 2.7, count: 1, first: 1 } },
   aussenturm:      { tower: true, hp: 3052, dmg: 109, atk: 0.8, range: 7.5, r: 1.0, hitsAir: true, proj: 14 },
+  // Weitere Turmarten für die Außentürme (Werte in der Größenordnung der üblichen Turmbesatzungen des Genres):
+  // schwere Einzelschüsse · acht gehortete Klingen in rascher Folge, danach langsam · gemächlich, segnet dafür Truppen
+  geschuetzturm:   { tower: true, hp: 2616, dmg: 320, atk: 2.2, range: 7.5, r: 1.0, hitsAir: true, proj: 11 },
+  klingenturm:     { tower: true, hp: 2768, dmg: 107, atk: 0.5, range: 7.5, r: 1.0, hitsAir: true, proj: 20, ammo: { max: 8, reload: 0.9 } },
+  segensturm:      { tower: true, hp: 2703, dmg: 109, atk: 1.0, range: 7.5, r: 1.0, hitsAir: true, proj: 14, bless: { every: 23, first: 7, min: 0.33 } },
   hauptturm:       { tower: true, main: true, hp: 4824, dmg: 109, atk: 1.0, range: 7.0, r: 1.3, hitsAir: true, proj: 14 },
 };
 
@@ -138,7 +208,7 @@ export const CARDS = {
   erzritter:     { name: 'Erzritter',     cost: 7, type: 'troop', unit: 'erzritter', count: 1, role: 'Schwerer Tank',
                    desc: 'Langsam, schwer gepanzert, mit einem Hieb wie ein Rammbock. Kleine Gegner lenken ihn ab.' },
   wurzelmutter:  { name: 'Wurzelmutter',  cost: 5, type: 'troop', unit: 'wurzelmutter', count: 1, role: 'Beschwörerin',
-                   desc: 'Ruft alle acht Sekunden zwei Wurzelwichte und verschießt Dornenkugeln.' },
+                   desc: 'Ruft alle zehn Sekunden zwei Wurzelwichte und verschießt Dornenkugeln.' },
   hornbulle:     { name: 'Hornbulle',     cost: 5, type: 'troop', unit: 'hornbulle', count: 1, role: 'Ansturm',
                    desc: 'Nimmt Anlauf: nach kurzer Strecke rennt er doppelt so schnell und der erste Stoß trifft doppelt.' },
   eisenmarschall: { name: 'Eisenmarschall', cost: 4, type: 'troop', hero: true, unit: 'marschall', count: 1, role: 'Held',
@@ -148,7 +218,7 @@ export const CARDS = {
                    desc: 'Held im Fernkampf. Ruft auf Befehl Blitze auf die nächsten Gegner.',
                    ability: { id: 'blitzkette', name: 'Blitzkette', cost: 2, cd: 14, radius: 6, dmg: 400, stun: 0.6, count: 4, desc: 'Blitze treffen bis zu vier Gegner in der Nähe und betäuben sie kurz.' } },
   sternschlag:   { name: 'Sternschlag',   cost: 4, type: 'spell', spell: 'sternschlag', role: 'Zauber',
-                   radius: 2.5, dmg: 690, delay: 0.9, desc: 'Ein Stern stürzt herab: hoher Schaden auf kleiner Fläche. Türme nehmen nur ein Viertel.' },
+                   radius: 2.5, dmg: 720, delay: 0.9, desc: 'Ein Stern stürzt herab: hoher Schaden auf kleiner Fläche. Türme nehmen nur ein Viertel.' },
   hagelschauer:  { name: 'Hagelschauer',  cost: 3, type: 'spell', spell: 'hagelschauer', role: 'Zauber',
                    radius: 3.5, dmg: 360, delay: 0.5, desc: 'Hagel auf großer Fläche. Fegt Schwärme und Flieger weg.' },
   wurzelgriff:   { name: 'Wurzelgriff',   cost: 2, type: 'spell', spell: 'wurzelgriff', role: 'Zauber',
@@ -156,7 +226,7 @@ export const CARDS = {
   heilquell:     { name: 'Heilquell',     cost: 3, type: 'spell', spell: 'heilquell', role: 'Zauber',
                    radius: 3.0, heal: 130, tick: 0.5, dur: 5, delay: 0.2, desc: 'Heilt eigene Truppen im Kreis fünf Sekunden lang.' },
   funkenschlag:  { name: 'Funkenschlag',  cost: 2, type: 'spell', spell: 'funkenschlag', role: 'Zauber',
-                   radius: 2.5, dmg: 190, delay: 0.1, stun: 0.5, desc: 'Sofortiger Schlag: wenig Schaden, betäubt kurz und unterbricht Angriffe.' },
+                   radius: 2.5, dmg: 205, delay: 0.1, stun: 0.5, desc: 'Sofortiger Schlag: wenig Schaden, betäubt kurz und unterbricht Angriffe.' },
   sumpfdunst:    { name: 'Sumpfdunst',    cost: 4, type: 'spell', spell: 'sumpfdunst', role: 'Zauber',
                    radius: 3.5, dot: 92, tick: 1, dur: 8, delay: 0.3, desc: 'Giftiger Dunst: acht Sekunden lang Schaden an allem im Kreis, auch an Gebäuden.' },
   kriegstrommel: { name: 'Kriegstrommel', cost: 2, type: 'spell', spell: 'kriegstrommel', role: 'Zauber',
@@ -242,12 +312,140 @@ export const CARDS = {
   fernschleuder: { name: 'Fernschleuder', cost: 4, type: 'building', unit: 'fernschleuder', count: 1, role: 'Gebäude · Belagerung',
                    desc: 'Wirft Brocken über das halbe Feld – vom Fluss aus bis auf den Turm. Trifft nichts, was dicht davor steht.' },
   glutofen:      { name: 'Glutofen',      cost: 4, type: 'building', unit: 'glutofen', count: 1, role: 'Gebäude',
-                   desc: 'Aus dem Ofen hüpft alle sieben Sekunden ein Glutling.' },
+                   desc: 'Aus dem Ofen hüpft alle paar Sekunden ein Glutling.' },
   kraftquell:    { name: 'Kraftquell',    cost: 6, type: 'building', unit: 'kraftquell', count: 1, role: 'Gebäude',
                    desc: 'Liefert 70 Sekunden lang zusätzliche Kraft – wenn der Gegner ihn in Ruhe lässt.' },
+  // --- Zweite Erweiterung ---
+  kieseltrio:    { name: 'Kieseltrio',    cost: 1, type: 'troop', unit: 'kiesel', count: 3, role: 'Schwarm',
+                   desc: 'Drei Steinbeißer für eine einzige Kraft. Lenken ab, umzingeln – und sind sofort wieder weg.' },
+  flussraeuber:  { name: 'Flussräuber',   cost: 5, type: 'troop', unit: 'raeuber', count: 5, role: 'Nahkampf · Trupp',
+                   desc: 'Fünf kräftige Kerle mit Rudern. Gemeinsam zerlegen sie jeden Tank, ein Flächenzauber trifft aber alle.' },
+  sturmbrueder:  { name: 'Sturmbrüder',   cost: 6, type: 'troop', unit: 'sturmbruder', count: 2, role: 'Nahkampf · Ansturm',
+                   desc: 'Zwei rasend schnelle Schläger mit schwerem Hieb. Wer sie nicht sofort stoppt, verliert den Turm.' },
+  flugsamen:     { name: 'Flugsamen',     cost: 3, type: 'troop', unit: 'flugsamen', count: 1, role: 'Flieger · Fracht',
+                   desc: 'Schwebt zum nächsten Gebäude, platzt dort und setzt sieben Kiesel ab. Wird er abgeschossen, fallen sie an Ort und Stelle heraus.' },
+  wurzelrotte:   { name: 'Wurzelrotte',   cost: 3, type: 'troop', unit: 'wicht', count: 6, mix: [['wicht', 3], ['dornwerfer', 3]], role: 'Schwarm · gemischt',
+                   desc: 'Drei Wurzelwichte vorn, drei Dornwerfer dahinter. Viel Schaden für wenig Kraft, aber sehr zerbrechlich.' },
+  frostling:     { name: 'Frostling',     cost: 1, type: 'troop', unit: 'frostling', count: 1, role: 'Selbstzünder · Eis',
+                   desc: 'Springt auf den nächsten Gegner und lässt alles ringsum für einen Augenblick gefrieren.' },
+  funkling:      { name: 'Funkling',      cost: 1, type: 'troop', unit: 'funkling', count: 1, role: 'Selbstzünder · Kette',
+                   desc: 'Zerspringt in einen Funken, der von Gegner zu Gegner hüpft – bis zu neun Ziele, jedes kurz betäubt.' },
+  tauling:       { name: 'Tauling',       cost: 1, type: 'troop', unit: 'tauling', count: 1, role: 'Selbstzünder · Heilung',
+                   desc: 'Zerplatzt am Gegner und heilt dabei alle Verbündeten ringsum.' },
+  grenzwache:    { name: 'Grenzwache',    cost: 7, type: 'troop', unit: 'speerwache', count: 6, spread: 12, role: 'Nahkampf · Schild · Linie',
+                   desc: 'Sechs Speerträger mit Schild in einer Reihe über die ganze Breite. Sie decken beide Wege zugleich.' },
+  muehlenbande:  { name: 'Mühlenbande',   cost: 5, type: 'troop', unit: 'muellerbursche', count: 3, mix: [['muellerbursche', 1], ['steinwerferin', 2]], role: 'Tank · Fernkampf',
+                   desc: 'Ein bulliger Müllerbursche vorn, zwei Steinwerferinnen dahinter – ein kleiner Angriff aus einer einzigen Karte.' },
+  knallfrosch:   { name: 'Knallfrosch',   cost: 3, type: 'troop', unit: 'knallfrosch', count: 1, role: 'Fernkampf · Streuung',
+                   desc: 'Spuckt eine Knallschote, die am Ziel zerspringt und alles dahinter mit Kernen spickt. Der Rückstoß wirft ihn nach hinten.' },
+  rochenbrut:    { name: 'Rochenbrut',    cost: 4, type: 'troop', unit: 'jungrochen', count: 2, role: 'Flieger · Fläche',
+                   desc: 'Zwei junge Rochen. Jeder spuckt kleine Nebelkugeln, zusammen räumen sie Schwärme aus der Luft ab.' },
+  wueterich:     { name: 'Wüterich',      cost: 2, type: 'troop', unit: 'wueterich', count: 1, role: 'Nahkampf',
+                   desc: 'Schlägt fast doppelt so schnell zu wie jeder andere. Günstig, zäh genug und lästig für alles Kleine.' },
+  pulverwicht:   { name: 'Pulverwicht',   cost: 4, type: 'troop', unit: 'pulverwicht', count: 1, role: 'Fläche · Selbstzünder',
+                   desc: 'Wirft Pulverbeutel auf Bodentruppen. Bei halbem Leben zündet er die Lunte, rennt zum nächsten Gebäude und geht dort hoch.' },
+  stammlaeufer:  { name: 'Stammläufer',   cost: 4, type: 'troop', unit: 'stammlaeufer', count: 1, role: 'Belagerer · Ansturm',
+                   desc: 'Zwei Flussräuber rennen mit einem Baumstamm gegen das nächste Gebäude. Beim Aufprall lassen sie ihn fallen und kämpfen zu Fuß weiter.' },
+  schuetzenbund: { name: 'Schützenbund',  cost: 9, type: 'troop', unit: 'bolzenschuetzin', count: 3, role: 'Fernkampf · Trupp',
+                   desc: 'Drei Bolzenschützinnen auf einmal. Die teuerste Karte des Spiels – und die, die am meisten Antwort verlangt.' },
+  segelwicht:    { name: 'Segelwicht',    cost: 4, type: 'troop', unit: 'segelwicht', count: 1, role: 'Flieger · Fernkampf',
+                   desc: 'Hängt an einem Blattsegel und schleudert Dornen aus großer Entfernung. Kein Bodenkämpfer erreicht ihn.' },
+  keilerrotte:   { name: 'Keilerrotte',   cost: 5, type: 'troop', unit: 'keiler', count: 4, role: 'Belagerer · Schwarm',
+                   desc: 'Vier Keiler stürmen zum nächsten Gebäude und springen dabei einfach über den Fluss.' },
+  zitterlinge:   { name: 'Zitterlinge',   cost: 4, type: 'troop', unit: 'zitterling', count: 3, role: 'Betäuber · Trupp',
+                   desc: 'Drei kleine Funkenpilze. Jeder Treffer betäubt kurz – zu dritt halten sie fast alles auf.' },
+  kraftkloss:    { name: 'Kraftkloß',     cost: 3, type: 'troop', unit: 'kraftkloss', count: 1, role: 'Tank · mit Haken',
+                   desc: 'Sehr viel Leben für wenig Kraft. Er zerfällt zweimal in kleinere Klöße, und jedes Stück, das fällt, schenkt dem Gegner Kraft.' },
+  distelritter:  { name: 'Distelritter',  cost: 4, type: 'troop', unit: 'distelritter', count: 1, role: 'Ansturm · Fläche · Schild',
+                   desc: 'Nimmt Anlauf wie der Hornbulle, trifft aber alles vor sich und trägt einen Schild, der den ersten Treffer schluckt.' },
+  sichelwerfer:  { name: 'Sichelwerfer',  cost: 5, type: 'troop', unit: 'sichelwerfer', count: 1, role: 'Fläche · Durchschuss',
+                   desc: 'Seine Sichel fliegt durch alle Gegner in ihrer Bahn und trifft sie auf dem Rückweg ein zweites Mal. Auch Flieger.' },
+  armbrustwagen: { name: 'Armbrustwagen', cost: 5, type: 'troop', unit: 'armbrustwagen', count: 1, role: 'Fernkampf · wird Gebäude',
+                   desc: 'Rollt schnell vor und schießt auf Bodentruppen. Bei halbem Leben bricht die Achse: Er bleibt zwölf Sekunden als Gebäude stehen und schießt weiter.' },
+  gewitterrochen:{ name: 'Gewitterrochen', cost: 5, type: 'troop', unit: 'gewitterrochen', count: 1, role: 'Flieger · Kette',
+                   desc: 'Sein Blitz springt auf bis zu drei Gegner über und betäubt jeden kurz. Langsam, aber er unterbricht alles.' },
+  splitterjaeger:{ name: 'Splitterjäger', cost: 4, type: 'troop', unit: 'splitterjaeger', count: 1, role: 'Streuschuss',
+                   desc: 'Verschießt zehn Steinsplitter im Fächer. Aus nächster Nähe treffen fast alle – auf Abstand nur ein paar.' },
+  astriese:      { name: 'Astriese',      cost: 6, type: 'troop', unit: 'astriese', count: 1, role: 'Tank · mit Besatzung',
+                   desc: 'Läuft nur zu Gebäuden. In seinen Ästen sitzen zwei Dornwerfer, die auf alles schießen und herabspringen, wenn er fällt.' },
+  dornenkoloss:  { name: 'Dornenkoloss',  cost: 7, type: 'troop', unit: 'dornenkoloss', count: 1, role: 'Schwerer Tank · Rückschlag',
+                   desc: 'Läuft nur zu Gebäuden. Wer ihn aus der Nähe angreift, bekommt Dornen zurück und ist kurz betäubt.' },
+  aschenschwinge:{ name: 'Aschenschwinge', cost: 7, type: 'troop', unit: 'aschenschwinge', count: 1, role: 'Flieger · Tank',
+                   desc: 'Riesiger, zäher Flieger, der nur Gebäude anfliegt und kaum Schaden macht. Fällt er, zerstiebt er in sechs Aschenfunken.' },
+  wegelagerin:   { name: 'Wegelagerin',   cost: 3, type: 'troop', unit: 'wegelagerin', count: 1, role: 'Nahkampf · Sprung',
+                   desc: 'Sieht sie einen Gegner auf Abstand, schnellt sie auf ihn zu: doppelter Schaden, und im Sprung ist sie unverwundbar.' },
+  falterhueterin:{ name: 'Falterhüterin', cost: 4, type: 'troop', unit: 'falterhueterin', count: 1, role: 'Beschwörerin · Nahkampf',
+                   desc: 'Schlägt hart zu und ruft alle fünf Sekunden zwei Nachtfalter. Fällt sie, flattern noch einmal zwei auf.' },
+  rankenreiterin:{ name: 'Rankenreiterin', cost: 5, type: 'troop', unit: 'rankenreiterin', count: 1, role: 'Belagerer · Fessel',
+                   desc: 'Ihr Hirschkäfer stürmt nur auf Gebäude los. Sie selbst wirft Ranken auf Truppen in der Nähe und hält sie zwei Sekunden fest.' },
+  seilwerfer:    { name: 'Seilwerfer',    cost: 3, type: 'troop', unit: 'seilwerfer', count: 1, role: 'Nahkampf · Haken',
+                   desc: 'Wirft ein Seil mit Haken: Truppen zieht er zu sich heran, an Gebäude zieht er sich selbst – auch über den Fluss.' },
+  fluchweberin:  { name: 'Fluchweberin',  cost: 4, type: 'troop', unit: 'fluchweberin', count: 1, role: 'Fernkampf · Fluch',
+                   desc: 'Wen sie trifft, der ist fünf Sekunden verflucht. Stirbt er in dieser Zeit, wird aus ihm ein Irrwisch, der für dich auf Gebäude losgeht.' },
+  glutfalke:     { name: 'Glutfalke',     cost: 4, type: 'troop', unit: 'glutfalke', count: 1, role: 'Flieger · Wiederkehr',
+                   desc: 'Verbrennt beim Tod alles unter sich und hinterlässt ein Ei. Bleibt es gut vier Sekunden heil, schlüpft er erneut.' },
+  stelzenkessel: { name: 'Stelzenkessel', cost: 5, type: 'troop', unit: 'stelzenkessel', count: 1, role: 'Tank · Geschoss',
+                   desc: 'Ein Wicht steuert einen Kessel auf Stelzen. Er schlägt zu und schleudert nebenbei Glutbrocken auf entfernte Gegner.' },
+  runenhuene:    { name: 'Runenhüne',     cost: 4, type: 'troop', unit: 'runenhuene', count: 1, role: 'Tank · Verstärker',
+                   desc: 'Läuft nur zu Gebäuden und zeichnet die beiden nächsten Verbündeten: Jeder dritte Treffer von ihnen schlägt mit Zusatzschaden ein.' },
+  wanderbusch:   { name: 'Wanderbusch',   cost: 2, type: 'troop', unit: 'wanderbusch', count: 1, role: 'Unsichtbar · Überraschung',
+                   desc: 'Ein Busch, den niemand beachtet, schleicht zum nächsten Gebäude. Dort – oder wenn ihn ein Zauber trifft – springen zwei Buschwichte heraus.' },
+  stollenmeister:{ name: 'Stollenmeister', cost: 4, type: 'troop', hero: true, unit: 'stollenmeister', count: 1, role: 'Held',
+                   desc: 'Held mit dem Bohrer: je länger er dasselbe Ziel bearbeitet, desto mehr Schaden. Wechselt auf Befehl unterirdisch die Seite.',
+                   ability: { id: 'seitenwechsel', name: 'Seitenwechsel', cost: 1, cd: 13, radius: 2.0, dmg: 332, delay: 0.6, desc: 'Taucht ab und kommt auf der anderen Feldseite wieder hoch. Am alten Platz bleibt eine Sprengladung zurück.' } },
+  flussmoench:   { name: 'Flussmönch',    cost: 5, type: 'troop', hero: true, unit: 'flussmoench', count: 1, role: 'Held',
+                   desc: 'Held mit bloßen Händen. Jeder dritte Schlag trifft dreifach und stößt zurück. Auf Befehl wehrt er fast alles ab.',
+                   ability: { id: 'stillewacht', name: 'Stille Wacht', cost: 1, cd: 20, radius: 1.2, dur: 4, f: 0.2, desc: 'Vier Sekunden lang nimmt er nur ein Fünftel des Schadens und schlägt Geschosse auf den Schützen zurück.' } },
+  jungfuerst:    { name: 'Jungfürst',     cost: 3, type: 'troop', hero: true, unit: 'jungfuerst', count: 1, role: 'Held',
+                   desc: 'Held mit der Armbrust. Schießt immer schneller, solange er stehen bleibt. Ruft auf Befehl seine Leibwächterin.',
+                   ability: { id: 'leibwache', name: 'Leibwache', cost: 3, cd: 32, radius: 2.0, unit: 'leibwaechterin', desc: 'Seine Leibwächterin springt vor ihn, stößt alle Gegner dort zurück und kämpft dann an seiner Seite.' } },
+  hohlstamm:     { name: 'Hohlstamm',     cost: 2, type: 'spell', spell: 'hohlstamm', role: 'Zauber · Truppe',
+                   radius: 1.1, dmg: 170, roll: { len: 4, w: 2.2, speed: 5 }, rollSpawn: { unit: 'raeuber', count: 1 }, delay: 0.2, desc: 'Ein hohler Stamm rollt ein kurzes Stück nach vorn und trifft alle Bodentruppen. Am Ende klettert ein Flussräuber heraus.' },
+  trugbild:      { name: 'Trugbild',      cost: 3, type: 'spell', spell: 'trugbild', role: 'Zauber',
+                   radius: 3.0, clone: true, delay: 0.3, desc: 'Verdoppelt deine Truppen im Kreis. Die Abbilder schlagen genauso hart zu, fallen aber beim ersten Treffer.' },
+  bodengrollen:  { name: 'Bodengrollen',  cost: 3, type: 'spell', spell: 'bodengrollen', role: 'Zauber',
+                   radius: 3.5, dot: 105, tick: 1, dur: 3, ground: true, buildF: 3.4, towerF: 0.63, slow: 1.2, delay: 0.2, desc: 'Drei Sekunden bebt der Boden: Gebäude nehmen mehr als das Dreifache, Bodentruppen werden gebremst. Flieger merken nichts.' },
+  eiswurf:       { name: 'Eiswurf',       cost: 2, type: 'spell', spell: 'eiswurf', role: 'Zauber',
+                   radius: 2.5, dmg: 179, slow: 2.5, knock: 1.5, delay: 0.5, desc: 'Ein Brocken Gletschereis: wenig Schaden, stößt aber kleine Truppen zurück und bremst alle Getroffenen.' },
+  wurzelfluch:   { name: 'Wurzelfluch',   cost: 2, type: 'spell', spell: 'wurzelfluch', role: 'Zauber',
+                   radius: 3.0, dot: 35, tick: 1, dur: 6, amp: 1.2, curse: 'wicht', delay: 0.2, desc: 'Sechs Sekunden lang nehmen Gegner im Kreis 20 % mehr Schaden. Wer darin fällt, steht als Wurzelwicht für dich wieder auf.' },
+  geroellfeld:   { name: 'Geröllfeld',    cost: 5, type: 'spell', spell: 'geroellfeld', role: 'Zauber · Truppen',
+                   radius: 4.0, summonOver: { unit: 'kiesel', count: 12, every: 0.6, first: 1.6 }, dur: 9, delay: 0.1, desc: 'An beliebiger Stelle wühlen sich nach und nach zwölf Kiesel aus dem Boden – auch direkt neben dem Turm.' },
+  widerhall:     { name: 'Widerhall',     cost: 1, type: 'spell', spell: 'widerhall', role: 'Zauber', mirror: true,
+                   radius: 0, delay: 0, desc: 'Spielt deine zuletzt gespielte Karte noch einmal – für eine Kraft mehr und eine Stufe über dem Widerhall selbst. Helden hallen nicht wider.' },
+  wachkiste:     { name: 'Wachkiste',     cost: 3, type: 'spell', spell: 'wachkiste', role: 'Zauber · Truppe', ownSide: true,
+                   radius: 3.0, dmg: 437, delay: 2.0, summon: { unit: 'speerwache', count: 1 }, desc: 'Eine Kiste kracht auf dein eigenes Feld, trifft alles im Kreis – und heraus steigt eine Speerwache.' },
+  sternenschlund:{ name: 'Sternenschlund', cost: 3, type: 'spell', spell: 'sternenschlund', role: 'Zauber',
+                   radius: 2.5, pulses: { n: 3, every: 0.9, first: 0.7, dmg: [232, 102, 51] }, dur: 2.8, delay: 0.2, desc: 'Drei Stöße aus der Tiefe. Steht nur ein Gegner im Kreis, treffen sie ihn mit voller Wucht – je mehr dort stehen, desto schwächer.' },
+  raeuberlager:  { name: 'Räuberlager',   cost: 6, type: 'building', unit: 'raeuberlager', count: 1, role: 'Gebäude',
+                   desc: 'Alle zwölf Sekunden treten zwei Flussräuber aus dem Zelt; fällt es, kommt noch einer heraus.' },
+  kieselhaufen:  { name: 'Kieselhaufen',  cost: 3, type: 'building', unit: 'kieselhaufen', count: 1, role: 'Gebäude',
+                   desc: 'Alle paar Sekunden löst sich ein Kiesel. Billige Ablenkung für alles, was auf Gebäude losgeht; am Ende purzeln fünf auf einmal heraus.' },
+  wolfszwinger:  { name: 'Wolfszwinger',  cost: 4, type: 'building', unit: 'wolfszwinger', count: 1, role: 'Gebäude · Falle',
+                   desc: 'Tut selbst nichts. Bricht der Zwinger oder läuft seine Zeit ab, stürzt ein wütender Wolf heraus.' },
+  maulwurfshuegel:{ name: 'Maulwurfshügel', cost: 4, type: 'building', unit: 'maulwurfshuegel', count: 1, role: 'Gebäude · überall', anywhere: true,
+                   desc: 'Bricht an jeder Stelle des Felds aus dem Boden – auch direkt am Turm – und spuckt zwölf Sekunden lang Wurzelwichte aus.' },
+  funkenpfahl:   { name: 'Funkenpfahl',   cost: 4, type: 'building', unit: 'funkenpfahl', count: 1, role: 'Gebäude · vergraben',
+                   desc: 'Liegt vergraben, bis ein Gegner in Reichweite kommt – solange kann ihn nichts treffen. Dann fährt er aus und schießt auf Boden und Luft.' },
+  kurbelbogen:   { name: 'Kurbelbogen',   cost: 6, type: 'building', unit: 'kurbelbogen', count: 1, role: 'Gebäude · Belagerung',
+                   desc: 'Spannt sich dreieinhalb Sekunden und schießt dann pausenlos über den Fluss bis auf den Turm. Nur auf Bodenziele.' },
 };
 
-export const CARD_IDS = Object.keys(CARDS);
+// Turmkarten: Sie stehen nie im Deck, sondern bestimmen die Art der beiden Außentürme. Gesammelt und aufgewertet
+// werden sie wie alle Karten; die Stufe des Hauptturms folgt dagegen der Spielerstufe.
+Object.assign(CARDS, {
+  wachturm:      { name: 'Wachturm',      cost: 4, type: 'tower', unit: 'aussenturm', count: 1, role: 'Turm',
+                   desc: 'Der bewährte Außenturm: schnelle Schüsse und das meiste Leben. Ohne Schwächen, ohne Glanzstück.' },
+  geschuetzturm: { name: 'Geschützturm',  cost: 4, type: 'tower', unit: 'geschuetzturm', count: 1, role: 'Turm · schwere Schüsse',
+                   desc: 'Wenige, wuchtige Kugeln. Zerlegt dicke Brocken und fällt einzelne Schützen mit einem Schuss – Schwärme laufen ihm aber davon. Hält am wenigsten aus.' },
+  klingenturm:   { name: 'Klingenturm',   cost: 4, type: 'tower', unit: 'klingenturm', count: 1, role: 'Turm · Klingenhagel',
+                   desc: 'Hortet acht Klingen und schleudert sie in rascher Folge. Sind sie verbraucht, wirft er nur noch langsam – gut gegen kleine Vorstöße, schwach gegen Tanks.' },
+  segensturm:    { name: 'Segensturm',    cost: 4, type: 'tower', unit: 'segensturm', count: 1, role: 'Turm · Segen',
+                   desc: 'Schießt gemächlich. Dafür segnet er regelmäßig deine zäheste Truppe auf dem Feld: Sie steigt um eine Stufe.' },
+});
+export const TOWER_IDS = Object.keys(CARDS).filter(id => CARDS[id].type === 'tower');
+export const DEFAULT_TOWER = 'wachturm';
+export const CARD_IDS = Object.keys(CARDS).filter(id => CARDS[id].type !== 'tower'); // alles, was ins Deck kann
 export const DECK_SIZE = 8;
 export const DEFAULT_DECK = ['raufbold', 'waldlaeufer', 'steinhueter', 'wurzelwichte', 'sturmkraehen', 'funkenweberin', 'sternschlag', 'ballistenturm'];
 export const TOWER_SPELL_FACTOR = 0.25;
@@ -255,11 +453,25 @@ export const HASTE = 1.35, SLOW_FACTOR = 0.65;
 
 export const avgCost = deck => deck.reduce((s, id) => s + CARDS[id].cost, 0) / (deck.length || 1);
 
-// Gültiges Deck aus beliebiger Eingabe: nur bekannte Karten, keine doppelten, auf 8 aufgefüllt.
+// Höchstens so viele Helden je Deck: Ein Held bleibt dem Kartenstapel fern, solange er lebt. Stünden vier zugleich auf
+// dem Feld, blieben nur vier Karten übrig – zu wenig für Hand und Nachziehkarte, der Stapel liefe leer.
+export const MAX_HEROES = 3;
+export const heroCount = deck => deck.filter(id => CARDS[id] && CARDS[id].hero).length;
+
+// Gültiges Deck aus beliebiger Eingabe: nur bekannte Karten, keine doppelten, höchstens drei Helden, auf 8 aufgefüllt.
 export function sanitizeDeck(input) {
   const out = [];
-  for (const id of Array.isArray(input) ? input : []) if (CARDS[id] && !out.includes(id) && out.length < DECK_SIZE) out.push(id);
-  for (const id of DEFAULT_DECK) if (out.length < DECK_SIZE && !out.includes(id)) out.push(id);
-  for (const id of CARD_IDS) if (out.length < DECK_SIZE && !out.includes(id)) out.push(id);
+  const fits = id => CARDS[id] && CARDS[id].type !== 'tower' && !out.includes(id) && out.length < DECK_SIZE && (!CARDS[id].hero || heroCount(out) < MAX_HEROES);
+  for (const id of Array.isArray(input) ? input : []) if (fits(id)) out.push(id);
+  for (const id of DEFAULT_DECK) if (fits(id)) out.push(id);
+  for (const id of CARD_IDS) if (fits(id)) out.push(id);
   return out;
 }
+
+// Namen der Einheiten, die von Karten hervorgebracht werden (Einzahl, Mehrzahl) – für Kartenwerte und Erklärungen
+export const UNIT_NAMES = {
+  wicht: ['Wurzelwicht', 'Wurzelwichte'], glutling: ['Glutling', 'Glutlinge'], steinling: ['Steinling', 'Steinlinge'], kiesel: ['Kiesel', 'Kiesel'], raeuber: ['Flussräuber', 'Flussräuber'],
+  nachtfalter: ['Nachtfalter', 'Nachtfalter'], dornwerfer: ['Dornwerfer', 'Dornwerfer'], aschenfunke: ['Aschenfunke', 'Aschenfunken'], glutei: ['Glutei', 'Gluteier'], glutfalke: ['Glutfalke', 'Glutfalken'],
+  kraftkloss_m: ['mittlerer Kloß', 'mittlere Klöße'], kraftkloss_k: ['kleiner Kloß', 'kleine Klöße'], buschwicht: ['Buschwicht', 'Buschwichte'], zwingerwolf: ['Wolf', 'Wölfe'], irrwisch: ['Irrwisch', 'Irrwische'],
+  speerwache: ['Speerwache', 'Speerwachen'], leibwaechterin: ['Leibwächterin', 'Leibwächterinnen'], muellerbursche: ['Müllerbursche', 'Müllerburschen'], steinwerferin: ['Steinwerferin', 'Steinwerferinnen'],
+};

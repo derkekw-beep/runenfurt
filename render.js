@@ -188,9 +188,15 @@ function tower(c, e, T, time, main) {
 }
 
 // Der 2D-Zeichner ist nur der Rückfall ohne WebGL: neuere Figuren leihen sich dort eine vorhandene Zeichnung.
-const ALIAS = { dornwerfer: 'wicht', blasrohrwicht: 'wicht', sprengkaefer: 'wicht', wuehler: 'wicht', nachtfalter: 'kraehe', panzerhornisse: 'kraehe', laternenfisch: 'rochen', schildknappe: 'eisenwaechter', nebelschleicher: 'eisenwaechter', windlaeufer: 'eisenwaechter',
+const ALIAS = { geschuetzturm: 'aussenturm', klingenturm: 'aussenturm', segensturm: 'aussenturm', dornwerfer: 'wicht', blasrohrwicht: 'wicht', sprengkaefer: 'wicht', wuehler: 'wicht', nachtfalter: 'kraehe', panzerhornisse: 'kraehe', laternenfisch: 'rochen', schildknappe: 'eisenwaechter', nebelschleicher: 'eisenwaechter', windlaeufer: 'eisenwaechter',
   trommelschlaeger: 'raufbold', fasstraeger: 'hammerschmied', wurzelkoenig: 'hammerschmied', kegler: 'hammerschmied', brockenwerfer: 'hammerschmied', zuendler: 'raufbold', sternschuetzin: 'waldlaeufer', weitschuetzin: 'waldlaeufer', schattenjaegerin: 'waldlaeufer',
   blitzfaenger: 'funkenweberin', feldheilerin: 'funkenweberin', eisbrocken: 'steinhueter', basaltriese: 'steinhueter', panzerbaer: 'torknacker', gewitterkarren: 'ballista', sonnenspiegel: 'ballista', kesselturm: 'ballista', fernschleuder: 'ballista', glutofen: 'erdloch', kraftquell: 'erdloch',
+  raeuber: 'raufbold', sturmbruder: 'raufbold', speerwache: 'eisenwaechter', muellerbursche: 'hammerschmied', steinwerferin: 'waldlaeufer', wueterich: 'raufbold', distelritter: 'eisenwaechter', sichelwerfer: 'hammerschmied', splitterjaeger: 'waldlaeufer',
+  wegelagerin: 'raufbold', falterhueterin: 'funkenweberin', seilwerfer: 'raufbold', fluchweberin: 'funkenweberin', stollenmeister: 'hammerschmied', flussmoench: 'raufbold', jungfuerst: 'waldlaeufer', leibwaechterin: 'eisenwaechter',
+  frostling: 'wicht', funkling: 'wicht', tauling: 'wicht', knallfrosch: 'wicht', pulverwicht: 'wicht', pulverwicht_k: 'wicht', zitterling: 'wicht', kraftkloss: 'steinhueter', kraftkloss_m: 'wicht', kraftkloss_k: 'wicht', irrwisch: 'wicht', glutei: 'erdloch',
+  wanderbusch: 'wicht', buschwicht: 'wicht', keiler: 'torknacker', zwingerwolf: 'torknacker', rankenreiterin: 'torknacker', stammlaeufer: 'torknacker', flugsamen: 'rochen', jungrochen: 'rochen', segelwicht: 'kraehe', gewitterrochen: 'rochen',
+  aschenschwinge: 'rochen', aschenfunke: 'kraehe', glutfalke: 'kraehe', astriese: 'steinhueter', dornenkoloss: 'steinhueter', runenhuene: 'steinhueter', stelzenkessel: 'steinhueter', armbrustwagen: 'ballista', armbrustwagen_w: 'ballista',
+  raeuberlager: 'erdloch', kieselhaufen: 'erdloch', wolfszwinger: 'erdloch', maulwurfshuegel: 'erdloch', funkenpfahl: 'ballista', kurbelbogen: 'ballista',
   glutling: 'wicht', kiesel: 'wicht', klingentaenzerin: 'eisenwaechter', bolzenschuetzin: 'waldlaeufer', donnerkaefer: 'rochen', frostschamane: 'funkenweberin', erzritter: 'eisenwaechter', wurzelmutter: 'funkenweberin', hornbulle: 'torknacker', steinling: 'steinhueter', marschall: 'eisenwaechter', sturmrufer: 'funkenweberin', steinschleuder: 'ballista' };
 const drawer = model => DRAW[model] || DRAW[ALIAS[model]] || DRAW.raufbold;
 
@@ -209,7 +215,7 @@ function drawFigure(c, e, time, moving) {
 
 // ---- Kartenbilder ------------------------------------------------------------------------------
 
-const CARD_BG = { troop: ['#3b5f7d', '#22384d'], spell: ['#6a4a94', '#35224f'], building: ['#7a5c3a', '#3f2e1b'] };
+const CARD_BG = { tower: ['#5f6d80', '#2b3644'], troop: ['#3b5f7d', '#22384d'], spell: ['#6a4a94', '#35224f'], building: ['#7a5c3a', '#3f2e1b'] };
 
 function spellIcon(c, spell, time = 0) {
   if (spell === 'sternschlag') {
@@ -276,6 +282,61 @@ function spellIcon(c, spell, time = 0) {
     ell(c, 0, -0.2, 0.75, 0.3, '#f1e3c4', '#3b2716', 0.06);
     line(c, -0.2, -0.3, -0.85, -0.95, '#5d3d1f', 0.1); circ(c, -0.2, -0.3, 0.1, '#f3ead2', '#3b2716', 0.03);
     line(c, 0.3, -0.15, 0.9, -0.85, '#5d3d1f', 0.1); circ(c, 0.3, -0.15, 0.1, '#f3ead2', '#3b2716', 0.03);
+  } else if (spell === 'hohlstamm') {
+    for (const y of [-0.5, -0.1, 0.3]) line(c, -1.0, y + 0.3, -0.6, y + 0.3, 'rgba(255,255,255,.35)', 0.08);
+    rrect(c, -0.55, -0.4, 1.35, 0.95, 0.4, '#9a6634', '#3b2716', 0.07);
+    for (const x of [-0.25, 0.1]) line(c, x, -0.36, x + 0.08, 0.5, '#7a4f2a', 0.05);
+    ell(c, 0.62, 0.08, 0.3, 0.47, '#c79a5e', '#3b2716', 0.06); ell(c, 0.62, 0.08, 0.19, 0.32, '#2a1d14');
+    circ(c, 0.56, 0.02, 0.055, '#ffe26a'); circ(c, 0.72, 0.02, 0.055, '#ffe26a');
+    poly(c, [-0.2, -0.4, -0.05, -0.75, 0.1, -0.4], '#6fb455', '#2f5f24', 0.04);
+  } else if (spell === 'trugbild') {
+    const man = (x, fill, edge) => { rrect(c, x - 0.3, -0.05, 0.6, 0.8, 0.2, fill, edge, 0.06); circ(c, x, -0.42, 0.34, fill, edge, 0.06); };
+    c.globalAlpha = 0.55; man(0.38, '#8fe0ff', '#dff7ff'); c.globalAlpha = 1;
+    man(-0.3, TEAM[0].main, '#12313a');
+    circ(c, -0.4, -0.45, 0.07, '#fff'); circ(c, -0.18, -0.45, 0.07, '#fff');
+    for (const [x, y, k] of [[0.85, -0.75, 0.16], [0.75, 0.6, 0.12], [0.1, -0.9, 0.1]]) poly(c, [x, y - k, x + k * 0.3, y - k * 0.3, x + k, y, x + k * 0.3, y + k * 0.3, x, y + k, x - k * 0.3, y + k * 0.3, x - k, y, x - k * 0.3, y - k * 0.3], '#ffffff');
+  } else if (spell === 'bodengrollen') {
+    poly(c, [-0.95, 0.1, -0.2, -0.2, 0.05, 0.2, -0.25, 0.85, -0.9, 0.7], '#a37b4c', '#3b2716', 0.06);
+    poly(c, [0.0, -0.3, 0.9, -0.05, 0.95, 0.65, 0.0, 0.9, 0.3, 0.25], '#8f6a40', '#3b2716', 0.06);
+    poly(c, [-0.2, -0.2, 0.0, -0.3, 0.3, 0.25, 0.0, 0.9, -0.25, 0.85, 0.05, 0.2], '#1f140c');
+    for (const [x, y, r] of [[-0.55, -0.6, 0.16], [0.45, -0.7, 0.2], [0.0, -0.85, 0.12]]) { poly(c, [x - r, y, x - r * 0.3, y - r, x + r, y - r * 0.4, x + r * 0.7, y + r * 0.8, x - r * 0.5, y + r], '#939aa5', '#3a4048', 0.04); line(c, x, y + r + 0.08, x, y + r + 0.3, 'rgba(255,255,255,.4)', 0.05); }
+  } else if (spell === 'eiswurf') {
+    for (const x of [-0.8, -0.5, -0.2]) line(c, x, -1.0, x + 0.3, -0.45, 'rgba(255,255,255,.4)', 0.09);
+    c.shadowColor = '#bfeaff'; c.shadowBlur = 10;
+    poly(c, [-0.5, -0.25, 0.1, -0.65, 0.75, -0.3, 0.85, 0.4, 0.3, 0.85, -0.45, 0.6, -0.75, 0.15], '#bfeaff', '#4d8fb0', 0.07); c.shadowBlur = 0;
+    poly(c, [0.1, -0.65, 0.75, -0.3, 0.3, 0.0, -0.15, -0.15], '#eaf8ff'); line(c, -0.15, -0.15, -0.45, 0.6, '#7fb2d0', 0.05); line(c, 0.3, 0.0, 0.3, 0.85, '#7fb2d0', 0.05);
+  } else if (spell === 'wurzelfluch') {
+    c.shadowColor = '#b06adf'; c.shadowBlur = 14; circ(c, 0, 0.05, 0.78, '#4a2c66', '#c98bff', 0.07); c.shadowBlur = 0;
+    for (const [x, s] of [[-0.35, -1], [0.35, 1]]) { c.beginPath(); c.moveTo(x, 0.75); c.bezierCurveTo(x - 0.5 * s, 0.3, x + 0.4 * s, -0.1, x - 0.1 * s, -0.55); c.strokeStyle = '#6b4a2b'; c.lineWidth = 0.14; c.lineCap = 'round'; c.stroke(); }
+    poly(c, [-0.5, -0.35, -0.3, -0.85, -0.15, -0.35], TEAM[0].main, '#12313a', 0.04); poly(c, [0.15, -0.35, 0.3, -0.85, 0.5, -0.35], TEAM[0].main, '#12313a', 0.04);
+    circ(c, -0.2, 0.1, 0.13, '#ffe26a', '#3b2716', 0.03); circ(c, 0.2, 0.1, 0.13, '#ffe26a', '#3b2716', 0.03); line(c, -0.15, 0.42, 0.15, 0.42, '#c98bff', 0.07);
+  } else if (spell === 'geroellfeld') {
+    ell(c, 0, 0.6, 0.95, 0.3, '#6b4f32', '#3b2716', 0.05);
+    for (const [x, y, r] of [[-0.5, 0.25, 0.3], [0.5, 0.2, 0.28], [0.0, -0.25, 0.36]]) {
+      ell(c, x, y + r * 0.9, r * 1.2, r * 0.4, '#8a6a43', '#3b2716', 0.04);
+      poly(c, [x - r, y + r * 0.6, x - r * 0.8, y - r * 0.4, x - r * 0.1, y - r, x + r * 0.8, y - r * 0.5, x + r, y + r * 0.6], '#939aa5', '#3a4048', 0.05);
+      circ(c, x - r * 0.3, y, r * 0.14, '#ffe26a'); circ(c, x + r * 0.3, y, r * 0.14, '#ffe26a');
+      poly(c, [x - r * 0.25, y - r * 0.95, x, y - r * 1.5, x + r * 0.25, y - r * 0.95], TEAM[0].main, '#12313a', 0.03);
+    }
+  } else if (spell === 'widerhall') {
+    c.save(); c.rotate(-0.15); rrect(c, -0.75, -0.6, 0.75, 1.1, 0.1, '#e9edf2', '#3a4048', 0.06); rrect(c, -0.65, -0.5, 0.55, 0.55, 0.06, TEAM[0].main); c.restore();
+    c.strokeStyle = '#e9edf2'; c.lineCap = 'round';
+    [[0.38, 0.9], [0.62, 0.6], [0.86, 0.32]].forEach(([r, o]) => { c.globalAlpha = o; c.lineWidth = 0.1; c.beginPath(); c.arc(0.05, 0, r, -0.95, 0.95); c.stroke(); });
+    c.globalAlpha = 1;
+    c.font = '900 0.5px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineWidth = 0.1; c.strokeStyle = '#2a1d40'; c.strokeText('+1', 0.45, 0.72); c.fillStyle = '#ffe08a'; c.fillText('+1', 0.45, 0.72);
+  } else if (spell === 'wachkiste') {
+    for (const x of [-0.6, 0, 0.6]) line(c, x, -1.0, x, -0.62, 'rgba(255,255,255,.4)', 0.09);
+    rrect(c, -0.7, -0.45, 1.4, 1.25, 0.08, '#9a6634', '#3b2716', 0.07);
+    c.fillStyle = TEAM[0].main; c.fillRect(-0.7, 0.02, 1.4, 0.3);
+    for (const x of [-0.5, 0.5]) line(c, x, -0.42, x, 0.77, '#5d3d1f', 0.07);
+    line(c, -0.67, -0.42, 0.67, -0.42, '#c79a5e', 0.08);
+    poly(c, [-0.24, -0.2, 0.24, -0.2, 0.24, 0.25, 0, 0.55, -0.24, 0.25], '#e9edf2', '#3a4048', 0.05); line(c, 0, -0.12, 0, 0.4, TEAM[0].main, 0.08);
+  } else if (spell === 'sternenschlund') {
+    c.shadowColor = '#b06adf'; c.shadowBlur = 16; circ(c, 0, 0, 0.85, '#2a1d40', '#7a4fd0', 0.07); c.shadowBlur = 0;
+    c.lineCap = 'round';
+    [[0.68, '#5a3aa0', 0.12], [0.48, '#7a4fd0', 0.11], [0.28, '#b06adf', 0.1]].forEach(([r, col, w], i) => { c.strokeStyle = col; c.lineWidth = w; c.beginPath(); c.arc(0, 0, r, i * 1.3, i * 1.3 + 4.2); c.stroke(); });
+    circ(c, 0, 0, 0.1, '#0c0814');
+    for (const [x, y, r] of [[-0.55, -0.45, 0.07], [0.6, -0.3, 0.05], [0.4, 0.6, 0.06], [-0.5, 0.5, 0.04], [0.05, -0.72, 0.04]]) circ(c, x, y, r, '#fff6d8');
   } else {
     c.shadowColor = '#7dffa8'; c.shadowBlur = 10;
     c.beginPath(); c.moveTo(0, -0.85); c.bezierCurveTo(0.8, 0.1, 0.6, 0.8, 0, 0.8); c.bezierCurveTo(-0.6, 0.8, -0.8, 0.1, 0, -0.85);
@@ -347,16 +408,34 @@ const GROUND = [
   [[214, 138, 98], [208, 154, 100]],  // Glutkessel
   [[112, 122, 204], [106, 134, 212]], // Sternwarte
   [[178, 138, 214], [162, 148, 220]], // Runenthron
-  [[206, 226, 238], [192, 230, 242]], // Frostzinnen
+  [[176, 206, 226], [162, 210, 230]], // Frostzinnen
   [[104, 132, 122], [96, 142, 128]],  // Schattenmoor
   [[186, 170, 132], [176, 180, 136]], // Donnerschlucht
-  [[128, 196, 206], [118, 206, 214]], // Kristallgrotte
+  [[106, 174, 188], [98, 184, 196]],  // Kristallgrotte
   [[168, 150, 140], [160, 160, 146]], // Aschenfeld
-  [[236, 208, 150], [228, 216, 156]], // Himmelsbrücke
+  [[226, 196, 136], [218, 204, 142]], // Himmelsbrücke
+];
+
+// Kleinteile des Bodens je Arena: Tupfer (Blumen, Kiesel, Schnee, Glut …), Halme, Fluss, Uferkante
+const LOOK = [
+  { dots: ['#fff3c4', '#ffb3c8', '#cfe9ff', '#ffe08a'], core: '#f0a92e', tuft: 'rgba(40,90,50,.5)', river: ['#2a86c8', '#45b4ec'], bank: '#4a6b4a' },
+  { dots: ['#e8e2d0', '#cfc7b0', '#f2ecd8', '#b9b29c'], core: null, tuft: 'rgba(90,100,50,.45)', river: ['#3a8fc0', '#62c0ea'], bank: '#8a8466', big: 1.5 },
+  { dots: ['#d7fff4', '#a8f0e0', '#ffd6f5', '#e8fff8'], core: '#59c9b5', tuft: 'rgba(20,80,80,.5)', river: ['#1f7f8c', '#49b8c0'], bank: '#2f6b66' },
+  { dots: ['#c9793a', '#8d939c', '#d9a05a', '#6f7782'], core: null, tuft: 'rgba(60,66,80,.5)', river: ['#3d6f9c', '#5c9bc8'], bank: '#555c68', big: 1.4 },
+  { dots: ['#ffffff', '#e8f4ff', '#fff3c4', '#d7ecff'], core: null, tuft: 'rgba(50,90,120,.45)', river: ['#4f8fc4', '#8cc8f0'], bank: '#6f8fa8' },
+  { dots: ['#ffb347', '#ff8a2a', '#ffe08a', '#ff6a3a'], core: '#fff3c4', tuft: 'rgba(110,50,30,.5)', river: ['#c9381a', '#ffb347'], bank: '#3a221c' },
+  { dots: ['#fff6d8', '#ffffff', '#cfd6ff', '#ffe08a'], core: null, tuft: 'rgba(40,50,120,.5)', river: ['#2a3f9c', '#5870d8'], bank: '#2a3166' },
+  { dots: ['#e7ccff', '#c98bff', '#fff3ff', '#f0b3ff'], core: '#8a4fd0', tuft: 'rgba(80,40,120,.5)', river: ['#5a3fa8', '#8f78e0'], bank: '#4a3570' },
+  { dots: ['#ffffff', '#f4fbff', '#ffffff', '#e6f4ff'], core: null, tuft: 'rgba(120,160,190,.5)', river: ['#9fd4ee', '#e6f7ff'], bank: '#b8d8e8', big: 2.4 },
+  { dots: ['#9be564', '#6fa83a', '#c5ee6a', '#59824a'], core: null, tuft: 'rgba(30,50,40,.55)', river: ['#34502f', '#5f7f44'], bank: '#2a382a' },
+  { dots: ['#e8c890', '#c9a064', '#f2dcae', '#a8824a'], core: null, tuft: 'rgba(110,80,40,.5)', river: ['#3a7fb0', '#5fb0dc'], bank: '#8a6a43', big: 1.3 },
+  { dots: ['#8fffe6', '#ffb3f0', '#d7fffa', '#b3c8ff'], core: '#ffffff', tuft: 'rgba(30,90,100,.5)', river: ['#12606e', '#2fb0b8'], bank: '#1f5560' },
+  { dots: ['#6a6460', '#8a847e', '#ff8a2a', '#4a4642'], core: null, tuft: 'rgba(60,54,50,.55)', river: ['#4a5560', '#77848f'], bank: '#3a3632', big: 1.4 },
+  { dots: ['#ffffff', '#fff3c4', '#ffe08a', '#ffffff'], core: '#f6c453', tuft: 'rgba(150,120,50,.45)', river: ['#bfe3ff', '#ffffff'], bank: '#e6c98a' },
 ];
 
 export function paintField(c, k, arena = 0, plain = false) {
-  const ground = GROUND[arena] || GROUND[0];
+  const ground = GROUND[arena] || GROUND[0], L = LOOK[arena] || LOOK[0];
   c.save(); c.scale(k, k);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const enemy = y < RIVER_TOP;
@@ -379,19 +458,19 @@ export function paintField(c, k, arena = 0, plain = false) {
   for (let i = 0; i < 60; i++) {
     const x = hash(i, 41) * W, y = hash(i, 57) * H;
     if (y > RIVER_TOP - 0.5 && y < RIVER_BOT + 0.5) continue;
-    circ(c, x, y, 0.07, ['#fff3c4', '#ffb3c8', '#cfe9ff', '#ffe08a'][i % 4]); circ(c, x, y, 0.03, '#f0a92e');
+    circ(c, x, y, 0.07 * (L.big || 1), L.dots[i % 4]); if (L.core) circ(c, x, y, 0.03, L.core);
   }
   // Grasbüschel und Kiesel
   for (let i = 0; i < 150; i++) {
     const x = hash(i, 11) * W, y = hash(i, 23) * H;
     if (y > RIVER_TOP - 0.4 && y < RIVER_BOT + 0.4) continue;
     if (i % 4 === 0) ell(c, x, y, 0.16, 0.11, 'rgba(180,186,190,.75)', 'rgba(60,70,70,.5)', 0.03);
-    else { line(c, x, y, x - 0.08, y - 0.2, 'rgba(40,90,50,.5)', 0.05); line(c, x + 0.1, y, x + 0.16, y - 0.22, 'rgba(40,90,50,.5)', 0.05); }
+    else { line(c, x, y, x - 0.08, y - 0.2, L.tuft, 0.05); line(c, x + 0.1, y, x + 0.16, y - 0.22, L.tuft, 0.05); }
   }
   // Fluss
   const rg = c.createLinearGradient(0, RIVER_TOP, 0, RIVER_BOT);
-  rg.addColorStop(0, '#2a86c8'); rg.addColorStop(0.5, '#45b4ec'); rg.addColorStop(1, '#2a86c8');
-  c.fillStyle = '#4a6b4a'; c.fillRect(0, RIVER_TOP - 0.18, W, RIVER_BOT - RIVER_TOP + 0.36);
+  rg.addColorStop(0, L.river[0]); rg.addColorStop(0.5, L.river[1]); rg.addColorStop(1, L.river[0]);
+  c.fillStyle = L.bank; c.fillRect(0, RIVER_TOP - 0.18, W, RIVER_BOT - RIVER_TOP + 0.36);
   c.fillStyle = rg; c.fillRect(0, RIVER_TOP, W, RIVER_BOT - RIVER_TOP);
   for (let i = 0; i < 26; i++) { const x = hash(i, 5) * W, y = RIVER_TOP + 0.3 + hash(i, 9) * 1.4; line(c, x, y, x + 0.5 + hash(i, 2) * 0.5, y, 'rgba(255,255,255,.22)', 0.06); }
   // Brücken aus Steinplatten

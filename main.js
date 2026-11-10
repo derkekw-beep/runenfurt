@@ -1,11 +1,12 @@
 // Runenfurt – Oberfläche, Bedienung und Spielschleife.
-import { CARDS, UNITS, RUNES, RUNE_LEVEL, avgCost, TOWER_SPELL_FACTOR } from './cards.js';
+import { CARDS, CARD_IDS, TOWER_IDS, UNITS, RUNES, RUNE_LEVEL, avgCost, TOWER_SPELL_FACTOR, UNIT_NAMES, MAX_HEROES, heroCount } from './cards.js';
 import * as sim from './sim.js';
 import { createAi, aiUpdate, LEVELS } from './ai.js';
 import * as P from './progress.js';
 import { createRenderer, drawCardArt, drawIcon } from './render.js';
 import { createRenderer3D } from './render3d.js';
 import { sfx, unlock, setSound, setVolume } from './audio.js';
+import { STORY, explain } from './lore.js';
 
 const $ = s => document.querySelector(s);
 const KEY = 'runenfurt-v1';
@@ -63,7 +64,9 @@ function cardEl(id, opt = {}) {
   const e = el(opt.tag || 'button', c.hero ? 'card hero' : 'card');
   const cv = document.createElement('canvas'); cv.width = 200; cv.height = 264;
   cv.getContext('2d').drawImage(art(id), 0, 0);
-  e.append(cv, el('span', 'cost', c.cost), el('span', c.name.length > 10 ? 'name long' : 'name', c.name));
+  e.append(cv);
+  if (c.type !== 'tower') e.append(el('span', 'cost', opt.cost != null ? opt.cost : c.mirror ? '+1' : c.cost)); // Türme kosten keine Kraft
+  e.append(el('span', c.name.length > 10 ? 'name long' : 'name', c.name));
   if (opt.locked != null) { e.classList.add('locked'); e.append(el('span', 'lv', `Arena ${opt.locked + 1}`)); }
   else if (opt.lvl) e.append(el('span', 'lv', `St. ${opt.lvl}`));
   if (opt.meter) {
@@ -108,7 +111,7 @@ $('#nav').addEventListener('click', e => { const b = e.target.closest('button');
 
 const overlay = $('#overlay'), sheet = $('#sheet');
 function openSheet(node, center) { sheet.replaceChildren(node); overlay.classList.toggle('center', !!center); overlay.hidden = false; sheet.scrollTop = 0; }
-function closeSheet() { overlay.hidden = true; sheet.replaceChildren(); }
+function closeSheet() { overlay.hidden = true; sheet.replaceChildren(); for (const c of overlay.querySelectorAll('.confetti')) c.remove(); }
 let sheetDismiss = null; // Tippen neben das Blatt schließt es, wenn erlaubt
 overlay.addEventListener('click', e => { if (e.target === overlay && sheetDismiss) sheetDismiss(); });
 const closeBtn = (label = 'Schließen', then) => { const b = el('button', 'btn', label); b.addEventListener('click', () => { sfx('click'); closeSheet(); sheetDismiss = null; if (then) then(); }); return b; };
@@ -148,13 +151,55 @@ function lootBox(title, loot) {
   box.append(row);
   return box;
 }
-function lootSheet(title, loot, note) {
-  const body = el('div');
-  body.append(lootBox(title, loot));
-  if (note) body.append(el('p', 'center', note));
-  simpleSheet('', body);
-  sfx('chest');
-  render();
+function lootSheet(title, loot, note, kind) {
+  const summary = () => {
+    const body = el('div');
+    body.append(lootBox(title, loot));
+    if (note) body.append(el('p', 'center', note));
+    simpleSheet('', body);
+    render();
+  };
+  if (kind && (loot.cards || []).length) openChest(kind, title, loot, summary); else { sfx('chest'); summary(); }
+}
+
+// Truhe öffnen: Sie fällt herein, ein Antippen öffnet sie, dann kommt der Inhalt Stück für Stück heraus.
+function openChest(kind, title, loot, done) {
+  const items = [];
+  if (loot.gold) items.push({ t: 'gold', n: loot.gold });
+  for (const s of loot.cards || []) items.push({ t: 'card', id: s.id, n: s.n });
+  if (loot.jokers) items.push({ t: 'joker', n: loot.jokers });
+  if (loot.gems) items.push({ t: 'gem', n: loot.gems });
+  const box = el('div', `chestfx ${kind}`, `<button class="skip">Überspringen</button><div class="ctitle">${title}</div><div class="cstage"><div class="rays"></div><div class="reveal"></div><div class="chestbox"><i class="glowin"></i><i class="lid"></i><i class="body"></i><i class="lock"></i><b class="ccount">${items.length}</b></div></div><div class="cinfo"></div><div class="uphint">Tippen zum Öffnen</div>`);
+  const reveal = box.querySelector('.reveal'), info = box.querySelector('.cinfo'), count = box.querySelector('.ccount'), hint = box.querySelector('.uphint');
+  fxLayer.replaceChildren(box); fxLayer.hidden = false;
+  sfx('deploy');
+  let i = -1, closed = false, timer = 0, last = performance.now();
+  const close = () => { if (closed) return; closed = true; clearTimeout(timer); fxLayer.hidden = true; fxLayer.replaceChildren(); fxLayer.onclick = null; done(); };
+  const next = () => {
+    clearTimeout(timer);
+    if (i < 0) { box.classList.add('open'); sfx('chest'); hint.textContent = 'Tippen für das nächste Stück'; }
+    i++;
+    if (i >= items.length) { close(); return; }
+    const it = items[i], node = el('div', `ritem ${it.t}`);
+    if (it.t === 'card') {
+      node.append(cardEl(it.id, { tag: 'div', lvl: profile.cards[it.id].lvl }));
+      const wish = profile.wish === it.id;
+      info.innerHTML = `<b>${CARDS[it.id].name}</b><span>× ${it.n}</span>${wish ? '<em class="wish">★ Wunschkarte</em>' : ''}${P.upgradeInfo(profile, it.id).can ? '<em class="can">Bereit zum Aufwerten</em>' : ''}`;
+      sfx(wish ? 'rune' : 'flip');
+    } else {
+      node.innerHTML = `<span class="ico ${it.t === 'gold' ? 'coin' : it.t}"></span>`;
+      info.innerHTML = `<b>${it.t === 'gold' ? 'Gold' : it.t === 'gem' ? 'Runensplitter' : 'Joker'}</b><span>+ ${fmt(it.n)}</span>`;
+      sfx('coin');
+    }
+    reveal.replaceChildren(node);
+    info.classList.remove('show'); void info.offsetWidth; info.classList.add('show');
+    count.textContent = items.length - i - 1; count.classList.toggle('zero', i === items.length - 1);
+    last = performance.now();
+    timer = setTimeout(next, 2100);
+  };
+  box.querySelector('.skip').addEventListener('click', e => { e.stopPropagation(); sfx('click'); close(); });
+  fxLayer.onclick = () => { if (performance.now() - last > 320) next(); };
+  timer = setTimeout(next, 2800); // öffnet sich nach kurzem Warten von selbst
 }
 
 // ---- Reiter „Kampf“ ----------------------------------------------------------------------------
@@ -172,20 +217,21 @@ function renderHome() {
   $('#questDot').hidden = !open;
   $('#crownInfo').textContent = profile.crownBox >= P.CROWN_BOX ? 'bereit zum Öffnen' : `${profile.crownBox} / ${P.CROWN_BOX} Kronen`;
   $('#crownDot').hidden = profile.crownBox < P.CROWN_BOX;
+  $('#modeDot').hidden = !(P.modeBonusOpen(profile) || P.bossNext(profile) >= 0);
   const n = profile.wins + profile.losses + profile.draws;
   $('#stats').textContent = n ? `${profile.wins} Siege · ${profile.losses} Niederlagen${profile.draws ? ` · ${profile.draws} Unentschieden` : ''}` : 'Zerstöre die Türme auf der anderen Seite der Furt.';
 }
 
 $('#levelSeg').addEventListener('click', e => { const l = e.target.dataset.level; if (!l) return; profile.level = l; save(); sfx('click'); renderHome(); });
 $('#playBtn').addEventListener('click', () => { sfx('click'); if (!profile.seenHelp) showHelp(() => startBattle(false)); else startBattle(false); });
-$('#trainBtn').addEventListener('click', () => { sfx('click'); if (!profile.seenHelp) showHelp(() => startBattle(true)); else startBattle(true); });
+$('#modeBtn').addEventListener('click', () => { sfx('click'); showModes(); });
 $('#arenaBox').addEventListener('click', () => { sfx('click'); show('road'); });
 $('#lvlPill').addEventListener('click', () => { sfx('click'); show('more'); });
 $('#questBtn').addEventListener('click', () => { sfx('click'); showQuests(); });
 $('#crownBtn').addEventListener('click', () => {
   sfx('click');
   const loot = P.claimCrownBox(profile);
-  if (loot) { save(); lootSheet('Kronentruhe', loot); return; }
+  if (loot) { save(); lootSheet('Kronentruhe', loot, '', 'kronen'); return; }
   simpleSheet('Kronentruhe', el('p', 'center', `Jede Krone aus einem Kampf zählt – auch bei einer Niederlage. Bei ${P.CROWN_BOX} Kronen öffnet sich eine große Truhe mit Gold, Karten und Runensplittern.<br><br><b>${profile.crownBox} / ${P.CROWN_BOX} Kronen</b>`));
 });
 
@@ -226,6 +272,7 @@ function showHelp(then) {
 
 // ---- Reiter „Karten“ ---------------------------------------------------------------------------
 let swap = null; // Karte aus der Sammlung, die gerade ins Deck getauscht wird
+let cardView = 'werte'; // zuletzt gewählte Ansicht im Kartenblatt (Werte, Erklärung, Geschichte)
 let filter = 'alle';
 const FILTERS = { alle: ['Alle', () => true], troop: ['Truppen', c => c.type === 'troop' && !c.hero], hero: ['Helden', c => !!c.hero], spell: ['Zauber', c => c.type === 'spell'], building: ['Gebäude', c => c.type === 'building'] };
 function renderDeck() {
@@ -249,13 +296,21 @@ function renderDeck() {
   const meter = id => { const c = profile.cards[id], u = P.upgradeInfo(profile, id); return u.max ? 0 : Math.max(0.001, c.n / u.copies); };
   const dg = $('#deckGrid'); dg.replaceChildren();
   for (const id of profile.deck) { const e = cardEl(id, { lvl: profile.cards[id].lvl, meter: meter(id), rune: P.hasRune(profile, id), wish: profile.wish === id }); if (swap) e.classList.add('pick'); dg.append(e); }
+  // Türme: die gewählte Art gilt für beide Außentürme; der Hauptturm steigt mit der Spielerstufe
+  $('#towerInfo').textContent = `Hauptturm: Stufe ${P.playerLevel(profile.xp).lvl}`;
+  $('#towerGrid').replaceChildren(...TOWER_IDS.map(id => {
+    if (!profile.cards[id]) return cardEl(id, { locked: P.unlockArena(id) });
+    const e = cardEl(id, { lvl: profile.cards[id].lvl, meter: meter(id), wish: profile.wish === id });
+    if (profile.towerSel === id) { e.classList.add('sel'); e.append(el('span', 'selMark', '✓')); }
+    return e;
+  }));
   const chips = $('#filterChips');
   chips.replaceChildren(...Object.entries(FILTERS).map(([k, [label]]) => { const b = el('button', k === filter ? 'on' : '', label); b.dataset.f = k; return b; }));
   const cg = $('#collGrid'); cg.replaceChildren();
-  const all = P.ARENAS.flatMap(a => a.unlock).filter(id => !profile.deck.includes(id) && FILTERS[filter][1](CARDS[id]));
+  const all = P.ARENAS.flatMap(a => a.unlock).filter(id => CARDS[id].type !== 'tower' && !profile.deck.includes(id) && FILTERS[filter][1](CARDS[id]));
   for (const id of all) cg.append(profile.cards[id] ? cardEl(id, { lvl: profile.cards[id].lvl, meter: meter(id), rune: P.hasRune(profile, id), wish: profile.wish === id }) : cardEl(id, { locked: P.unlockArena(id) }));
   if (!all.length) cg.append(el('p', 'empty', 'Keine weiteren Karten in dieser Auswahl.'));
-  $('#collCount').textContent = `${Object.keys(profile.cards).length} von ${Object.keys(CARDS).length} Karten`;
+  $('#collCount').textContent = `${Object.keys(profile.cards).filter(id => CARDS[id].type !== 'tower').length} von ${CARD_IDS.length} Karten`;
 }
 $('#upRow').addEventListener('click', e => { const b = e.target.closest('.upItem'); if (b) doUpgrade(b.dataset.id, false); });
 $('#wishBtn').addEventListener('click', () => {
@@ -272,38 +327,86 @@ $('#filterChips').addEventListener('click', e => { const f = e.target.dataset.f;
 $('#deckGrid').addEventListener('click', e => {
   const c = e.target.closest('.card'); if (!c) return;
   sfx('click');
-  if (swap) { profile.deck[profile.deck.indexOf(c.dataset.id)] = swap; swap = null; save(); renderDeck(); return; }
+  if (swap) {
+    if (CARDS[swap].hero && !CARDS[c.dataset.id].hero && heroCount(profile.deck) >= MAX_HEROES) { // ein vierter Held ginge nur im Tausch gegen einen anderen
+      sfx('error'); flash(c); $('#swapHint').textContent = `Höchstens ${MAX_HEROES} Helden im Deck – tippe einen Helden an, um ihn zu ersetzen.`;
+      return;
+    }
+    profile.deck[profile.deck.indexOf(c.dataset.id)] = swap; swap = null; save(); renderDeck(); return;
+  }
   showCard(c.dataset.id);
 });
+$('#towerGrid').addEventListener('click', e => { const c = e.target.closest('.card'); if (!c) return; sfx('click'); swap = null; showCard(c.dataset.id); });
 $('#collGrid').addEventListener('click', e => { const c = e.target.closest('.card'); if (!c) return; sfx('click'); swap = null; showCard(c.dataset.id); });
 
 const SPEED_NAME = v => (v <= 0.8 ? 'Langsam' : v <= 1.1 ? 'Mittel' : v <= 1.6 ? 'Schnell' : 'Sehr schnell');
-const SPAWN_NAME = { wicht: ['Wicht', 'Wichte'], glutling: ['Glutling', 'Glutlinge'], steinling: ['Steinling', 'Steinlinge'] };
+const SPAWN_NAME = new Proxy({ wicht: ['Wicht', 'Wichte'] }, { get: (t, k) => t[k] || UNIT_NAMES[k] || [k, k] }); // Kurzformen für die Wertetabelle
 function statRows(id, lvl) {
   const c = CARDS[id], m = sim.cardMult(lvl), up = lvl < P.MAX_LEVEL ? sim.cardMult(lvl + 1) : 0;
   const rows = [];
   const scaled = (label, base) => rows.push([label, fmt(Math.round(base * m)), up ? `+${fmt(Math.round(base * up) - Math.round(base * m))}` : '']);
+  if (c.type === 'tower') { // Türme wachsen mit 8 % je Stufe
+    const u = UNITS[c.unit], tm = sim.towerMult(lvl), tu = lvl < P.MAX_LEVEL ? sim.towerMult(lvl + 1) : 0;
+    const grow = (label, base) => rows.push([label, fmt(Math.round(base * tm)), tu ? `+${fmt(Math.round(base * tu) - Math.round(base * tm))}` : '']);
+    grow('Leben', u.hp); grow('Schaden', u.dmg);
+    rows.push(['Schlagtempo', `${dec(u.atk)} s`, '']); grow('Schaden je Sekunde', u.dmg / u.atk);
+    if (u.ammo) { rows.push(['Klingenvorrat', `${u.ammo.max} · neu alle ${dec(u.ammo.reload)} s`, '']); rows.push(['Wenn leer', `ein Wurf alle ${dec(u.ammo.reload + u.atk)} s`, '']); }
+    if (u.bless) { rows.push(['Segen', `alle ${u.bless.every}–38 s`, '']); rows.push(['Wirkung', 'zäheste Truppe +1 Stufe', '']); }
+    rows.push(['Reichweite', `${dec(u.range)} Felder`, '']); rows.push(['Ziele', 'Luft & Boden', '']);
+    return rows;
+  }
   if (c.type === 'spell') {
     if (c.dmg) { scaled(c.strikes ? 'Schaden je Blitz' : 'Schaden', c.dmg); scaled('Turmschaden', c.dmg * TOWER_SPELL_FACTOR); }
     if (c.strikes) rows.push(['Blitze', `${c.strikes} – auf die zähesten Ziele`, '']);
     if (c.heal) { scaled('Heilung je Schlag', c.heal); rows.push(['Dauer', `${c.dur} s`, '']); }
-    if (c.dot) { scaled('Schaden je Sekunde', c.dot / c.tick); if (!c.pull) scaled('Turmschaden je Sek.', c.dot / c.tick * TOWER_SPELL_FACTOR); rows.push(['Dauer', `${c.dur} s`, '']); }
+    if (c.mirror) { rows.push(['Wiederholt', 'deine letzte Karte', '']); rows.push(['Kosten', 'ihre Kraft + 1', '']); rows.push(['Stufe der Wiederholung', String(lvl + 1), lvl < P.MAX_LEVEL ? '+1' : '']); rows.push(['Nicht möglich', 'Helden', '']); return rows; }
+    if (c.dot) { scaled('Schaden je Sekunde', c.dot / c.tick); if (c.buildF) scaled('Gebäudeschaden je Sek.', c.dot / c.tick * c.buildF); if (!c.pull) scaled('Turmschaden je Sek.', c.dot / c.tick * (c.towerF || TOWER_SPELL_FACTOR)); rows.push(['Dauer', `${c.dur} s`, '']); }
+    if (c.ground) rows.push(['Trifft', 'nur am Boden', '']);
+    if (c.slow) rows.push(['Bremst', `${c.dot ? 'solange es bebt' : `${dec(c.slow)} s`} · −35 %`, '']);
+    if (c.amp) rows.push(['Gegner nehmen', `+${Math.round((c.amp - 1) * 100)} % Schaden`, '']);
+    if (c.curse) rows.push(['Gefallene werden', SPAWN_NAME[c.curse][1], '']);
+    if (c.clone) { rows.push(['Verdoppelt', 'eigene Truppen im Kreis', '']); rows.push(['Abbild', '1 Leben, voller Schaden', '']); }
+    if (c.pulses) { scaled('Stoß bei 1 Gegner', c.pulses.dmg[0]); scaled('bei 2 bis 4', c.pulses.dmg[1]); scaled('ab 5', c.pulses.dmg[2]); rows.push(['Stöße', `${c.pulses.n} · jede Sekunde`, '']); }
+    if (c.summonOver) { rows.push(['Bringt', `${c.summonOver.count} ${SPAWN_NAME[c.summonOver.unit][1]}`, '']); rows.push(['Takt', `alle ${dec(c.summonOver.every)} s einer`, '']); scaled(`${SPAWN_NAME[c.summonOver.unit][0]}: Schaden`, UNITS[c.summonOver.unit].dmg); scaled(`${SPAWN_NAME[c.summonOver.unit][0]}: Leben`, UNITS[c.summonOver.unit].hp); }
+    if (c.rollSpawn) { rows.push(['Bringt', `${c.rollSpawn.count} ${SPAWN_NAME[c.rollSpawn.unit][0]}`, '']); scaled(`${SPAWN_NAME[c.rollSpawn.unit][0]}: Leben`, UNITS[c.rollSpawn.unit].hp); }
+    if (c.ownSide) rows.push(['Wirken', 'nur auf eigener Seite', '']);
     if (c.root) rows.push(['Hält fest', `${dec(c.root)} s`, '']);
     if (c.freeze) rows.push(['Friert ein', `${dec(c.freeze)} s · auch Türme`, '']);
     if (c.stun) rows.push(['Betäubt', `${dec(c.stun)} s`, '']);
     if (c.haste) rows.push(['Treibt an', `${c.haste} s · +35 %`, '']);
-    if (c.summon) { rows.push(['Bringt', `${c.summon.count} ${SPAWN_NAME[c.summon.unit][1]}`, '']); scaled('Wicht: Schaden', UNITS[c.summon.unit].dmg); scaled('Wicht: Leben', UNITS[c.summon.unit].hp); }
+    if (c.summon) { const sn = SPAWN_NAME[c.summon.unit]; rows.push(['Bringt', `${c.summon.count} ${sn[c.summon.count > 1 ? 1 : 0]}`, '']); scaled(`${sn[0]}: Schaden`, UNITS[c.summon.unit].dmg); scaled(`${sn[0]}: Leben`, UNITS[c.summon.unit].hp); }
     if (c.roll) { rows.push(['Rollt', `${c.roll.len} Felder weit`, '']); rows.push(['Breite', `${dec(c.roll.w)} Felder`, '']); }
     if (c.knock) rows.push(['Rückstoß', `${dec(c.knock)} Felder`, '']);
     if (c.pull) rows.push(['Zieht', 'Truppen zur Mitte', '']);
-    if (!c.roll) rows.push(['Radius', `${dec(c.radius)} Felder`, '']);
+    if (!c.roll && c.radius) rows.push(['Radius', `${dec(c.radius)} Felder`, '']);
     return rows;
   }
   const u = UNITS[c.unit], s = u.spawn ? UNITS[u.spawn.unit] : null;
   scaled('Leben', u.hp);
   if (u.shield) scaled('Schild', u.shield);
-  if (u.ramp) { rows.push(['Brennstrahl je Sek.', `${fmt(u.dmg / u.atk * m)} – ${fmt(u.dmg * u.ramp.at(-1)[1] / u.atk * m)}`, '']); rows.push(['Volle Hitze nach', `${u.ramp.at(-1)[0]} s am selben Ziel`, '']); }
-  else if (u.dmg) { scaled(u.splash || u.line ? 'Flächenschaden' : 'Schaden', u.dmg); rows.push(['Schlagtempo', `${dec(u.atk)} s`, '']); }
+  if (u.ramp) { rows.push([u.rampMelee ? 'Schaden je Sek.' : 'Brennstrahl je Sek.', `${fmt(u.dmg / u.atk * m)} – ${fmt(u.dmg * u.ramp.at(-1)[1] / u.atk * m)}`, '']); rows.push(['Volle Hitze nach', `${u.ramp.at(-1)[0]} s am selben Ziel`, '']); }
+  else if (u.scatter) { scaled('Schaden je Splitter', u.dmg); rows.push(['Splitter', `${u.scatter.n} im Fächer`, '']); rows.push(['Schlagtempo', `${dec(u.atk)} s`, '']); }
+  else if (u.dmg) { scaled(u.splash || u.line || u.burst ? 'Flächenschaden' : 'Schaden', u.dmg); rows.push(['Schlagtempo', `${dec(u.atk)} s`, '']); }
+  if (c.mix) for (const [bu, bk] of c.mix.slice(1)) { const b = UNITS[bu], sn = SPAWN_NAME[bu][0]; scaled(`${sn}: Leben`, b.hp); scaled(`${sn}: Schaden`, b.dmg); rows.push([`${sn}: Reichweite`, `${dec(b.range)} Felder`, '']); }
+  if (u.chain) rows.push(['Springt über', `auf ${u.chain.n - 1} weitere Ziele`, '']);
+  if (u.line && u.line.back) rows.push(['Kehrt zurück', 'trifft zweimal', '']);
+  if (u.burst) rows.push(['Streut', `${dec(u.burst.len)} Felder hinter das Ziel`, '']);
+  if (u.recoil) rows.push(['Rückstoß', `wirft ihn ${dec(u.recoil)} Felder zurück`, '']);
+  if (u.combo) scaled(`Jeder ${u.combo.every}. Schlag`, u.dmg * u.combo.f);
+  if (u.frenzy && u.frenzy.reset) rows.push(['Wird schneller', `bis ${dec(u.atk * Math.pow(u.frenzy.f, u.frenzy.max))} s`, '']);
+  if (u.stunArea) rows.push(['Vereist', `${dec(u.stunArea)} s · alles ringsum`, '']);
+  if (u.healBurst) scaled('Heilt ringsum', u.healBurst.amt);
+  if (u.second) { scaled(u.second.count > 1 ? 'Besatzung: Schaden' : 'Zweitangriff', u.second.dmg); rows.push(['· Takt und Weite', `${dec(u.second.atk)} s · ${u.second.minRange ? `${dec(u.second.minRange)}–` : ''}${dec(u.second.range)} Felder`, '']); if (u.second.root) rows.push(['· hält fest', `${dec(u.second.root)} s`, '']); }
+  if (u.reflect) { scaled('Rückschlag', u.reflect.dmg); rows.push(['· trifft Angreifer', `bis ${dec(u.reflect.r)} Felder · ${dec(u.reflect.stun)} s betäubt`, '']); }
+  if (u.enchant) { scaled('Zeichen: Zusatzschaden', u.enchant.bonus); rows.push(['· zeichnet', `${u.enchant.count} Verbündete, jeder ${u.enchant.every}. Treffer`, '']); }
+  if (u.hook) rows.push(['Haken', `${dec(u.hook.min)}–${u.hook.max} Felder`, '']);
+  if (u.curse) rows.push(['Fluch', `${dec(u.curse.dur)} s · wird ${SPAWN_NAME[u.curse.unit][0]}`, '']);
+  if (u.morph) rows.push(['Bei halbem Leben', UNITS[u.morph.unit].building ? `wird Gebäude (${UNITS[u.morph.unit].life} s)` : 'zündet sich und rennt los', '']);
+  if (u.morph && !UNITS[u.morph.unit].building) scaled('Sprengschaden', UNITS[u.morph.unit].dmg);
+  if (u.bounty) rows.push(['Schenkt dem Gegner', 'bis zu 4 Kraft', '']);
+  if (u.burrow) rows.push(['Besonderheit', 'vergraben unangreifbar', '']);
+  if (u.dashGuard) rows.push(['Im Sprung', 'unverwundbar', '']);
+  if (c.spread) rows.push(['Aufstellung', `Reihe über ${c.spread} Felder`, '']);
   if (u.towerDmg) scaled('Turmschaden', u.dmg * u.towerDmg);
   if (s) { if (!u.dmg) scaled(`${SPAWN_NAME[u.spawn.unit][0]}: Schaden`, s.dmg); rows.push(['Bringt hervor', `${u.spawn.count > 1 ? `${u.spawn.count} ${SPAWN_NAME[u.spawn.unit][1]}` : `1 ${SPAWN_NAME[u.spawn.unit][0]}`} alle ${dec(u.spawn.every)} s`, '']); }
   if (u.kraft) rows.push(['Liefert', `1 Kraft alle ${dec(u.kraft.every)} s`, '']);
@@ -321,14 +424,16 @@ function statRows(id, lvl) {
   if (u.healHit) scaled('Heilt je Schlag', u.healHit.amt);
   if (u.load) rows.push(['Erste Ladung', `${u.load} s`, '']);
   if (u.deathDmg) { scaled('Schaden beim Tod', u.deathDmg.dmg); if (u.deathDmg.delay) rows.push(['Lunte', `${u.deathDmg.delay} s`, '']); if (u.deathDmg.slow) rows.push(['Bremst beim Tod', `${dec(u.deathDmg.slow)} s`, '']); }
-  if (u.deathSpawn) rows.push(['Zerbricht in', `${u.deathSpawn.count} ${SPAWN_NAME[u.deathSpawn.unit][1]}`, '']);
+  if (u.deathSpawn) rows.push([UNITS[u.deathSpawn.unit].targets === 'buildings' ? 'Zerbricht in' : UNITS[u.deathSpawn.unit].hatch ? 'Hinterlässt' : 'Beim Tod', `${u.deathSpawn.count} ${SPAWN_NAME[u.deathSpawn.unit][u.deathSpawn.count > 1 ? 1 : 0]}`, '']);
   if (u.deathZone) rows.push(['Beim Tod', CARDS[u.deathZone].name, '']);
   if (u.life) rows.push(['Lebensdauer', `${u.life} s`, '']);
   if (u.speed) rows.push(['Tempo', SPEED_NAME(u.speed), '']);
   if (u.dmg) rows.push(['Reichweite', u.range >= 2 ? `${u.minRange ? `${dec(u.minRange)}–` : ''}${dec(u.range)} Felder` : 'Nahkampf', '']);
   if (u.dmg) rows.push(['Ziele', u.targets === 'buildings' ? 'Gebäude' : u.hitsAir ? 'Luft & Boden' : 'Boden', '']);
-  if (c.count > 1) rows.push(['Anzahl', `× ${c.count}`, '']);
+  if (c.mix) rows.push(['Anzahl', c.mix.map(([, k]) => k).join(' + '), '']);
+  else if (c.count > 1) rows.push(['Anzahl', `× ${c.count}`, '']);
   if (u.air) rows.push(['Bewegung', 'Fliegt', '']);
+  if (u.ford) rows.push(['Bewegung', 'springt über den Fluss', '']);
   if (c.anywhere) rows.push(['Aufstellen', 'überall auf dem Feld', '']);
   return rows;
 }
@@ -339,14 +444,22 @@ function showCard(id) {
   const top = el('div', 'detail');
   top.append(cardEl(id, { tag: 'div', lvl: own ? own.lvl : 0 }));
   const lvl = own ? own.lvl : 1;
-  top.append(el('div', '', `<h4>${c.name}</h4><div class="role">${c.role} · ${c.cost} Kraft</div><p>${c.desc}</p>`));
+  top.append(el('div', '', `<h4>${c.name}</h4><div class="role">${c.type === 'tower' ? c.role : c.mirror ? `${c.role} · kostet 1 Kraft mehr als die wiederholte Karte` : `${c.role} · ${c.cost} Kraft`}</div><p>${c.desc}</p>`));
   d.append(top);
-  d.append(el('div', 'statlist', statRows(id, lvl).map(([k, v, plus]) => `<div>${k}<b>${v}${plus && own ? `<em>${plus}</em>` : ''}</b></div>`).join('')));
-  if (c.hero) d.append(el('div', 'extra heroBox', `<b>Fähigkeit: ${c.ability.name}</b><small>${c.ability.cost} Kraft · alle ${c.ability.cd} s</small><p>${c.ability.desc}</p>`));
+  // Drei Ansichten: Werte, genaue Erklärung, Geschichte
+  const seg = el('div', 'seg small infoSeg'), panes = { werte: el('div', 'pane'), wirkung: el('div', 'pane how'), story: el('div', 'pane story') };
+  for (const [k, label] of [['werte', 'Werte'], ['wirkung', 'Erklärung'], ['story', 'Geschichte']]) { const b = el('button', k === cardView ? 'on' : '', label); b.dataset.view = k; seg.append(b); panes[k].hidden = k !== cardView; }
+  seg.addEventListener('click', e => { const v = e.target.dataset.view; if (!v) return; sfx('click'); cardView = v; for (const b of seg.children) b.classList.toggle('on', b.dataset.view === v); for (const [k, pn] of Object.entries(panes)) pn.hidden = k !== v; });
+  d.append(seg);
+  panes.werte.append(el('div', 'statlist', statRows(id, lvl).map(([k, v, plus]) => `<div>${k}<b>${v}${plus && own ? `<em>${plus}</em>` : ''}</b></div>`).join('')));
+  if (c.hero) panes.werte.append(el('div', 'extra heroBox', `<b>Fähigkeit: ${c.ability.name}</b><small>${c.ability.cost} Kraft · alle ${c.ability.cd} s</small><p>${c.ability.desc}</p>`));
   if (RUNES[id]) {
     const R = RUNES[id], has = own && own.lvl >= RUNE_LEVEL;
-    d.append(el('div', `extra runeBox${has ? ' on' : ''}`, `<b>Runenform</b><small>${has ? 'freigeschaltet' : `ab Stufe ${RUNE_LEVEL}`} · jede ${R.cycles + 1}. Karte</small><p>${R.desc}</p>`));
+    panes.werte.append(el('div', `extra runeBox${has ? ' on' : ''}`, `<b>Runenform</b><small>${has ? 'freigeschaltet' : `ab Stufe ${RUNE_LEVEL}`} · jede ${R.cycles + 1}. Karte</small><p>${R.desc}</p>`));
   }
+  panes.wirkung.append(el('ul', '', explain(id, lvl).map(t => `<li>${esc(t)}</li>`).join('')), el('small', '', `Zahlen für Stufe ${lvl}.`));
+  panes.story.append(el('p', '', esc(STORY[id] || '')));
+  d.append(panes.werte, panes.wirkung, panes.story);
   const btns = el('div', 'btns');
   if (!own) {
     d.append(el('div', 'notice', `Wird in Arena ${P.unlockArena(id) + 1} (${P.ARENAS[P.unlockArena(id)].name}, ${P.ARENAS[P.unlockArena(id)].at} Trophäen) freigeschaltet.`));
@@ -374,7 +487,13 @@ function showCard(id) {
       tools.append(jb, wb);
       d.append(tools);
     }
-    if (!profile.deck.includes(id)) {
+    if (c.type === 'tower') { // Turmart für beide Außentürme wählen
+      const on = profile.towerSel === id, b = el('button', 'btn', on ? 'Aufgestellt ✓' : 'Aufstellen');
+      b.disabled = on;
+      b.addEventListener('click', () => { P.setTower(profile, id); save(); sfx('deploy'); render(); showCard(id); });
+      btns.append(b);
+      d.insertBefore(el('p', 'center small', `Gilt für beide Außentürme. Der Hauptturm steigt mit deiner Spielerstufe (jetzt Stufe ${P.playerLevel(profile.xp).lvl}).`), d.querySelector('.upline, .notice') || null);
+    } else if (!profile.deck.includes(id)) {
       const b = el('button', 'btn', 'Ins Deck');
       b.addEventListener('click', () => { sfx('click'); swap = id; closeSheet(); show('cards'); $('#tabCards .scroll').scrollTop = 0; });
       btns.append(b);
@@ -482,7 +601,7 @@ function renderShop() {
     b.addEventListener('click', () => {
       if (profile.gems < c.gems) { sfx('error'); flash(b); return; }
       const loot = P.buyChest(profile, kind);
-      if (loot) { save(); lootSheet(c.name, loot); }
+      if (loot) { save(); lootSheet(c.name, loot, '', kind); }
     });
     chests.append(b);
   }
@@ -523,7 +642,7 @@ function renderRoad() {
         const loot = P.claimRoad(profile, r.at);
         if (!loot) return;
         save();
-        if (loot.cards.length) lootSheet('Truhe vom Trophäenweg', loot); else { sfx('coin'); render(); }
+        if (loot.cards.length) lootSheet('Truhe vom Trophäenweg', loot, '', 'holz'); else { sfx('coin'); render(); }
       });
       row.append(b); body.append(row);
       if (can && !got && !firstOpen) firstOpen = row;
@@ -630,14 +749,79 @@ function showTransfer() {
 
 function showAbout() {
   const body = el('div', '', `<p>Runenfurt ist ein eigenständiges Echtzeit-Kartenspiel gegen den Computer. Es läuft ganz auf deinem Gerät: kein Konto, keine Werbung, keine Käufe, keine Datenübertragung. Der Spielstand liegt nur in diesem Browser.</p>
-<p>${Object.keys(CARDS).length} Karten · ${P.ARENAS.length} Arenen · ${Object.keys(RUNES).length} Runenformen</p>
+<p>${CARD_IDS.length} Karten · ${TOWER_IDS.length} Turmarten · ${P.ARENAS.length} Arenen · ${P.BOSSES.length} Bosse · ${Object.keys(RUNES).length} Runenformen</p>
 <p class="small">3D-Darstellung mit three.js (MIT-Lizenz, © three.js-Autoren). <span id="ver"></span></p>`);
   simpleSheet('Über Runenfurt', body);
   fetch('./sw.js').then(r => r.text()).then(t => { const m = t.match(/VERSION = '([^']+)'/); const v = $('#ver'); if (m && v) v.textContent = `Version ${m[1].replace('runenfurt-', '')}.`; }).catch(() => {});
 }
 
+// ---- Spielmodi und Bosskämpfe ------------------------------------------------------------------
+function showModes() {
+  const d = el('div', 'modes');
+  d.append(el('h3', '', 'Spielmodi'), el('p', 'center small', 'Herausforderungen ohne Trophäen. Jeder Sieg bringt eine Truhe.'));
+  const today = P.modeOfDay(profile.day), list = el('div', 'list');
+  const row = (key, name, text, badge) => { const b = el('button', 'btn item modeRow', `<span><b>${name}${badge ? `<em>${badge}</em>` : ''}</b><small>${text}</small></span><i></i>`); b.dataset.mode = key; list.append(b); };
+  const ids = [today, ...P.MODE_IDS.filter(id => id !== today)];
+  for (const id of ids) row(id, P.MODES[id].name, P.MODES[id].text, id === today ? (P.modeBonusOpen(profile) ? `Heute +${P.MODE_BONUS} <span class="ico gem"></span>` : 'Modus des Tages') : '');
+  row('uebung', 'Übungskampf', 'Ein normaler Kampf, der nicht zählt – zum Ausprobieren neuer Decks.', '');
+  d.append(list);
+  d.append(el('div', 'sub', `<b>Bosskämpfe</b><span>${profile.bosses.length} von ${P.BOSSES.length} besiegt</span>`));
+  const bosses = el('div', 'list');
+  P.BOSSES.forEach((b, i) => {
+    if (i > profile.arena + 1) return;
+    const open = P.bossOpen(profile, i), won = profile.bosses.includes(i);
+    const r = el('button', `btn item bossRow${won ? ' won' : ''}${open ? '' : ' shut'}`, `<span><b>${b.name}${won ? '<em class="ok">besiegt</em>' : open ? `<em>+${P.BOSS_REWARD.gems} <span class="ico gem"></span></em>` : ''}</b><small>${open ? `Arena ${i + 1} · ${P.ARENAS[i].name} – ${b.text}` : `Wartet in Arena ${i + 1} (${P.ARENAS[i].name}, ${P.ARENAS[i].at} Trophäen).`}</small></span><i></i>`);
+    r.dataset.boss = i; r.disabled = !open;
+    bosses.append(r);
+  });
+  d.append(bosses);
+  const btns = el('div', 'btns one'); btns.append(closeBtn()); d.append(btns);
+  d.addEventListener('click', e => {
+    const m = e.target.closest('.modeRow'), b = e.target.closest('.bossRow');
+    if (!m && !b) return;
+    sfx('click');
+    const go = () => { if (b) startBattle({ boss: Number(b.dataset.boss) }); else if (m.dataset.mode === 'uebung') startBattle({ training: true }); else if (m.dataset.mode === 'wahl') startDraft(); else startBattle({ mode: m.dataset.mode }); };
+    if (!profile.seenHelp) showHelp(go); else go();
+  });
+  sheetDismiss = () => { closeSheet(); sheetDismiss = null; };
+  openSheet(d, false);
+}
+
+// Kartenwahl: vier Runden, je zwei Karten – eine für mich, die andere für den Gegner
+function startDraft() {
+  let s = ((Number(params.get('seed')) || Date.now()) >>> 0) || 1;
+  const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const pairs = P.draftPairs(rnd), picks = [];
+  for (const pr of pairs) for (const id of pr) art(id);
+  const step = () => {
+    const i = picks.length, d = el('div', 'draft');
+    if (i === 4) {
+      const [mine, foe] = P.draftDecks(pairs, picks, rnd);
+      d.append(el('h3', '', 'Dein Deck'), el('p', 'center small', 'Vier gewählt, vier vom Gegner bekommen. Beide Seiten spielen auf gleicher Stufe.'));
+      const grid = el('div', 'grid'); for (const id of mine) grid.append(cardEl(id, { tag: 'div' })); d.append(grid);
+      const row = el('div', 'btns'), go = el('button', 'btn primary', 'Los geht’s');
+      go.addEventListener('click', () => { sfx('click'); startBattle({ mode: 'wahl', decks: [mine, foe] }); });
+      row.append(closeBtn('Abbrechen'), go); d.append(row);
+    } else {
+      d.append(el('h3', '', 'Kartenwahl'), el('p', 'center', `Runde ${i + 1} von 4 – welche Karte nimmst du? Die andere bekommt dein Gegner.`));
+      const row = el('div', 'draftRow');
+      pairs[i].forEach((id, k) => {
+        const b = el('button', 'draftPick');
+        b.append(cardEl(id, { tag: 'div' }), el('small', '', `${CARDS[id].role}`));
+        b.addEventListener('click', () => { sfx('click'); picks.push(k); step(); });
+        row.append(b);
+      });
+      d.append(row);
+      if (i) { const got = el('div', 'thumbs'); picks.forEach((k, j) => got.append(cardEl(pairs[j][k], { tag: 'div' }))); d.append(el('p', 'center small', 'Bisher gewählt:'), got); }
+      const row2 = el('div', 'btns one'); row2.append(closeBtn('Abbrechen')); d.append(row2);
+    }
+    sheetDismiss = null; openSheet(d, true);
+  };
+  step();
+}
+
 // ---- Kampf -------------------------------------------------------------------------------------
-const B = { g: null, ai: null, auto: null, acc: 0, last: 0, sel: null, ghost: null, paused: false, running: false, endAt: 0, drag: null, flags: {}, hand: [], next: null };
+const B = { arena: null, g: null, ai: null, auto: null, acc: 0, last: 0, sel: null, ghost: null, paused: false, running: false, endAt: 0, drag: null, flags: {}, hand: [], next: null };
 
 function layout() {
   const cs = getComputedStyle($('#probe'));
@@ -645,24 +829,44 @@ function layout() {
   const vw = window.innerWidth, vh = window.innerHeight;
   const root = getComputedStyle(document.documentElement);
   const hud = parseFloat(root.getPropertyValue('--hud')) || 44, panel = parseFloat(root.getPropertyValue('--panel')) || 148;
-  renderer.resize(vw, vh - sat - sab - hud - panel, Math.min(3, window.devicePixelRatio || 1), profile.arena);
+  renderer.resize(vw, vh - sat - sab - hud - panel, Math.min(3, window.devicePixelRatio || 1), B.arena ?? profile.arena);
 }
 window.addEventListener('resize', layout);
 window.addEventListener('orientationchange', () => setTimeout(layout, 300));
 
-function startBattle(training) {
+// opts: { training } Übungskampf · { mode } Spielmodus (bei 'wahl' mit decks) · { boss } Bosskampf der Arena
+function startBattle(opts) {
+  opts = opts === true ? { training: true } : opts || {};
   closeSheet(); sheetDismiss = null;
   unlock();
-  for (const id of profile.deck) art(id); // Kartenbilder vor dem Kampf erzeugen (im Kampf würde das die Bühne stören)
   const seed = (Number(params.get('seed')) || Date.now()) >>> 0;
   let s = seed || 1;
   const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
-  const opp = P.opponentLevels(profile, profile.level);
-  B.g = sim.createGame({ seed, decks: [profile.deck, P.opponentDeck(profile, rnd)], levels: [P.playerLevels(profile), opp] });
-  B.ai = createAi(profile.level);
+  const mode = opts.mode || null, boss = opts.boss ?? null;
+  let decks = [profile.deck, P.opponentDeck(profile, rnd)], levels = [P.playerLevels(profile), P.opponentLevels(profile, profile.level)], rules = {}, aiLevel = profile.level;
+  B.foe = P.opponentName(rnd); B.label = '';
+  const foeTower = P.opponentTower(profile, rnd);
+  levels[1].towerType = foeTower;
+  if (boss != null) {
+    const set = P.bossSetup(profile, boss);
+    decks[1] = set.deck; levels[1] = set.levels; rules = set.rules; aiLevel = 'schwer'; B.foe = P.BOSSES[boss].name; B.label = 'Bosskampf';
+  } else if (mode) {
+    rules = P.modeRules(profile, mode); B.label = mode === 'dreifach' ? '3× Kraft' : P.MODES[mode].name;
+    const even = () => [P.evenLevels(profile, profile.towerSel), P.evenLevels(profile, mode === 'spiegel' ? profile.towerSel : foeTower)];
+    if (mode === 'spiegel') { decks[1] = [...profile.deck]; levels = even(); }
+    if (mode === 'wahl') { decks = opts.decks; levels = even(); }
+    if (mode === 'ansturm') B.foe = 'Ansturm';
+  }
+  for (const id of decks[0]) art(id); // Kartenbilder vor dem Kampf erzeugen
+  const opp = levels[1];
+  B.g = sim.createGame({ seed, decks, levels, rules });
+  B.ai = mode === 'ansturm' ? null : createAi(aiLevel);
   B.auto = AUTO ? createAi(AUTO) : null;
-  B.level = profile.level; B.oppLvl = opp.lvl; B.training = !!training; B.foe = P.opponentName(rnd);
+  B.opts = opts;
+  B.arena = boss != null ? boss : profile.arena; // ein Boss empfängt in seiner eigenen Arena
+  B.level = profile.level; B.oppLvl = opp.lvl; B.training = !!opts.training;
   B.count = { played: {}, spells: 0, abilities: 0 };
+  B.slowT = 0;
   B.acc = 0; B.last = performance.now(); B.sel = null; B.ghost = null; B.paused = false; B.endAt = 0; B.flags = {}; B.hand = []; B.next = null; B.booked = false;
   $('#foeName').textContent = B.foe;
   renderer.reset();
@@ -670,13 +874,31 @@ function startBattle(training) {
   layout();
   if (renderer.prepare) renderer.prepare(B.g);
   updateHud(true);
-  banner(training ? 'Übungskampf' : 'Kampf!');
-  toast(`${B.foe} · Kartenstufe ${opp.lvl}`, 2600);
+  banner(boss != null ? `Boss: ${B.foe}` : opts.training ? 'Übungskampf' : B.label || 'Kampf!');
+  toast(boss != null ? P.BOSSES[boss].text : mode === 'ansturm' ? 'Halte drei Minuten durch!' : `${B.foe} · Kartenstufe ${opp.lvl}`, boss != null ? 4500 : 2600);
   sfx('horn');
   wakeLock(true);
   if (!B.running) { B.running = true; requestAnimationFrame(frame); }
 }
 
+// Eine Krone fliegt vom gefallenen Turm zur Anzeige oben
+function flyCrown(ev) {
+  if (!renderer.toScreen || SPEED > 1) return;
+  const target = $(ev.side === 1 ? '#crownMe' : '#crownFoe'), from = renderer.toScreen(ev.x, ev.y, 2.4), to = target.getBoundingClientRect();
+  const c = el('span', 'ico crown fly');
+  c.style.left = `${from.x - 16}px`; c.style.top = `${from.y - 16}px`;
+  document.body.append(c);
+  const a = c.animate([
+    { transform: 'scale(.2)', opacity: 0 }, { transform: 'scale(2.8)', opacity: 1, offset: 0.22 }, { transform: 'scale(2.4)', opacity: 1, offset: 0.5 },
+    { transform: `translate(${to.left + to.width / 2 - from.x}px, ${to.top + to.height / 2 - from.y}px) scale(1)`, opacity: 1 },
+  ], { duration: 1150, easing: 'cubic-bezier(.45,0,.2,1)' });
+  a.onfinish = () => { c.remove(); target.classList.remove('bump'); void target.offsetWidth; target.classList.add('bump'); sfx('coin'); };
+}
+function confetti() {
+  const box = el('div', 'confetti'), cols = ['#2ec4b6', '#f6c453', '#ffffff', '#c98bff', '#58c7f3'];
+  for (let i = 0; i < 46; i++) { const p = el('i'); p.style.left = `${Math.random() * 100}%`; p.style.background = cols[i % cols.length]; p.style.animationDuration = `${1.7 + Math.random() * 1.6}s`; p.style.animationDelay = `${Math.random() * 0.9}s`; p.style.setProperty('--r', `${Math.random() * 720 - 360}deg`); p.style.setProperty('--dx', `${Math.random() * 120 - 60}px`); box.append(p); }
+  overlay.prepend(box);
+}
 let bannerT = 0;
 function banner(text) { const b = $('#banner'); b.hidden = true; void b.offsetWidth; b.textContent = text; b.hidden = false; clearTimeout(bannerT); bannerT = setTimeout(() => { b.hidden = true; }, 2000); }
 let toastT = 0;
@@ -700,15 +922,23 @@ function handleEvents() {
     else if (ev.t === 'cast') sfx('cast');
     else if (ev.t === 'spell') sfx(ev.spell);
     else if (ev.t === 'hit') sfx(ev.heavy || ev.splash ? 'heavy' : 'hit');
-    else if (ev.t === 'shoot') sfx(ev.from === 'aussenturm' || ev.from === 'hauptturm' ? 'tower' : 'shoot');
-    else if (ev.t === 'die' && ev.kind === 'tower') { sfx('fall'); if (!ev.main && !g.over) banner(ev.side === 1 ? 'Turm zerstört!' : 'Turm verloren!'); }
+    else if (ev.t === 'shoot') sfx(UNITS[ev.from] && UNITS[ev.from].tower ? 'tower' : 'shoot');
+    else if (ev.t === 'bless') sfx('bless');
+    else if (ev.t === 'chain') sfx('funkenschlag');
+    else if (ev.t === 'scatter') sfx('scatter');
+    else if (ev.t === 'hook') sfx('hook');
+    else if (ev.t === 'pulse') sfx('pulse');
+    else if (ev.t === 'morph' || ev.t === 'hatch' || ev.t === 'curse' || ev.t === 'clone') sfx('morph');
+    else if (ev.t === 'ench') sfx('heavy');
+    else if (ev.t === 'die' && ev.kind === 'tower') { sfx('fall'); if (!ev.main && !g.over) banner(ev.side === 1 ? 'Turm zerstört!' : 'Turm verloren!'); if (SPEED === 1) B.slowT = 0.75; flyCrown(ev); }
     else if (ev.t === 'wake') sfx('wake');
     else if (ev.t === 'shield' || ev.t === 'fuse') sfx(ev.t);
     else if (ev.t === 'kraft') { if (ev.side === 0) sfx('kraft'); }
     else if (ev.t === 'overtime') { sfx('horn'); banner('Verlängerung – der nächste Turm gewinnt!'); }
+    else if (ev.t === 'wave') { sfx('wake'); banner(`Welle ${ev.n}`); }
   }
   g.events.length = 0;
-  if (!B.flags.double && g.phase === 'main' && g.time >= g.duration - 60) { B.flags.double = true; banner('Doppelte Kraft!'); sfx('horn'); }
+  if (!B.flags.double && !g.kraftFixed && g.phase === 'main' && g.time >= g.duration - 60) { B.flags.double = true; banner('Doppelte Kraft!'); sfx('horn'); }
   if (!B.flags.triple && g.phase === 'over' && g.time >= g.duration + g.overtime - 60) { B.flags.triple = true; banner('Dreifache Kraft!'); sfx('horn'); }
   const left = Math.ceil(sim.timeLeft(g));
   if (left <= 10 && left > 0 && left !== B.flags.tick && !g.over) { B.flags.tick = left; sfx('tick'); }
@@ -722,10 +952,11 @@ function frame(now) {
   const g = B.g;
   const dt = Math.min(0.1, (now - B.last) / 1000); B.last = now;
   if (!B.paused && !g.over) {
-    B.acc += dt * SPEED;
+    B.acc += dt * SPEED * (B.slowT > 0 ? 0.3 : 1); // kurze Zeitlupe, wenn ein Turm fällt
+    if (B.slowT > 0) B.slowT -= dt;
     let n = 0;
     while (B.acc >= sim.DT && n++ < 60 && !g.over) {
-      aiUpdate(g, 1, B.ai, sim.DT);
+      if (B.ai) aiUpdate(g, 1, B.ai, sim.DT);
       if (B.auto) aiUpdate(g, 0, B.auto, sim.DT);
       sim.step(g);
       B.acc -= sim.DT;
@@ -747,7 +978,7 @@ function updateHud(force) {
   const txt = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
   if (force || B.flags.time !== txt) { B.flags.time = txt; $('#time').textContent = txt; }
   const rate = Math.round(sim.kraftRate(g) / sim.KRAFT_RATE);
-  const ph = g.phase === 'over' ? `Verlängerung${rate > 2 ? ' · 3×' : ' · 2×'}` : rate > 1 ? '2× Kraft' : '';
+  const ph = g.phase === 'over' ? `Verlängerung${rate > 2 ? ' · 3×' : ' · 2×'}` : g.waves && g.waves.n ? `Welle ${g.waves.n}` : rate > 1 && !g.kraftFixed ? '2× Kraft' : B.label || '';
   if (force || B.flags.ph !== ph) { B.flags.ph = ph; $('#phase').textContent = ph; $('#clock').classList.toggle('hot', g.phase === 'over' || left <= 10); }
   const cr = `${g.sides[1].crowns}:${S.crowns}`;
   if (force || B.flags.cr !== cr) { B.flags.cr = cr; $('#crownFoe').textContent = g.sides[1].crowns; $('#crownMe').textContent = S.crowns; }
@@ -757,17 +988,19 @@ function updateHud(force) {
   const hand = $('#hand');
   for (let i = 0; i < 4; i++) {
     const id = S.hand[i], R = S.runes.has(id) ? RUNES[id] : null;
-    const key = R ? `${id}|${Math.min(R.cycles, S.cycle[id] || 0)}` : id;
+    const echo = CARDS[id].mirror, price = sim.cardCost(g, 0, id);
+    const key = R ? `${id}|${Math.min(R.cycles, S.cycle[id] || 0)}` : echo ? `${id}|${S.last || ''}` : id;
     if (force || B.hand[i] !== key) {
       const fresh = !B.hand[i] || B.hand[i].split('|')[0] !== id;
       B.hand[i] = key;
-      const e = cardEl(id, { lvl: S.levels[id] || 1, pips: R ? { n: Math.min(R.cycles, S.cycle[id] || 0), of: R.cycles } : null });
+      const e = cardEl(id, { lvl: S.levels[id] || 1, pips: R ? { n: Math.min(R.cycles, S.cycle[id] || 0), of: R.cycles } : null, cost: echo ? (Number.isFinite(price) ? price : '?') : null });
+      if (echo && S.last) e.querySelector('.name').textContent = `↺ ${CARDS[S.last].name}`;
       e.dataset.i = i;
       if (!force && fresh) e.classList.add('new');
       if (hand.children[i]) hand.replaceChild(e, hand.children[i]); else hand.append(e);
     }
     const e = hand.children[i];
-    e.classList.toggle('poor', CARDS[S.hand[i]].cost > S.kraft);
+    e.classList.toggle('poor', price > S.kraft);
     e.classList.toggle('sel', B.sel === i);
   }
   if (force || B.next !== S.next) { B.next = S.next; $('#nextCard').replaceChildren(cardEl(S.next, { tag: 'div' })); }
@@ -794,7 +1027,8 @@ function tryPlay(pos) {
   const g = B.g;
   if (B.sel == null || !pos || g.over || B.paused) return;
   const id = g.sides[0].hand[B.sel], c = CARDS[id];
-  if (g.sides[0].kraft < c.cost) { toast('Zu wenig Kraft'); sfx('error'); return; }
+  if (c.mirror && !g.sides[0].last) { toast('Noch keine Karte zum Wiederholen'); sfx('error'); return; }
+  if (g.sides[0].kraft < sim.cardCost(g, 0, id)) { toast('Zu wenig Kraft'); sfx('error'); return; }
   const p = sim.clampDeploy(g, 0, id, pos.x, pos.y);
   if (sim.playCard(g, 0, B.sel, p.x, p.y)) {
     B.sel = null; B.ghost = null;
@@ -866,16 +1100,31 @@ function finishBattle() {
   const g = B.g, w = g.winner;
   const timeout = !B.gaveUp && w !== 'draw' && g.sides[0].crowns === g.sides[1].crowns;
   const questsBefore = P.questsOpen(profile);
-  const res = P.applyResult(profile, { winner: w, level: B.level, crowns: g.sides[0].crowns, foeCrowns: g.sides[1].crowns, foe: B.foe, when: Date.now(), training: B.training, ...B.count });
+  const special = B.opts.mode || B.opts.boss != null;
+  const res = P.applyResult(profile, { winner: w, level: B.level, crowns: g.sides[0].crowns, foeCrowns: g.sides[1].crowns, foe: B.foe, when: Date.now(), training: B.training, mode: B.opts.mode, boss: B.opts.boss, ...B.count });
   B.gaveUp = false;
   save();
   sfx(w === 0 ? 'win' : w === 1 ? 'lose' : 'draw');
   const d = el('div');
   d.append(el('h3', w === 0 ? 'win' : w === 1 ? 'lose' : '', w === 0 ? 'Sieg!' : w === 1 ? 'Niederlage' : 'Unentschieden'));
+  const crowns = el('div', 'crowns3'); // die eigenen Kronen springen nacheinander auf
+  for (let i = 0; i < 3; i++) { const c = el('i', i < g.sides[0].crowns ? 'on' : ''); c.style.animationDelay = `${0.4 + i * 0.3}s`; crowns.append(c); if (i < g.sides[0].crowns) setTimeout(() => { if (!overlay.hidden) sfx('coin'); }, 550 + i * 300); }
+  d.append(crowns);
+  if (w === 0) confetti();
   d.append(el('div', 'result', `<span class="me">${g.sides[0].crowns}</span><span class="ico crown"></span><span class="foe">${g.sides[1].crowns}</span>`));
   if (timeout) d.append(el('p', 'center', 'Entschieden über den am stärksten beschädigten Turm.'));
   if (B.training) d.append(el('p', 'center', 'Übungskampf – Trophäen und Truhen bleiben unberührt.'));
-  else d.append(el('div', 'delta', `<span class="ico trophy"></span>${res.delta > 0 ? '+' : ''}${res.delta}<span style="color:var(--dim);font-weight:600;font-size:15px">&nbsp;→ ${fmt(profile.trophies)}</span>`));
+  else if (special) {
+    d.append(el('p', 'center', `${B.opts.boss != null ? `Bosskampf gegen ${B.foe}` : `Herausforderung „${P.MODES[B.opts.mode].name}“`} – ohne Trophäen.`));
+    if (res.bossFirst) d.append(el('div', 'notice', `Boss besiegt! +${P.BOSS_REWARD.gems} Runensplitter und eine große Truhe`));
+    if (res.bonus) d.append(el('div', 'notice', `Modus des Tages gewonnen: +${res.bonus} Runensplitter`));
+  } else {
+    const delta = el('div', 'delta', `<span class="ico trophy"></span>${res.delta > 0 ? '+' : ''}${res.delta}<span style="color:var(--dim);font-weight:600;font-size:15px">&nbsp;→ <b class="tcount">${fmt(profile.trophies - res.delta)}</b></span>`);
+    d.append(delta);
+    const tc = delta.querySelector('.tcount'), from = profile.trophies - res.delta, t0 = performance.now() + 700; // Trophäen zählen hoch oder herunter
+    const tick = now => { const q = Math.min(1, Math.max(0, (now - t0) / 800)); tc.textContent = fmt(from + res.delta * q); if (q < 1 && tc.isConnected) requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  }
   if (res.arenaUp) d.append(el('div', 'notice', `Neue Arena: ${res.arenaUp}! +${res.gems} Runensplitter`));
   if (res.newCards.length) {
     const box = el('div', 'chest'); box.append(el('b', 't', 'Neue Karten freigeschaltet'));
@@ -883,17 +1132,24 @@ function finishBattle() {
     for (const id of res.newCards) { const it = el('div', 'item'); it.append(cardEl(id, { tag: 'div' })); loot.append(it); }
     box.append(loot); d.append(box);
   }
-  if (res.chest) {
-    d.append(lootBox('Siegestruhe', res.chest));
-    if (canUpgradeAny()) d.append(el('p', 'center', 'Du kannst eine Karte aufwerten – schau unter „Karten“.'));
-    setTimeout(() => sfx('coin'), 700);
+  if (res.chest) { // die Siegestruhe wartet verschlossen; der Inhalt ist schon gutgeschrieben
+    const big = res.bossFirst, cname = big ? 'Bosstruhe' : 'Siegestruhe';
+    const slot = el('div', 'chestSlot'), cb = el('button', 'chestBtn', `<span class="chestIco ${big ? 'runen' : 'sieg'}"></span><b>${cname} öffnen</b>`);
+    cb.addEventListener('click', () => {
+      sfx('click');
+      openChest(big ? 'runen' : 'sieg', cname, res.chest, () => {
+        slot.replaceChildren(lootBox(cname, res.chest));
+        if (canUpgradeAny()) slot.append(el('p', 'center', 'Du kannst eine Karte aufwerten – schau unter „Karten“.'));
+      });
+    });
+    slot.append(cb); d.append(slot);
   }
   if (res.crownBox) d.append(el('div', 'notice', 'Die Kronentruhe ist voll – hol sie dir im Menü!'));
   if (P.questsOpen(profile) > questsBefore) d.append(el('div', 'notice', 'Tagesaufgabe erfüllt – Belohnung wartet im Menü.'));
   const row = el('div', 'btns');
   const menu = el('button', 'btn', 'Menü'), again = el('button', 'btn primary', 'Nochmal');
   menu.addEventListener('click', () => { sfx('click'); closeSheet(); B.running = false; show('home'); });
-  again.addEventListener('click', () => { sfx('click'); startBattle(B.training); });
+  again.addEventListener('click', () => { sfx('click'); if (B.opts.mode === 'wahl') { closeSheet(); B.running = false; show('home'); startDraft(); } else startBattle(B.opts); });
   row.append(menu, again); d.append(row);
   sheetDismiss = null;
   openSheet(d, true);
