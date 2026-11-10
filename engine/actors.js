@@ -12,7 +12,7 @@ const TOWERS = { aussenturm: {}, hauptturm: {}, geschuetzturm: { bob: 0.012, spi
 // Gebäude (Modell im Spiel = Name des Modells aus Blender). Teile: body fest, top beweglich, bolt = Geschoss auf dem Oberteil (fehlt kurz nach dem Schuss).
 // aim: das Oberteil dreht sich zum Ziel · spin/bob: es kreist und schwebt · burrow: es versinkt so tief, solange die Spielregeln das Gebäude als vergraben führen
 const BUILDINGS = { ballista: { aim: true }, steinschleuder: { aim: true }, kesselturm: { aim: true }, fernschleuder: { aim: true }, sonnenspiegel: { aim: true }, kurbelbogen: { aim: true }, armbrustwagen_w: { aim: true },
-  kraftquell: { spin: 1.4, bob: 0.07 }, funkenpfahl: { burrow: 1.55 }, erdloch: {}, raeuberlager: {}, kieselhaufen: {}, wolfszwinger: {}, maulwurfshuegel: {} };
+  kraftquell: { spin: 1.4, bob: 0.07 }, funkenpfahl: { burrow: 1.55 }, erdloch: {}, raeuberlager: {}, kieselhaufen: {}, wolfszwinger: { size: 1.7 }, maulwurfshuegel: {} };   // size: Zeichengröße – der Zwinger belegt drei mal drei Felder
 
 export function createActors(look, fx) {
   let trauma = 0, flashV = 0;
@@ -65,7 +65,7 @@ export function createActors(look, fx) {
       if (P.parts.bolt) { bolt = new THREE.Mesh(P.parts.bolt.geo, mat); bolt.castShadow = true; top.add(bolt); }
     }
     look.world.add(group);
-    return { neu: true, building: true, model, cfg: BUILDINGS[model], group, top, bolt, ty, sink: 0, mat, def: { h: P.h, kind: 'building' }, scale: 1, hp: e.hp, flash: 0, age: 0, yaw: e.side === 0 ? Math.PI : 0, kick: 0, wasAnim: 0, status: null, statusKey: '', extras: [] };
+    return { neu: true, building: true, model, cfg: BUILDINGS[model], group, top, bolt, ty, sink: 0, mat, def: { h: P.h * ((BUILDINGS[model] && BUILDINGS[model].size) || 1), kind: 'building' }, scale: 1, hp: e.hp, flash: 0, age: 0, yaw: e.side === 0 ? Math.PI : 0, kick: 0, wasAnim: 0, status: null, statusKey: '', extras: [] };
   }
   function updateBuilding(e, i, g, dt, time) {
     i.age += dt;
@@ -83,7 +83,8 @@ export function createActors(look, fx) {
     }
     if (i.bolt) i.bolt.visible = !(e.cd > e.atk * 0.45);   // nachgeladen wird in der zweiten Hälfte der Pause
     const q = Math.min(1, i.age / 0.22), pop = q < 1 ? 0.5 + 0.5 * q + Math.sin(q * Math.PI) * 0.18 : 1;   // erscheint mit einem kleinen Sprung
-    i.group.scale.set(pop, q < 1 ? pop : 1 + i.kick * 0.03, pop);
+    const sz = (i.cfg && i.cfg.size) || 1;
+    i.group.scale.set(pop * sz, (q < 1 ? pop : 1 + i.kick * 0.03) * sz, pop * sz);
     if (e.hp < i.hp - 30) i.flash = 0.09;   // der stetige Verfall zählt nicht als Treffer
     i.hp = e.hp;
     if (i.flash > 0) i.flash -= dt;

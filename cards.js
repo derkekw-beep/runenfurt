@@ -384,7 +384,7 @@ export const CARDS = {
                    radius: 2.0, dmg: 1484, delay: 1.6, towerF: 0.2305, knock: 1.8, knockOut: true, desc: 'Ein Fels kracht herab: gewaltiger Schaden auf kleiner Fläche. Braucht einen Moment, bis er ankommt.' },
   wichtwurf:     { name: 'Wichtwurf',     cost: 3, type: 'spell', spell: 'wichtwurf', fly: 8, role: 'Zauber · Truppen',
                    radius: 1.5, summon: { unit: 'wicht', count: 3, wait: 1.1, hit1: 0.3 }, delay: 1.1, desc: 'Ein Sack mit drei Wurzelwichten landet an beliebiger Stelle – auch direkt am Turm.' },
-  rollstein:     { name: 'Rollstein',     cost: 2, type: 'spell', spell: 'rollstein', role: 'Zauber',
+  rollstein:     { name: 'Rollstein',     cost: 2, type: 'spell', spell: 'rollstein', role: 'Zauber', ownSide: true,   // wie im Vorbild nur auf der eigenen Seite zu setzen – von dort rollt er hinüber
                    radius: 1.95, dmg: 266, roll: { len: 10.1, w: 3.9, speed: 6 }, knock: 0.7, knockAll: true, delay: 0.2, towerF: 0.13, desc: 'Eine Steinwalze rollt zehn Felder nach vorn, trifft alle Bodentruppen und stößt sie zurück – auch die schwersten.' },
   wirbelwind:    { name: 'Wirbelwind',    cost: 3, type: 'spell', spell: 'wirbelwind', role: 'Zauber',
                    radius: 5.5, dot: 84, tick: 0.5, dur: 1.05, pull: 3.5, delay: 0.1, towerF: 0.35, desc: 'Zieht alle Truppen im Kreis eine gute Sekunde lang zur Mitte und zaust sie dabei.' },
@@ -482,7 +482,7 @@ export const CARDS = {
   jungfuerst:    { name: 'Jungfürst',     cost: 3, type: 'troop', hero: true, unit: 'jungfuerst', count: 1, role: 'Held',
                    desc: 'Held mit der Armbrust. Schießt immer schneller, solange er stehen bleibt. Ruft auf Befehl seine Leibwächterin.',
                    ability: { id: 'leibwache', name: 'Leibwache', cost: 3, cd: 32, radius: 2.0, unit: 'leibwaechterin', desc: 'Seine Leibwächterin springt vor ihn, stößt alle Gegner dort zurück und kämpft dann an seiner Seite. Nur einmal je Einsatz.', once: true } },
-  hohlstamm:     { name: 'Hohlstamm',     cost: 2, type: 'spell', spell: 'hohlstamm', role: 'Zauber · Truppe',
+  hohlstamm:     { name: 'Hohlstamm',     cost: 2, type: 'spell', spell: 'hohlstamm', role: 'Zauber · Truppe', ownSide: true,
                    radius: 1.1, dmg: 215, roll: { len: 4.5, w: 2.6, speed: 5 }, rollSpawn: { unit: 'raeuber', count: 1, wait: 1.0 }, delay: 0.2, desc: 'Ein hohler Stamm rollt ein kurzes Stück nach vorn und trifft alle Bodentruppen. Am Ende klettert ein Flussräuber heraus.' },
   trugbild:      { name: 'Trugbild',      cost: 3, type: 'spell', spell: 'trugbild', role: 'Zauber',
                    radius: 3.0, clone: true, delay: 0.3, desc: 'Verdoppelt deine Truppen im Kreis. Die Abbilder schlagen genauso hart zu, fallen aber beim ersten Treffer.' },

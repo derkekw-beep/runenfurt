@@ -358,7 +358,7 @@ export function playCard(g, side, handIdx, x, y) {
     const home = mainTower(g, side);
     for (const s of plan.spots) { // die Figuren eines Trupps erscheinen kurz nacheinander
       const d = UNITS[s.unit], dig = d.tunnel && home ? Math.hypot(s.x - home.x, s.y - home.y) / d.tunnel : 0; // wer gräbt, braucht vom eigenen Hauptturm bis zum Ziel seine Zeit
-      spawn(g, s.unit, side, s.x, s.y, { deployT: (d.deploy || 1) + s.wait, cardId: c.hero ? id : '', ...(dig ? { digT: dig, hidden: true } : {}), ...(form ? { formId: form.id, formGroup: form.group, hero: true } : {}), pack }, lvl);
+      spawn(g, s.unit, side, s.x, s.y, { deployT: (d.deploy || 1) + s.wait, cardId: c.hero ? id : '', ...(dig ? { digT: dig, digAll: dig, digFrom: [home.x, home.y], hidden: true } : {}), ...(form ? { formId: form.id, formGroup: form.group, hero: true } : {}), pack }, lvl);
     }
     emit(g, { t: 'deploy', side, x, y, card: id, rune: !!R, hero: !!c.hero || !!form, echo: !!hc.mirror });
   }
@@ -979,7 +979,11 @@ function routePoint(g, u, t) {
 function updateEnt(g, u, dt) {
   const d = u.d;
   if (u.anim > 0) u.anim -= dt;
-  if (u.digT > 0) { u.digT -= dt; u.hidden = u.digT > 0; return; } // noch unter der Erde unterwegs
+  if (u.digT > 0) { // noch unter der Erde unterwegs: eine Staubspur zeigt, wo er gerade gräbt
+    u.digT -= dt; u.hidden = u.digT > 0;
+    if (u.digAll) { u.digFx = (u.digFx || 0) - dt; if (u.digFx <= 0) { u.digFx = 0.1; const k = 1 - Math.max(0, u.digT) / u.digAll; emit(g, { t: 'rise', side: u.side, x: u.digFrom[0] + (u.x - u.digFrom[0]) * k, y: u.digFrom[1] + (u.y - u.digFrom[1]) * k }); } }
+    return;
+  }
   if (u.deployT > 0) {
     u.deployT -= dt;
     if (u.deployT <= 0 && d.deployDmg) { // Landung mit Erdstoß

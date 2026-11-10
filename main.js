@@ -56,13 +56,13 @@ try {
 const fitted = () => P.QUALITIES[Math.max(fit, P.QUALITIES.indexOf(profile.set.quality))];
 // Höhe der sichtbaren Fläche. Als Startbildschirm-App melden iPhones mit Notch die Höhe um den oberen Rand zu kurz: Unten bleibt
 // dann ein Streifen leer. Fehlt genau dieser Rand, gilt die Bildschirmhöhe.
+let viewInfo = {};   // die gemessenen Zahlen, zu sehen unter „Über Runenfurt“
 function appHeight(sat) {
-  let h = Math.max(window.innerHeight, document.documentElement.clientHeight);
-  const alone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-  const full = matchMedia('(orientation: portrait)').matches ? Math.max(screen.height, screen.width) : Math.min(screen.height, screen.width);
-  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  if (alone && full > h && (ios || full - h <= Math.max(70, sat + 8))) h = full;   // auf dem iPhone füllt die Startbildschirm-App immer den ganzen Schirm
-  document.documentElement.style.setProperty('--app-h', `${Math.round(h)}px`);
+  // Stand v10, auf dem iPhone 17 Pro Max bestätigt: Die Höhe ist die des Fensters; dass die Startbildschirm-App bis ganz unten reicht,
+  // besorgt die Regel „html { min-height: calc(100% + oberer Rand) }“ im Stil. Nicht „screen“ benutzen: so heißt hier der Spielbildschirm.
+  const de = document.documentElement, dev = window.screen, h = Math.max(window.innerHeight, de.clientHeight);
+  de.style.setProperty('--app-h', `${Math.round(h)}px`);
+  viewInfo = { schirm: `${dev.width}×${dev.height}`, innen: Math.round(window.innerHeight), sicht: window.visualViewport ? Math.round(window.visualViewport.height) : '–', rand: `${Math.round(sat)}`, app: matchMedia('(display-mode: standalone)').matches || navigator.standalone === true ? 'ja' : 'nein', hoehe: Math.round(h) };
   return h;
 }
 function applySettings() {
@@ -397,10 +397,33 @@ function renderDayRow() {
     return b;
   }));
 }
+// Das gewählte Deck auf dem Hauptbildschirm: acht kleine Karten, mit den Pfeilen wechselt man das Deck, ein Tipp auf die Karten öffnet den Reiter „Karten“
+function renderHomeDeck() {
+  const box = $('#homeDeck'); if (!box) return;
+  const arrow = (dir, label) => { const b = el('button', 'hdArrow', dir < 0 ? '‹' : '›'); b.setAttribute('aria-label', label); b.addEventListener('click', e => { e.stopPropagation(); sfx('tab'); P.setSlot(profile, (profile.slot + dir + P.DECK_SLOTS) % P.DECK_SLOTS); save(); render(); }); return b; };
+  const row = el('div', 'hdCards thumbs');
+  for (const id of profile.deck) row.append(cardEl(id, { tag: 'div', rune: null }));
+  row.addEventListener('click', () => { sfx('click'); $('#nav [data-tab="cards"]').click(); });
+  box.replaceChildren(arrow(-1, 'voriges Deck'), row, arrow(1, 'nächstes Deck'));
+}
+// Deck-Werkzeuge im Reiter „Karten“: umbenennen und auf einen anderen Platz kopieren
+function deckTools() {
+  const d = el('div', 'deckTools'), i = profile.slot;
+  const inp = el('input', 'deckNameIn'); inp.value = profile.names[i]; inp.maxLength = 14; inp.setAttribute('aria-label', 'Name des Decks'); inp.enterKeyHint = 'done';
+  const done = () => { P.renameDeck(profile, i, inp.value); save(); closeSheet(); render(); };
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') done(); });
+  const ok = el('button', 'btn primary', 'Namen speichern'); ok.addEventListener('click', () => { sfx('click'); done(); });
+  d.append(el('p', 'small', 'Name des Decks (höchstens 14 Zeichen)'), inp, ok, el('div', 'sub', '<b>Dieses Deck kopieren</b><span>überschreibt den Platz</span>'));
+  const row = el('div', 'btns');
+  for (let k = 0; k < P.DECK_SLOTS; k++) { if (k === i) continue; const b = el('button', 'btn', `nach „${profile.names[k]}“`); b.addEventListener('click', () => { if (P.copyDeck(profile, k)) { save(); sfx('buy'); closeSheet(); toast(`Kopiert nach „${profile.names[k]}“`, 1600); render(); } }); row.append(b); }
+  d.append(row);
+  simpleSheet(`„${profile.names[i]}“ bearbeiten`, d);
+}
 function renderHome() {
   const a = P.ARENAS[profile.arena], next = P.ARENAS[profile.arena + 1];
   $('#who').textContent = profile.name;
-  $('#deckName').textContent = `Deck ${profile.slot + 1}`;
+  $('#deckName').textContent = profile.names[profile.slot];
+  renderHomeDeck();
   $('#deckInfo').textContent = `Ø ${dec(avgCost(profile.deck).toFixed(1))} Kraft`;
   renderDayRow();
   const w = profile.dayWins;
@@ -533,7 +556,8 @@ function showHelp(then) {
 let swap = null; // Karte aus der Sammlung, die gerade ins Deck getauscht wird
 let cardView = 'werte'; // zuletzt gewählte Ansicht im Kartenblatt (Werte, Erklärung, Geschichte)
 let filter = 'alle', sort = 'arena';
-const SORTS = { arena: ['Arena', null], selten: ['Seltenheit', (a, b) => RAR_ORDER[P.rarity(b)] - RAR_ORDER[P.rarity(a)]], kraft: ['Kraft', (a, b) => CARDS[a].cost - CARDS[b].cost], stufe: ['Stufe', (a, b) => (profile.cards[b] ? profile.cards[b].lvl : 0) - (profile.cards[a] ? profile.cards[a].lvl : 0)] };
+const ready = id => { if (!profile.cards[id]) return -1; const u = P.upgradeInfo(profile, id); return u.max ? 0 : u.can ? 3 : Math.min(1, profile.cards[id].n / u.copies) + (profile.cards[id].n >= u.copies ? 1 : 0); };   // 3 = sofort aufwertbar, 2 = Karten reichen, nur das Gold fehlt
+const SORTS = { arena: ['Arena', null], bereit: ['Aufwertbar', (a, b) => ready(b) - ready(a)], selten: ['Seltenheit', (a, b) => RAR_ORDER[P.rarity(b)] - RAR_ORDER[P.rarity(a)]], kraft: ['Kraft', (a, b) => CARDS[a].cost - CARDS[b].cost], stufe: ['Stufe', (a, b) => (profile.cards[b] ? profile.cards[b].lvl : 0) - (profile.cards[a] ? profile.cards[a].lvl : 0)] };
 const FILTERS = { alle: ['Alle', () => true], rune: ['Runenform', (c, id) => !!RUNES[id]], form: ['Heldenform', (c, id) => !!HERO_FORMS[id]], troop: ['Truppen', c => c.type === 'troop' && !c.hero], hero: ['Helden', c => !!c.hero], spell: ['Zauber', c => c.type === 'spell'], building: ['Gebäude', c => c.type === 'building'] };
 function renderDeck() {
   const ups = P.upgradable(profile);
@@ -552,7 +576,7 @@ function renderDeck() {
   $('#mastInfo').textContent = `${mast.length} ${mast.length === 1 ? 'Belohnung' : 'Belohnungen'} · ${fmt(mast.reduce((s, id) => s + P.masteryInfo(profile, id).next.gold, 0))} Gold`;
   $('#avgCost').textContent = `Ø ${dec(avgCost(profile.deck).toFixed(1))} Kraft`;
   const seg = $('#slotSeg');
-  seg.replaceChildren(...Array.from({ length: P.DECK_SLOTS }, (_, i) => { const b = el('button', i === profile.slot ? 'on' : '', `Deck ${i + 1}`); b.dataset.slot = i; return b; }));
+  seg.replaceChildren(...Array.from({ length: P.DECK_SLOTS }, (_, i) => { const b = el('button', i === profile.slot ? 'on' : '', profile.names[i]); b.dataset.slot = i; return b; }));   // das gewählte noch einmal antippen: umbenennen und kopieren
   const hint = $('#swapHint');
   hint.hidden = !swap;
   if (swap) hint.textContent = `Tippe die Deck-Karte an, die ${CARDS[swap].name} ersetzen soll.`;
@@ -605,7 +629,7 @@ $('#mastBtn').addEventListener('click', () => { // alle gemeisterten Schritte ab
   if (!gold) return;
   save(); collectFx($('#mastBtn'), { gold }); render();
 });
-$('#slotSeg').addEventListener('click', e => { const s = e.target.dataset.slot; if (s == null) return; sfx('click'); swap = null; P.setSlot(profile, Number(s)); save(); renderDeck(); });
+$('#slotSeg').addEventListener('click', e => { const s = e.target.dataset.slot; if (s == null) return; sfx('tab'); if (Number(s) === profile.slot) { deckTools(); return; } swap = null; P.setSlot(profile, Number(s)); save(); renderDeck(); });
 $('#filterChips').addEventListener('click', e => { const f = e.target.dataset.f; if (!f) return; sfx('click'); filter = f; renderDeck(); });
 $('#sortChips').addEventListener('click', e => { const k = e.target.dataset.s; if (!k) return; sfx('click'); sort = k; renderDeck(); });
 $('#deckGrid').addEventListener('click', e => {
@@ -952,7 +976,7 @@ function simCheckout(o, src) {
   yes.addEventListener('click', () => {
     if (yes.disabled) return;
     yes.disabled = no.disabled = true; yes.innerHTML = '<span class="spin"></span>Zahlung wird geprüft …'; sfx('click');
-    setTimeout(() => { const got = P.buySim(profile, o.id); closeSheet(); if (got) { toast(`Gekauft (simuliert): ${o.name}`, 1800); bought($(`[data-sim="${o.id}"]`) || src, got); } }, 1100);
+    setTimeout(() => { const got = P.buySim(profile, o.id); closeSheet(); if (got) { toast(`Gekauft (simuliert): ${o.name}`, 1800); sfx('kasse'); bought($(`[data-sim="${o.id}"]`) || src, got); } }, 1100);
   });
   btns.append(no, yes); d.append(btns);
   openSheet(d);
@@ -1292,7 +1316,8 @@ function showTransfer() {
 function showAbout() {
   const body = el('div', '', `<p>Runenfurt ist ein eigenständiges Echtzeit-Kartenspiel gegen den Computer. Es läuft ganz auf deinem Gerät: kein Konto, keine Werbung, keine Käufe, keine Datenübertragung. Der Spielstand liegt nur in diesem Browser.</p>
 <p>${CARD_IDS.length} Karten · ${TOWER_IDS.length} Turmarten · ${P.ARENAS.length} Arenen · ${P.BOSSES.length} Bosse · ${Object.keys(RUNES).length} Runenformen</p>
-<p class="small">3D-Darstellung mit three.js (MIT-Lizenz, © three.js-Autoren). <span id="ver"></span></p>`);
+<p class="small">3D-Darstellung mit three.js (MIT-Lizenz, © three.js-Autoren). <span id="ver"></span></p>
+<p class="small" id="viewInfo">Anzeige: ${Object.entries(viewInfo).map(([k, v]) => `${k} ${v}`).join(' · ')}</p>`);
   simpleSheet('Über Runenfurt', body);
   fetch('./sw.js').then(r => r.text()).then(t => { const m = t.match(/VERSION = '([^']+)'/); const v = $('#ver'); if (m && v) v.textContent = `Version ${m[1].replace('runenfurt-', '')}.`; }).catch(() => {});
 }
@@ -1484,9 +1509,12 @@ function handleEvents() {
   for (const ev of g.events) {
     renderer.onEvent(ev);
     if (ev.t === 'deploy') sfx(ev.rune || ev.hero ? 'rune' : 'deploy');
-    else if (ev.t === 'ability') sfx(ev.id);
+    else if (ev.t === 'ability') sfx(ev.id, 'ability');
     else if (ev.t === 'burst' || ev.t === 'impact') sfx('heavy');
-    else if (ev.t === 'cast') sfx('cast');
+    else if (ev.t === 'cast') sfx(ev.fx != null ? 'launch' : 'cast');
+    else if (ev.t === 'aura') sfx('aura');
+    else if (ev.t === 'banner') sfx('rune');
+    else if (ev.t === 'die' && ev.kind !== 'tower') sfx('pop');
     else if (ev.t === 'spell') sfx(ev.spell);
     else if (ev.t === 'hit') sfx(ev.heavy || ev.splash ? 'heavy' : 'hit');
     else if (ev.t === 'shoot') sfx(UNITS[ev.from] && UNITS[ev.from].tower ? 'tower' : 'shoot');

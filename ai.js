@@ -303,6 +303,10 @@ export function aiChoose(g, side, ai) {
     let best = null;
     const tryAt = (x, y) => { const v = spellValue(c, x, y); if (!best || v > best.v) best = { v, x, y }; };
     for (const e of cands || targets) {
+      if (c.ownSide && c.roll && my(e.y) > RIVER_TOP - 0.4) { // rollt von der eigenen Seite hinüber: an der Flusskante ansetzen, wenn die Bahn bis zum Ziel reicht
+        if (my(e.y) - (RIVER_TOP - 0.6) <= c.roll.len - 1) tryAt(e.x, my(RIVER_TOP - 0.6));
+        continue;
+      }
       if (c.ownSide && my(e.y) > RIVER_TOP - 0.4) continue; // fällt nur aufs eigene Feld
       const lead = c.roll ? -1.2 * fwd : e.kind === 'unit' && !c.dot && !e.inRange && e.stunT <= 0 && e.rootT <= 0 ? (e.vy || 0) * e.speed * flight(c, e) * (L.smart ? 1 : 0.4) : 0;
       tryAt(e.x, e.y + lead);

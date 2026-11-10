@@ -117,7 +117,7 @@ export function newProfile() {
     v: 2, trophies: 0, best: 0, arena: 0, gold: 0, gems: 0, xp: 0, cards, decks, slot: 0, deck: decks[0], level: 'leicht', sound: true,
     wins: 0, losses: 0, draws: 0, seenHelp: false, name: 'Runenwächter', set: newSet(), stats: newStats(), log: [],
     runes: {}, wild: 0, road: [], day: '', quests: [], shop: { bought: [], gift: false }, wish: '', bosses: [], modeDay: '', towerSel: DEFAULT_TOWER,
-    jk: newJokers(), potions: 0, boosts: {}, stash: [], dayWins: 0, modeWins: 0, season: newSeason(), coll: [], mast: {}, note: null, slots: 1, heroCoins: 0, forms: {}, surv: { best: 0, got: [], runs: 0 }, sim: { spent: 0, n: 0, once: [] },
+    jk: newJokers(), potions: 0, boosts: {}, stash: [], dayWins: 0, modeWins: 0, season: newSeason(), coll: [], mast: {}, note: null, slots: 1, heroCoins: 0, forms: {}, surv: { best: 0, got: [], runs: 0 }, sim: { spent: 0, n: 0, once: [] }, names: Array.from({ length: DECK_SLOTS }, (_, i) => `Deck ${i + 1}`),
   };
 }
 
@@ -202,6 +202,7 @@ export function loadProfile(raw) {
   if (typeof d.modeDay === 'string') p.modeDay = d.modeDay.slice(0, 10);
   if (TOWER_IDS.includes(d.towerSel) && p.cards[d.towerSel]) p.towerSel = d.towerSel;
   if (Array.isArray(d.road)) p.road = [...new Set(d.road.filter(a => ROAD.some(r => r.at === a)))];
+  if (Array.isArray(d.names)) p.names = p.names.map((n, i) => (typeof d.names[i] === 'string' && d.names[i].trim() ? d.names[i].trim().slice(0, 14) : n));
   if (d.sim && typeof d.sim === 'object') p.sim = { spent: Math.max(0, Math.round(num(d.sim.spent, 0))), n: num(d.sim.n, 0), once: Array.isArray(d.sim.once) ? d.sim.once.filter(x => STORE.some(o => o.id === x && o.once)) : [] };
   if (d.surv && typeof d.surv === 'object') p.surv = { best: Math.max(0, Math.floor(num(d.surv.best, 0))), got: Array.isArray(d.surv.got) ? [...new Set(d.surv.got.filter(a => SURV.some(m => m.at === a)))] : [], runs: num(d.surv.runs, 0) };
   if (typeof d.day === 'string') p.day = d.day.slice(0, 10);
@@ -1090,4 +1091,7 @@ export function bossSetup(p, i) {
 }
 
 // Deck-Platz wechseln (p.deck zeigt immer auf das gewählte Deck)
+// Deck benennen (höchstens 14 Zeichen; leer = wieder „Deck n“) und das gewählte Deck auf einen anderen Platz kopieren
+export function renameDeck(p, i, name) { const n = String(name || '').replace(/[<>&]/g, '').trim().slice(0, 14); p.names[i] = n || `Deck ${i + 1}`; return p.names[i]; }
+export function copyDeck(p, to) { if (!(to >= 0 && to < DECK_SLOTS) || to === p.slot) return false; p.decks[to] = [...p.deck]; return true; }
 export function setSlot(p, i) { p.slot = Math.max(0, Math.min(DECK_SLOTS - 1, i | 0)); p.deck = p.decks[p.slot]; }
