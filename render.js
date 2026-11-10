@@ -399,7 +399,7 @@ export const RUNE_STONES = [[0.7, RIVER_TOP - 3.5], [17.3, RIVER_TOP - 3.5], [0.
 function hash(x, y) { let h = (x * 374761393 + y * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
 
 // Bodenfarben je Arena: [gegnerische Hälfte, eigene Hälfte]
-const GROUND = [
+export const GROUND = [
   [[122, 186, 88], [112, 194, 96]],   // Moosgrund
   [[176, 180, 116], [160, 188, 112]], // Kieselfurt
   [[96, 172, 160], [88, 182, 164]],   // Nebelhain
@@ -417,7 +417,7 @@ const GROUND = [
 ];
 
 // Kleinteile des Bodens je Arena: Tupfer (Blumen, Kiesel, Schnee, Glut …), Halme, Fluss, Uferkante
-const LOOK = [
+export const LOOK = [
   { dots: ['#fff3c4', '#ffb3c8', '#cfe9ff', '#ffe08a'], core: '#f0a92e', tuft: 'rgba(40,90,50,.5)', river: ['#2a86c8', '#45b4ec'], bank: '#4a6b4a' },
   { dots: ['#e8e2d0', '#cfc7b0', '#f2ecd8', '#b9b29c'], core: null, tuft: 'rgba(90,100,50,.45)', river: ['#3a8fc0', '#62c0ea'], bank: '#8a8466', big: 1.5 },
   { dots: ['#d7fff4', '#a8f0e0', '#ffd6f5', '#e8fff8'], core: '#59c9b5', tuft: 'rgba(20,80,80,.5)', river: ['#1f7f8c', '#49b8c0'], bank: '#2f6b66' },

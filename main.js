@@ -40,6 +40,7 @@ try {
   renderer = createRenderer(fresh);
   $('#labels').hidden = true;
 }
+if (renderer.ready) await renderer.ready; // neue Bildfolgen und 3D-Teile (engine/assets) – höchstens wenige Sekunden
 const field = $('#arena');
 
 function applySettings() {
