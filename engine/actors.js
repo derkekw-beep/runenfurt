@@ -1,6 +1,6 @@
 // Neue Türme, Geschosse und Ereignis-Effekte. Der Zeichner des Spiels (render3d.js) fragt hier zuerst an; was es hier
 // (noch) nicht gibt, zeichnet er wie bisher.
-import { THREE, TEAM, CARDS } from './deps.js';
+import { THREE, TEAM, CARDS, UNITS } from './deps.js';
 import { propMaterial } from './meshes.js';
 import { CELL } from './fx.js';
 import { PROJECTILES, MELEE, HITS, EVENTS, SPELLS } from './registry.js';
@@ -11,8 +11,13 @@ import './rezepte.js';   // ergänzt die Rezepte um alle übrigen Karten
 const TOWERS = { aussenturm: {}, hauptturm: {}, geschuetzturm: { bob: 0.012, spin: 0, pulse: 0.6, spark: '#ffb347' }, klingenturm: { bob: 0.05, spin: 3.2, pulse: 0.2 }, segensturm: { bob: 0.08, spin: 1.3, spark: '#ffe08a' } };
 // Gebäude (Modell im Spiel = Name des Modells aus Blender). Teile: body fest, top beweglich, bolt = Geschoss auf dem Oberteil (fehlt kurz nach dem Schuss).
 // aim: das Oberteil dreht sich zum Ziel · spin/bob: es kreist und schwebt · burrow: es versinkt so tief, solange die Spielregeln das Gebäude als vergraben führen
-const BUILDINGS = { ballista: { aim: true }, steinschleuder: { aim: true }, kesselturm: { aim: true }, fernschleuder: { aim: true }, sonnenspiegel: { aim: true }, kurbelbogen: { aim: true }, armbrustwagen_w: { aim: true },
-  kraftquell: { spin: 1.4, bob: 0.07 }, funkenpfahl: { burrow: 1.55 }, erdloch: {}, raeuberlager: {}, kieselhaufen: {}, wolfszwinger: { size: 1.7 }, maulwurfshuegel: {} };   // size: Zeichengröße – der Zwinger belegt drei mal drei Felder
+// Zeichengröße: Die Modelle aus Blender sind alle rund anderthalb Felder breit. Gezeichnet werden sie nach ihrer Grundfläche im Spiel
+// (Körperradius r aus den Spielregeln, siehe WIDE): wide = eigene Breite in Feldern · size = fester Faktor, sticht alles andere.
+const BUILDINGS = { ballista: { aim: true }, steinschleuder: { aim: true }, kesselturm: { aim: true }, fernschleuder: { aim: true, wide: 2.25 }, sonnenspiegel: { aim: true }, kurbelbogen: { aim: true, wide: 2.25 },
+  armbrustwagen_w: { aim: true, size: 1 },   // das Wrack bleibt so groß wie der Wagen, aus dem es wird
+  kraftquell: { spin: 1.4, bob: 0.07 }, funkenpfahl: { burrow: 1.55 }, erdloch: {}, raeuberlager: {}, kieselhaufen: { wide: 2.2 }, wolfszwinger: { size: 1.7 }, maulwurfshuegel: {} };   // Zwinger: 1,7 = 2,6 Felder, das Maß für die anderen großen Gebäude
+// Breite in Feldern nach Grundfläche: 2 × 2 Felder (r 0,5) · 3 × 3 Felder mit kleinem Körper (r 0,6: Geschütze) · 3 × 3 Felder mit großem Körper (r 1: Lager, Quell, Zwinger)
+const WIDE = r => (r >= 0.9 ? 2.6 : r >= 0.55 ? 2.05 : 1.75);
 
 export function createActors(look, fx) {
   let trauma = 0, flashV = 0;
@@ -54,6 +59,27 @@ export function createActors(look, fx) {
 
   // ---- Gebäude: fester Sockel, Oberteil dreht sich zum Ziel, der Bolzen fehlt kurz nach dem Schuss ----
   const hasBuilding = model => !!look.props && !!BUILDINGS[model] && !!look.props[model];
+  // Zeichengröße eines Gebäudes: gewünschte Breite durch die gemessene Breite des Modells (Sockel und Oberteil, ohne Geschoss)
+  const sizes = new Map();
+  function sizeOf(model) {
+    if (sizes.has(model)) return sizes.get(model);
+    const cfg = BUILDINGS[model], P = look.props && look.props[model];
+    if (!cfg || !P) return 1;
+    let s = cfg.size || 0;
+    if (!s) {
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (const [name, part] of Object.entries(P.parts)) {
+        if (name === 'bolt' || !part.geo) continue;
+        if (!part.geo.boundingBox) part.geo.computeBoundingBox();
+        const b = part.geo.boundingBox, piv = name === 'body' ? [0, 0, 0] : part.pivot || [0, 0, 0];
+        x0 = Math.min(x0, b.min.x + piv[0]); x1 = Math.max(x1, b.max.x + piv[0]); z0 = Math.min(z0, b.min.z + piv[2]); z1 = Math.max(z1, b.max.z + piv[2]);
+      }
+      const w = Math.max(x1 - x0, z1 - z0);
+      s = w > 0.1 ? (cfg.wide || WIDE((UNITS[model] && UNITS[model].r) || 0.6)) / w : 1;
+    }
+    sizes.set(model, s);
+    return s;
+  }
   function makeBuilding(e) {
     const model = e.model || e.type, P = look.props[model], mat = propMaterial(e.side, 1.3);
     const group = new THREE.Group(); group.position.set(e.x, 0, e.y);
@@ -65,7 +91,7 @@ export function createActors(look, fx) {
       if (P.parts.bolt) { bolt = new THREE.Mesh(P.parts.bolt.geo, mat); bolt.castShadow = true; top.add(bolt); }
     }
     look.world.add(group);
-    return { neu: true, building: true, model, cfg: BUILDINGS[model], group, top, bolt, ty, sink: 0, mat, def: { h: P.h * ((BUILDINGS[model] && BUILDINGS[model].size) || 1), kind: 'building' }, scale: 1, hp: e.hp, flash: 0, age: 0, yaw: e.side === 0 ? Math.PI : 0, kick: 0, wasAnim: 0, status: null, statusKey: '', extras: [] };
+    return { neu: true, building: true, model, cfg: BUILDINGS[model], group, top, bolt, ty, sink: 0, mat, size: sizeOf(model), def: { h: P.h * sizeOf(model), kind: 'building' }, scale: 1, hp: e.hp, flash: 0, age: 0, yaw: e.side === 0 ? Math.PI : 0, kick: 0, wasAnim: 0, status: null, statusKey: '', extras: [] };
   }
   function updateBuilding(e, i, g, dt, time) {
     i.age += dt;
@@ -83,7 +109,7 @@ export function createActors(look, fx) {
     }
     if (i.bolt) i.bolt.visible = !(e.cd > e.atk * 0.45);   // nachgeladen wird in der zweiten Hälfte der Pause
     const q = Math.min(1, i.age / 0.22), pop = q < 1 ? 0.5 + 0.5 * q + Math.sin(q * Math.PI) * 0.18 : 1;   // erscheint mit einem kleinen Sprung
-    const sz = (i.cfg && i.cfg.size) || 1;
+    const sz = i.size || 1;
     i.group.scale.set(pop * sz, (q < 1 ? pop : 1 + i.kick * 0.03) * sz, pop * sz);
     if (e.hp < i.hp - 30) i.flash = 0.09;   // der stetige Verfall zählt nicht als Treffer
     i.hp = e.hp;
@@ -127,13 +153,14 @@ export function createActors(look, fx) {
       m = new THREE.Mesh(orbGeo, new THREE.MeshBasicMaterial({ color: c })); m.scale.setScalar(d.size || 0.18);
     }
     m.renderOrder = 5200; look.world.add(m);
-    return { m, d, d0: Math.max(0.01, Math.hypot(p.tx - p.sx, p.ty - p.sy)), acc: 0, last: new THREE.Vector3(p.sx, d.y0, p.sy) };
+    const src = (UNITS[p.from] && UNITS[p.from].model) || p.from, y0 = d.y0 * (BUILDINGS[src] ? sizeOf(src) : 1);   // größer gezeichnete Gebäude schießen von entsprechend höher
+    return { m, d, y0, d0: Math.max(0.01, Math.hypot(p.tx - p.sx, p.ty - p.sy)), acc: 0, last: new THREE.Vector3(p.sx, y0, p.sy) };
   }
   const pv = new THREE.Vector3();
   function updateProj(p, o, a) {
     const x = p.ox + (p.x - p.ox) * a, z = p.oy + (p.y - p.oy) * a;
     if (p.line) {   // Bahn-Geschoss: geradeaus in Bodennähe
-      const d = o.d; pv.set(x, d.y0, z);
+      const d = o.d; pv.set(x, o.y0, z);
       const step = pv.distanceTo(o.last), yaw = Math.atan2(p.vx, p.vy);
       if (d.kind === 'blade') o.m.rotation.y += Math.max(step, 0.05) * 9;
       else { o.m.rotation.y = yaw; if (o.m.userData.roll) o.m.userData.roll.rotation.x += step / 0.45; else if (d.roll) o.m.rotateX(step / (d.size || 0.4)); }
@@ -144,7 +171,7 @@ export function createActors(look, fx) {
       return;
     }
     const left = Math.hypot(p.tx - x, p.ty - z), u = Math.min(1, left / o.d0), ty = p.air ? 1.6 : 0.85;
-    pv.set(x, ty + (o.d.y0 - ty) * u + Math.sin(u * Math.PI) * o.d.arc, z);
+    pv.set(x, ty + (o.y0 - ty) * u + Math.sin(u * Math.PI) * o.d.arc, z);
     if (o.d.kind === 'arrow') { o.m.position.copy(o.last); o.m.lookAt(pv); }
     else if (o.d.kind === 'blade') o.m.rotation.y += pv.distanceTo(o.last) * 7;
     o.m.position.copy(pv);

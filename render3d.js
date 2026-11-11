@@ -721,7 +721,7 @@ export function createRenderer3D(canvas, overlay) {
     if (!t) { if (inst.beam) inst.beam.visible = false; return; }
     if (!inst.beam) { inst.beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: '#ffe08a', transparent: true, opacity: 0.9, depthWrite: false })); world.add(inst.beam); }
     const hot = e.rampT >= e.d.ramp[1][0] ? 2 : e.rampT >= e.d.ramp[0][0] ? 1 : 0, b = inst.beam;
-    va.set(e._x, e.air ? (FLY[inst.model] || 1.5) + 0.35 : 1.2, e._y); vb.set(t._x ?? t.x, t.air ? 1.5 : t.kind === 'tower' ? 1.8 : 0.6, t._y ?? t.y);
+    va.set(e._x, e.air ? (FLY[inst.model] || 1.5) + 0.35 : 1.2 * (inst.size || 1), e._y);   // inst.size: Zeichengröße eines Gebäudes (engine/actors.js) vb.set(t._x ?? t.x, t.air ? 1.5 : t.kind === 'tower' ? 1.8 : 0.6, t._y ?? t.y);
     const w = [0.045, 0.085, 0.15][hot] * (1 + Math.sin(time * 40) * 0.15);
     b.visible = true; b.position.lerpVectors(va, vb, 0.5); b.lookAt(vb); b.scale.set(w, w, va.distanceTo(vb));
     b.material.color.set(['#ffe08a', '#ffb347', '#fff6d8'][hot]);
