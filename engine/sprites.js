@@ -62,14 +62,16 @@ export const getUnit = name => ready.get(name) || null;
 // Füllt den Offline-Speicher nach und nach mit allen Bildfolgen (eine nach der anderen; nur mit Service Worker).
 // Von selbst läuft das nur, wenn das Gerät WLAN oder Kabel meldet und kein Datensparmodus an ist – zusammen sind es rund
 // 72 MB, die niemand ungefragt über Mobilfunk laden soll (iPhones melden die Verbindungsart nicht: dort nur mit force).
-export async function warmUnits(names, { force = false, pause = 250 } = {}) {
+// onStep(n, von): Fortschritt, nach jeder gespeicherten Figur
+export async function warmUnits(names, { force = false, pause = 250, onStep = null } = {}) {
   if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) return 0;
   const c = navigator.connection;
   if (!force && (!c || c.saveData || !(c.type === 'wifi' || c.type === 'ethernet'))) return 0;
   let n = 0;
   for (const name of names) {
     try { for (const f of ['.json', '.webp', '_m.webp']) { const r = await fetch(`${ASSETS}units/${name}${f}${ver(name)}`); if (!r.ok || r.headers.get('x-fehlt')) return n; await r.arrayBuffer(); } } catch { return n; }
-    n++; await new Promise(res => setTimeout(res, pause));
+    n++; if (onStep) onStep(n, names.length);
+    await new Promise(res => setTimeout(res, pause));
   }
   return n;
 }

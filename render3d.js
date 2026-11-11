@@ -1002,6 +1002,6 @@ export function createRenderer3D(canvas, overlay) {
   // Ort eines Feldpunkts auf dem Bildschirm (für Einblendungen über der Spielfläche)
   function toScreen(x, z, y = 1) { const [sx, sy] = project(x, y, z), r = canvas.getBoundingClientRect(); return { x: r.left + sx * r.width / width, y: r.top + sy * r.height / height }; }
 
-  return { ready, look, sprites, fx: efx, insts, resize, reset, onEvent, draw, toField, toScreen, snapshot, prepare, setOptions, warmFigures: () => unitIndex().then(list => warmUnits(list, { force: true })),   // alle Bildfolgen für den Offline-Betrieb laden (rund 72 MB)
+  return { ready, look, sprites, fx: efx, insts, resize, reset, onEvent, draw, toField, toScreen, snapshot, prepare, setOptions, figureNames: () => unitIndex(), warmFigures: onStep => unitIndex().then(list => warmUnits(list, { force: true, pause: 20, onStep })),   // alle Bildfolgen für den Offline-Betrieb laden (rund 72 MB)
     sheet: (m, side) => getSheet(m, side).tex.image, three: true, info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }) };
 }

@@ -1,7 +1,7 @@
 // Offline-Cache für den Spiel-Code. Spielstände liegen NICHT hier, sondern im localStorage.
 // Das Spiel kommt immer komplett aus dem Cache EINER Version – nie halb alt, halb neu.
 // Bei jeder Änderung die Versionsnummer erhöhen (macht tools/deploy.mjs).
-const VERSION = 'runenfurt-v11';
+const VERSION = 'runenfurt-v12';
 // Die großen Bildfolgen der Figuren liegen in einem eigenen Speicher, der Versionen überdauert: Sie werden beim ersten
 // Gebrauch gespeichert (und vom Spiel im Hintergrund nachgeladen). Ihre Adresse trägt ?v=<Stand der Figur> – ändert sich
 // eine Figur, ändert sich die Adresse, und nur sie wird neu geholt. Die Liste unten pflegt tools/engine_dateien.mjs.
@@ -236,7 +236,7 @@ self.addEventListener('fetch', event => {
     event.respondWith((async () => {
       const c = await caches.open(FIGUREN), hit = (await c.match(req.url)) || (await (await caches.open(VERSION)).match(keyOf(req.url)));   // auch die fest gespeicherten Figuren des Startdecks
       if (hit) return hit;
-      try { const res = await fetch(req); if (res.ok) c.put(req.url, res.clone()); return res; }
+      try { const res = await fetch(req); if (res.ok) event.waitUntil(c.put(req.url, res.clone()).catch(() => {})); return res; }   // waitUntil: das Ablegen läuft zu Ende, auch wenn die Seite die Antwort schon hat
       catch { return new Response('null', { headers: { 'content-type': 'application/json', 'x-fehlt': '1' } }); }   // ohne Netz und nie gesehen: das Spiel zeichnet die Figur dann wie früher
     })());
     return;

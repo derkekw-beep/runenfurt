@@ -581,7 +581,7 @@ function renderDeck() {
   hint.hidden = !swap;
   if (swap) hint.textContent = `Tippe die Deck-Karte an, die ${CARDS[swap].name} ersetzen soll.`;
   const meter = id => { const c = profile.cards[id], u = P.upgradeInfo(profile, id); return u.max ? 0 : Math.max(0.001, c.n / u.copies); };
-  const dg = $('#deckGrid'); dg.replaceChildren();
+  const dg = $('#deckGrid'); dg.replaceChildren(); dg.classList.remove('calm'); $('#collGrid').classList.remove('calm');
   profile.deck.forEach((id, i) => {
     const e = cardEl(id, { lvl: profile.cards[id].lvl, meter: meter(id), wish: profile.wish === id });
     if (swap) e.classList.add('pick');
@@ -597,7 +597,7 @@ function renderDeck() {
   let legend = $('#slotLegend');
   if (!legend) { legend = el('p', 'slotLegend'); legend.id = 'slotLegend'; dg.after(legend); }
   legend.innerHTML = P.SPECIAL_SLOTS.map((sl, i) => `<span class="${P.slotOpen(profile, i) ? '' : 'off'}"><i class="k ${sl.kind}"></i>Platz ${i + 1}: ${sl.name}${P.slotOpen(profile, i) ? '' : ` (ab Arena ${sl.arena + 1})`}</span>`).join('')
-    + '<small>Goldene Krone an der Karte: Sie hat eine Heldenform. Violette Raute: Sie hat eine Runenform. Blass heißt: noch nicht freigeschaltet.<br>Die Runenform spielt nur auf dem Runenplatz und dem freien Platz, Helden und Heldenformen nur auf dem Heldenplatz und dem freien Platz.</small>';
+    + '<small><b>Karte gedrückt halten und ziehen:</b> auf eine Deck-Karte gelegt, tauscht sie mit ihr den Platz oder ersetzt sie.<br>Goldene Krone an der Karte: Sie hat eine Heldenform. Violette Raute: Sie hat eine Runenform. Blass heißt: noch nicht freigeschaltet.<br>Die Runenform spielt nur auf dem Runenplatz und dem freien Platz, Helden und Heldenformen nur auf dem Heldenplatz und dem freien Platz.</small>';
   // Türme: die gewählte Art gilt für beide Außentürme; der Hauptturm steigt mit der Spielerstufe
   $('#towerInfo').textContent = `Hauptturm: Stufe ${P.playerLevel(profile.xp).lvl}`;
   $('#towerGrid').replaceChildren(...TOWER_IDS.map(id => {
@@ -649,6 +649,108 @@ $('#deckGrid').addEventListener('click', e => {
 });
 $('#towerGrid').addEventListener('click', e => { const c = e.target.closest('.card'); if (!c) return; sfx('click'); swap = null; showCard(c.dataset.id); });
 $('#collGrid').addEventListener('click', e => { const c = e.target.closest('.card'); if (!c) return; sfx('click'); swap = null; showCard(c.dataset.id); });
+
+// ---- Ziehen und Ablegen im Reiter „Karten“ ----
+// Karte gedrückt halten, bis sie sich hebt (mit der Maus: einfach ziehen), dann ablegen:
+//   Sammlung → Deck-Karte: ersetzt sie · Deck-Karte → Deck-Karte: die beiden tauschen die Plätze · Deck-Karte → Karte der Sammlung: die kommt an ihren Platz
+// Kurzes Tippen öffnet weiter die Karte, Wischen schiebt weiter die Liste – deshalb hebt der Finger die Karte erst nach kurzem Halten.
+// Helden stehen nur auf dem Heldenplatz und dem freien Platz (P.canPlace); was nicht geht, wird beim Ziehen blass.
+let dd = null, ddClick = 0;
+const DD_HOLD = 230, DD_SLOP = 9;
+const cardsScroll = $('#tabCards .scroll'), deckGrid = $('#deckGrid'), collGrid = $('#collGrid');
+const gridOf = c => (c.parentNode === deckGrid ? 'deck' : c.parentNode === collGrid ? 'coll' : null);
+// Was geschieht, wenn die gezogene Karte auf dieser landet? { at: Platz im Deck, id: Karte, die dorthin kommt, swap: die alte rückt an den Platz der gezogenen } – oder null
+function ddPlan(d, target) {
+  const tid = target.dataset.id, where = gridOf(target);
+  if (!where || tid === d.id || !profile.cards[tid]) return null;
+  const j = profile.deck.indexOf(d.id);
+  if (where === 'deck') {
+    const at = profile.deck.indexOf(tid); if (at < 0) return null;
+    if (d.from === 'coll') return P.canPlace(profile, d.id, at) ? { at, id: d.id } : null;
+    return P.canPlace(profile, d.id, at) && P.canPlace(profile, tid, j) ? { at, id: d.id, swap: true } : null;
+  }
+  return d.from === 'deck' && j >= 0 && P.canPlace(profile, tid, j) ? { at: j, id: tid } : null;   // Sammlung auf Sammlung: nichts
+}
+function ddDown(e) {
+  if (dd || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const card = e.target.closest('.card'); if (!card || !gridOf(card) || !profile.cards[card.dataset.id]) return;
+  const d = dd = { pid: e.pointerId, id: card.dataset.id, from: gridOf(card), card, x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, touch: e.pointerType !== 'mouse', live: false, moved: false, el: null, over: null, plan: null, miss: null, goal: null, timer: 0, raf: 0 };
+  if (d.touch) d.timer = setTimeout(() => { if (dd === d) ddBegin(d); }, DD_HOLD);
+}
+function ddBegin(d) {
+  d.live = true;
+  if (swap) { swap = null; $('#swapHint').hidden = true; for (const c of deckGrid.children) c.classList.remove('pick'); }
+  const f = d.card.cloneNode(true); f.classList.remove('pick', 'shake'); f.classList.add('float', 'lift');
+  const from = d.card.querySelector('canvas'), to = f.querySelector('canvas'); if (from && to) to.getContext('2d').drawImage(from, 0, 0);   // das Bild einer Zeichenfläche wandert beim Klonen nicht mit
+  f.style.width = `${d.card.offsetWidth}px`; f.style.height = `${d.card.offsetHeight}px`;
+  document.body.append(f); d.el = f;
+  d.card.classList.add('dragSrc'); document.body.classList.add('ddLive');
+  for (const c of deckGrid.children) if (c !== d.card) c.classList.add(ddPlan(d, c) ? 'dropOk' : 'dropNo');
+  if (d.from === 'coll') { const top = deckGrid.getBoundingClientRect().top - cardsScroll.getBoundingClientRect().top; if (top < 8) d.goal = Math.max(0, cardsScroll.scrollTop + top - 70); }   // das Deck ist aus dem Bild: die Liste fährt von selbst hin, die Karte bleibt am Finger
+  sfx('pop'); if (navigator.vibrate) navigator.vibrate(12);
+  const step = () => { if (dd !== d) return; ddScroll(d); ddTrack(d); d.raf = requestAnimationFrame(step); };
+  step();
+}
+// Am oberen und unteren Rand schiebt sich die Liste von selbst weiter – so kommt eine Karte von weit unten bis zum Deck
+function ddScroll(d) {
+  if (d.goal != null) {   // Fahrt zum Deck (ddBegin)
+    const diff = d.goal - cardsScroll.scrollTop, was = cardsScroll.scrollTop;
+    if (Math.abs(diff) < 2) { cardsScroll.scrollTop = d.goal; d.goal = null; return; }
+    cardsScroll.scrollTop += Math.sign(diff) * Math.max(2, Math.abs(diff) * 0.22);
+    if (cardsScroll.scrollTop === was) d.goal = null;   // weiter geht es nicht
+    return;
+  }
+  const r = cardsScroll.getBoundingClientRect(), edge = 84, up = r.top + edge - d.cy, down = d.cy - (r.bottom - edge);
+  if (up > 0) cardsScroll.scrollTop -= Math.min(20, 4 + up / 4); else if (down > 0) cardsScroll.scrollTop += Math.min(20, 4 + down / 4);
+}
+function ddTrack(d) {
+  d.el.style.transform = `translate(${d.cx}px, ${d.cy}px) translate(-50%, -58%) scale(1.1) rotate(-4deg)`;
+  const hit = document.elementFromPoint(d.cx, d.cy), card = hit && hit.closest ? hit.closest('#deckGrid .card, #collGrid .card') : null;
+  const plan = card && card !== d.card ? ddPlan(d, card) : null, over = plan ? card : null;
+  if (over !== d.over) { if (d.over) d.over.classList.remove('dropOn'); if (over) over.classList.add('dropOn'); d.over = over; }
+  d.plan = plan; d.miss = card && card !== d.card && !plan && gridOf(card) === 'deck' ? card : null;
+}
+function ddEnd(e) {
+  const d = dd; if (!d || (e && d.pid !== e.pointerId)) return;
+  dd = null; clearTimeout(d.timer);
+  if (!d.live) return;   // nur getippt oder gewischt
+  cancelAnimationFrame(d.raf);
+  const up = !!e && e.type === 'pointerup';
+  if (up) { d.cx = e.clientX; d.cy = e.clientY; ddTrack(d); }
+  ddClick = performance.now() + 450;   // der Klick, den der Browser nach dem Loslassen schickt, gehört zum Ziehen
+  document.body.classList.remove('ddLive');
+  for (const c of [...deckGrid.children, ...collGrid.children]) c.classList.remove('dropOk', 'dropNo', 'dropOn', 'dragSrc');
+  const plan = up ? d.plan : null;
+  if (plan) {
+    const old = profile.deck[plan.at];
+    if (plan.swap) P.moveInDeck(profile, d.id, plan.at); else profile.deck[plan.at] = plan.id;
+    save(); sfx('flip'); d.el.remove(); renderDeck();
+    deckGrid.classList.add('calm'); collGrid.classList.add('calm');   // nur die beiden bewegten Karten springen auf, nicht das ganze Blatt
+    for (const c of [...deckGrid.children, ...collGrid.children]) if (c.dataset.id === plan.id || c.dataset.id === old || c.dataset.id === d.id) c.classList.add('dropped');
+    return;
+  }
+  if (up && !d.moved) { d.el.remove(); sfx('click'); showCard(d.id); return; }   // gehalten und losgelassen, ohne zu ziehen: wie ein Tippen
+  if (up && d.miss) { sfx('error'); flash(d.miss); toast(P.heroPlaces(profile.arena).length ? 'Ein Held steht nur auf dem Heldenplatz oder dem freien Platz.' : `Der Heldenplatz öffnet sich in Arena ${P.SPECIAL_SLOTS[1].arena + 1}.`, 2200); }
+  if (up && d.card.isConnected) {   // nichts getroffen: die Karte fliegt zurück
+    const r = d.card.getBoundingClientRect(), f = d.el;
+    d.card.classList.add('dragSrc');
+    f.style.transition = 'transform .18s ease-out, opacity .18s'; f.style.transform = `translate(${r.left + r.width / 2}px, ${r.top + r.height / 2}px) translate(-50%, -50%)`; f.style.opacity = '.7';
+    setTimeout(() => { f.remove(); d.card.classList.remove('dragSrc'); }, 190);
+  } else d.el.remove();
+}
+deckGrid.addEventListener('pointerdown', ddDown); collGrid.addEventListener('pointerdown', ddDown);
+window.addEventListener('pointermove', e => {
+  const d = dd; if (!d || d.pid !== e.pointerId) return;
+  d.cx = e.clientX; d.cy = e.clientY;
+  const far = Math.hypot(d.cx - d.x, d.cy - d.y);
+  if (d.live) { if (far > DD_SLOP) d.moved = true; return; }   // gezeichnet wird in der Schleife von ddBegin
+  if (d.touch) { if (far > DD_SLOP) ddEnd(null); }   // der Finger schiebt die Liste
+  else if (far > 6) { d.moved = true; ddBegin(d); }
+});
+window.addEventListener('pointerup', ddEnd); window.addEventListener('pointercancel', ddEnd);
+cardsScroll.addEventListener('touchmove', e => { if (dd && dd.live && e.cancelable) e.preventDefault(); }, { passive: false });   // hängt eine Karte am Finger, schiebt er die Liste nicht
+for (const g of [deckGrid, collGrid]) g.addEventListener('contextmenu', e => e.preventDefault());   // langes Drücken soll kein Menü öffnen
+$('#tabCards').addEventListener('click', e => { if (performance.now() < ddClick) { e.stopPropagation(); e.preventDefault(); } }, true);
 
 const SPEED_NAME = v => (v <= 1.0 ? 'Langsam' : v <= 1.4 ? 'Mittel' : v <= 2.0 ? 'Schnell' : 'Sehr schnell'); // 0,9 · 1,2 · 1,8 · 2,4 Felder je Sekunde
 const SPAWN_NAME = new Proxy({ wicht: ['Wicht', 'Wichte'] }, { get: (t, k) => t[k] || UNIT_NAMES[k] || [k, k] }); // Kurzformen für die Wertetabelle
@@ -1238,6 +1340,7 @@ function renderMore() {
   item('Letzte Kämpfe', profile.log.length ? `${profile.log.length} Einträge` : 'noch keine', showLog);
   item('So geht’s', 'Regeln in Kürze', () => showHelp());
   item('Spielstand sichern', 'Auf ein anderes Gerät übertragen', showTransfer);
+  item('Für unterwegs laden', 'Alle Figuren speichern – dann läuft alles auch ohne Netz', showOffline);
   item('Über Runenfurt', 'Version und Hinweise', showAbout);
   body.append(list);
 }
@@ -1313,6 +1416,39 @@ function showTransfer() {
   simpleSheet('Spielstand sichern', body);
 }
 
+// Alles für unterwegs: die Bildfolgen aller Figuren in den Offline-Speicher holen (sonst kommen sie erst, wenn eine Karte zum ersten Mal im Kampf auftaucht)
+function showOffline() {
+  const d = el('div', 'offlineBox'), info = el('p', '', 'Das Spiel selbst ist schon gespeichert. Die Bildfolgen der Figuren kommen sonst erst, wenn eine Karte zum ersten Mal im Kampf auftaucht. Hier holst du alle auf einmal – rund 70 MB, am besten im WLAN.');
+  const bar = el('div', 'meterBig', '<i style="width:0%"></i><span>wird geprüft …</span>'), fill = bar.querySelector('i'), text = bar.querySelector('span');
+  const go = el('button', 'btn primary up', 'Jetzt laden'), note = el('p', 'small center', '');
+  const show = (n, of) => { fill.style.width = `${of ? Math.round(100 * n / of) : 0}%`; text.textContent = `${n} von ${of} Figuren gespeichert`; bar.classList.toggle('ok', of > 0 && n >= of); };
+  const ready = 'serviceWorker' in navigator && navigator.serviceWorker.controller && renderer.warmFigures && 'caches' in window;
+  const count = async () => { // wie viele liegen schon im Speicher?
+    const names = await renderer.figureNames(), keys = new Set();   // alle Speicher ansehen: die Figuren des Startdecks liegen beim Spiel selbst
+    for (const k of await caches.keys()) for (const r of await (await caches.open(k)).keys()) keys.add(new URL(r.url).pathname.split('/').pop());
+    const have = names.filter(n => keys.has(`${n}.json`) && keys.has(`${n}.webp`) && keys.has(`${n}_m.webp`)).length;
+    show(have, names.length);
+    if (have >= names.length) { go.disabled = true; go.textContent = 'Alles gespeichert ✓'; note.textContent = 'Du kannst jetzt ganz ohne Netz spielen.'; }
+    return [have, names.length];
+  };
+  if (!ready) { go.disabled = true; text.textContent = 'Offline-Speicher noch nicht bereit'; note.textContent = 'Schließe das Spiel einmal ganz und öffne es neu – danach lässt sich hier alles laden.'; }
+  else count().catch(() => { text.textContent = 'Stand unbekannt'; });
+  go.addEventListener('click', async () => {
+    if (go.disabled) return;
+    go.disabled = true; go.innerHTML = '<span class="spin"></span>Lädt …'; note.textContent = 'Lass das Spiel so lange offen. Schon Geladenes bleibt, auch wenn es abbricht.'; sfx('click');
+    try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch { /* ohne Zusage geht es auch */ }
+    let done = 0, all = 0;
+    wakeLock(true);   // schläft der Bildschirm ein, hält das Handy das Laden an
+    try { done = await renderer.warmFigures((n, of) => { all = of; show(n, of); }); } catch { /* unten gemeldet */ }
+    if ($('#battle').hidden) wakeLock(false);
+    await new Promise(res => setTimeout(res, 700));   // die letzte Datei wird noch fertig abgelegt
+    const [have, of] = await count().catch(() => [done, all]);
+    if (have >= of && of > 0) { sfx('upgrade'); }
+    else { go.disabled = false; go.textContent = 'Weiterladen'; note.textContent = `Bei ${have} von ${of} unterbrochen – Verbindung prüfen und noch einmal antippen.`; sfx('error'); }
+  });
+  d.append(info, bar, go, note);
+  simpleSheet('Für unterwegs laden', d);
+}
 function showAbout() {
   const body = el('div', '', `<p>Runenfurt ist ein eigenständiges Echtzeit-Kartenspiel gegen den Computer. Es läuft ganz auf deinem Gerät: kein Konto, keine Werbung, keine Käufe, keine Datenübertragung. Der Spielstand liegt nur in diesem Browser.</p>
 <p>${CARD_IDS.length} Karten · ${TOWER_IDS.length} Turmarten · ${P.ARENAS.length} Arenen · ${P.BOSSES.length} Bosse · ${Object.keys(RUNES).length} Runenformen</p>
@@ -1494,7 +1630,15 @@ function confetti() {
 let bannerT = 0;
 function banner(text) { const b = $('#banner'); b.hidden = true; void b.offsetWidth; b.textContent = text; b.hidden = false; clearTimeout(bannerT); bannerT = setTimeout(() => { b.hidden = true; }, 2000); }
 let toastT = 0;
-function toast(text, ms = 1300) { const t = $('#toast'); t.textContent = text; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, ms); }
+// Hinweisstreifen: im Kampf der Streifen über der Kartenleiste, im Menü ein eigener über der Reiterleiste (der Streifen des Kampfs liegt im Kampfbildschirm und wäre dort unsichtbar)
+function toast(text, ms = 1300) {
+  let t = $('#toast'), m = $('#menuToast');
+  if ($('#battle').hidden) {
+    if (!m) { m = el('div', 'menuToast'); m.id = 'menuToast'; m.setAttribute('role', 'status'); $('#menu').append(m); }
+    t.hidden = true; t = m; t.classList.remove('in'); void t.offsetWidth; t.classList.add('in');
+  } else if (m) m.hidden = true;
+  t.textContent = text; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, ms);
+}
 
 let lock = null;
 async function wakeLock(on) {
