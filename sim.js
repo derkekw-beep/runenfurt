@@ -474,7 +474,7 @@ function stun(e, t) {
 
 function die(g, e) {
   e.hp = 0;
-  emit(g, { t: 'die', kind: e.kind, type: e.type, model: e.model, side: e.side, x: e.x, y: e.y, air: e.air, main: e.main });
+  emit(g, { t: 'die', kind: e.kind, type: e.type, model: e.model, side: e.side, x: e.x, y: e.y, air: e.air, main: e.main, rune: !!e.rune, hero: !!e.hero });
   if (e.formId) formDeath(FORM_API, g, e);
   g.dead.push(e);
 }
@@ -965,12 +965,20 @@ function routePoint(g, u, t) {
       const rk = (BASE[n] === 0 && !u.ford) || occ[n] ? 1 : 2, d = (x - u.x) * (x - u.x) + (y - u.y) * (y - u.y);
       if (rk > rank || (rk === rank && d < bd)) { rank = rk; bd = d; goal = n; }
     }
-    rt = u.rt = { id: t.id, ver: o.ver, tx: t.x, ty: t.y, path: goal < 0 ? null : findRoute(occ, u.ford ? 7 : 0, cellOf(u.x, u.y), goal) };
+    rt = u.rt = { id: t.id, ver: o.ver, tx: t.x, ty: t.y, px: u.x, py: u.y, path: goal < 0 ? null : findRoute(occ, u.ford ? 7 : 0, cellOf(u.x, u.y), goal) };
   }
   const p = rt.path;
   if (!p) return waypoint(u, t.x, t.y); // kein Weg im Raster: wie früher über die nächste Brücke
-  // Zellen abhaken, die erreicht sind; die Figur zielt dabei immer eine Zelle voraus und schneidet so Ecken leicht an
-  while (p.length && Math.hypot(cellX(p[p.length - 1]) - u.x, cellY(p[p.length - 1]) - u.y) < (p.length > 1 ? 0.75 : 0.3)) p.pop();
+  // Zellen abhaken wie im Vorbild (crforge Displacement: Schwelle 1000 Einheiten): Ein Wegpunkt gilt als erreicht, sobald der Rest –
+  // gemessen entlang der Wegrichtung – höchstens ein Feld beträgt. Die Figur zielt damit gut zwei Zellen voraus, schneidet Ecken an
+  // und muss nach einem Ausweichschritt nicht erst zurück auf die Mitte der Bahn (dort steht ja, wem sie ausweicht).
+  while (p.length) {
+    const n = p[p.length - 1], x = cellX(n), y = cellY(n), far = Math.hypot(x - u.x, y - u.y);
+    if (p.length === 1) { if (far < 0.3) p.pop(); break; }   // die letzte Zelle ist der Standplatz zum Angreifen: genau hin
+    const sx = x - rt.px, sy = y - rt.py, sl = Math.hypot(sx, sy);
+    if (far >= 0.75 && (sl < 1e-6 || ((x - u.x) * sx + (y - u.y) * sy) / sl > 1)) break;
+    p.pop(); rt.px = x; rt.py = y;
+  }
   if (!p.length) return [t.x, t.y];
   const n = p[p.length - 1];
   return [cellX(n), cellY(n)];
@@ -1202,12 +1210,55 @@ function updateEnt(g, u, dt) {
       const dx = wx - u.x, dy = wy - u.y, len = Math.hypot(dx, dy) || 1;
       const stepLen = Math.min(u.speed * rate * (u.snareT > 0 ? u.snareF : 1) * (u.cloakT > 0 ? u.cloakSlow || 1 : 1) * (u.gustT > 0 ? u.gustF : 1) * (u.charging ? (d.charge || d.leap).speed : 1) * dt, len);
       u.vx = dx / len; u.vy = dy / len;
-      u.x += u.vx * stepLen; u.y += u.vy * stepLen;
+      // Ausweichen wie im Vorbild: Steht oder kommt etwas im Weg, dreht der Schritt seitlich weg (anfangs gut 70°, in einer Sekunde
+      // zurück auf geradeaus); die Blickrichtung bleibt auf dem Ziel. Ohne das drückten die Figuren stur ineinander und stockten.
+      avoid(g, u, u.vx, u.vy);
+      let mx = u.vx, my = u.vy;
+      if (u.av) {
+        const b = u.av, f = 256 - Math.abs(b), rx = f * mx + b * my, ry = f * my - b * mx, L = Math.hypot(rx, ry) || 1;
+        mx = rx / L; my = ry / L;
+        const dec = AV_DECAY * dt; u.av = Math.abs(b) <= dec ? 0 : b - Math.sign(b) * dec;
+      }
+      u.x += mx * stepLen; u.y += my * stepLen;
       if (Math.abs(dx) > 0.05) u.face = dx > 0 ? 1 : -1;
     } else { u.runT = 0; u.charging = false; }
   }
 }
 
+// ---- Ausweichen und Schieben wie im Vorbild --------------------------------------------------------------------
+// Quelle: der taktgenaue Nachbau crforge (github.com/voonhous/crforge, Apache-2.0, Stand a8faf6f vom 2026-11-14):
+// pathfinding/move/AvoidanceHandler.java, RouteFollower.java, Displacement.java und PushPass.java. Dort gilt ein Takt von
+// 50 ms und 1000 Einheiten je Feld; hier sind es Felder und DT – was dort „je Takt“ heißt, wird mit DT / 0,05 umgerechnet.
+//
+// Ausweichen (AvoidanceHandler): Die Figur schaut 0,256 Felder in Laufrichtung voraus. Liegt dort – im eigenen Radius, höchstens
+// ein halbes Feld – eine Figur derselben Ebene, die steht, angreift oder ihr nicht gleichgerichtet läuft, so ist das ein Blocker.
+// Wer gleichgerichtet läuft, blockt nicht: man schiebt sich nur (Kolonne). Im Ansturm werden Leichtere überrannt.
+// Hat die Figur noch keinen Ausweichwert, springt er auf ±200 (von 256): die Seite gibt der Ausweichwert des Blockers vor
+// (gleichsinnig – zwei Entgegenkommende gehen aneinander vorbei statt zu tänzeln), sonst die Seite, auf der er liegt.
+// Der Wert fällt je Takt um 10 (RouteFollower), also in einer Sekunde auf null, und dreht den Schritt (Displacement).
+const AV_START = 200, AV_DECAY = 10 / 0.05, AV_AHEAD = 0.256;
+function avoid(g, u, dx, dy) {
+  if (u.av || u.digT > 0) return;   // ein laufender Ausweichwert bleibt, bis er abgeklungen ist
+  const px = u.x + dx * AV_AHEAD, py = u.y + dy * AV_AHEAD, R = Math.min(u.r, 0.5), mu = u.d.mass || 1;
+  let n = 0, side = 1;
+  for (const o of g.ents) {
+    if (o === u || o.kind !== 'unit' || o.hp <= 0 || o.digT > 0 || !!o.air !== !!u.air) continue;
+    const ox = o.x - px, oy = o.y - py, rr = R + o.r;
+    if (ox * ox + oy * oy >= rr * rr) continue;
+    if (u.charging && mu > (o.d.mass || 1)) continue;
+    const still = o.inRange || o.deployT > 0 || o.stunT > 0 || o.rootT > 0 || o.iceT > 0 || !(o.vx || o.vy);
+    if (!still && o.vx * dx + o.vy * dy > 0) continue;
+    n++;
+    side = o.av ? (o.av > 0 ? 1 : 0) : (dx * (u.y - o.y) + dy * (o.x - u.x) < 0 ? 1 : 0);
+  }
+  if (n) u.av = side ? AV_START : -AV_START;
+}
+
+// Schieben (PushPass, Displacement): Jede überlappende Figur derselben Ebene schiebt von sich weg, mit
+//   Stärke = min(Überlappung, 0,3) × Masse des Nachbarn / eigene Masse, höchstens 0,3 Felder.
+// Die Beiträge aller Nachbarn werden gemittelt, das Ergebnis auf 0,15 Felder je Takt begrenzt. Eine schwere Figur schiebt
+// eine leichte also fast allein weg; Gebäude und Türme schieben, werden aber nie geschoben.
+const PUSH_OVER = 0.3, PUSH_MAX = 0.15, PUSH_K = DT / 0.05;
 function separate(g) {
   const E = g.ents;
   for (let i = 0; i < E.length; i++) {
@@ -1235,13 +1286,20 @@ function separate(g) {
           u.x += tx * over * 0.6; u.y += ty * over * 0.6;
         }
       } else {
-        // Wie im Vorbild schiebt die schwerere Figur: jede weicht im Verhältnis der Masse der anderen zur eigenen, höchstens 0,2 Felder je Takt
-        const ma = a.d.mass || 1, mb = b.d.mass || 1, qa = ma * ma, qb = mb * mb, k = Math.min(over * 0.7, 0.2);
-        const fa = qb / (qa + qb), fb = qa / (qa + qb);
-        a.x -= nx * k * fa; a.y -= ny * k * fa;
-        b.x += nx * k * fb; b.y += ny * k * fb;
+        const ma = a.d.mass || 1, mb = b.d.mass || 1, o = Math.min(over, PUSH_OVER);
+        const sa = Math.min(o * mb / ma, PUSH_OVER - 0.001) + 0.001, sb = Math.min(o * ma / mb, PUSH_OVER - 0.001) + 0.001;
+        a.psx = (a.psx || 0) - nx * sa; a.psy = (a.psy || 0) - ny * sa; a.psn = (a.psn || 0) + 1;
+        b.psx = (b.psx || 0) + nx * sb; b.psy = (b.psy || 0) + ny * sb; b.psn = (b.psn || 0) + 1;
       }
     }
+  }
+  for (const u of E) {   // gesammelten Schub mitteln, begrenzen, anwenden
+    if (!u.psn) continue;
+    let x = u.psx / u.psn, y = u.psy / u.psn;
+    const L = Math.hypot(x, y);
+    if (L > PUSH_MAX) { x *= PUSH_MAX / L; y *= PUSH_MAX / L; }
+    u.x += x * PUSH_K; u.y += y * PUSH_K;
+    u.psx = u.psy = u.psn = 0;
   }
   for (const u of E) {
     if (u.kind !== 'unit') continue;

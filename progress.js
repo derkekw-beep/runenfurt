@@ -7,7 +7,7 @@
 // Trophäen öffnen Arenen, Arenen schalten Karten frei, doppelte Karten + Gold heben die Kartenstufe.
 import * as C from './cards.js';
 import { HERO_FORMS, HERO_FORM_IDS } from './helden.js';
-import { CARDS, UNITS, RUNES, RUNE_LEVEL, CARD_IDS, TOWER_IDS, DEFAULT_TOWER, DEFAULT_DECK, MAX_HEROES, heroCount, sanitizeDeck } from './cards.js';
+import { CARDS, UNITS, RUNES, RUNE_LEVEL, CARD_IDS, TOWER_IDS, DEFAULT_TOWER, DEFAULT_DECK, GONE, MAX_HEROES, heroCount, sanitizeDeck } from './cards.js';
 
 // ---- Seltenheit --------------------------------------------------------------------------------
 // Jede Karte hat eine Seltenheit (Zuordnung in cards.js). Seltenere Karten brauchen weniger Kopien je Stufe, liegen dafür
@@ -45,11 +45,11 @@ export const POTION_CAP = 8, POTION_HOURS = 3, POTION_PRICE = 12; // Stärkungst
 
 export const ARENAS = [
   { name: 'Moosgrund',      at: 0,    unlock: [...DEFAULT_DECK, DEFAULT_TOWER, 'kieseltrio', 'flussraeuber', 'wueterich'] },
-  { name: 'Kieselfurt',     at: 300,  unlock: ['eisenwaechter', 'hagelschauer', 'glutling', 'eisenmarschall', 'dornwerfer', 'geschuetzturm', 'frostling', 'kieselhaufen', 'wurzelrotte', 'eiswurf'] },
-  { name: 'Nebelhain',      at: 600,  unlock: ['nebelrochen', 'erdloch', 'bolzenschuetzin', 'funkenschlag', 'nachtfalter', 'flugsamen', 'segelwicht', 'rochenbrut', 'funkling'] },
+  { name: 'Kieselfurt',     at: 300,  unlock: ['hagelschauer', 'glutling', 'dornwerfer', 'geschuetzturm', 'frostling', 'kieselhaufen', 'wurzelrotte', 'eiswurf'] },
+  { name: 'Nebelhain',      at: 600,  unlock: ['nebelrochen', 'erdloch', 'funkenschlag', 'nachtfalter', 'flugsamen', 'segelwicht', 'rochenbrut', 'funkling'] },
   { name: 'Eisenklamm',     at: 1000, unlock: ['hammerschmied', 'wurzelgriff', 'klingentaenzerin', 'zuendler', 'schildknappen', 'klingenturm', 'distelritter', 'funkenpfahl', 'stammlaeufer', 'hohlstamm'] },
   { name: 'Sturmhöhe',      at: 1300, unlock: ['torknacker', 'heilquell', 'frostschamane', 'eisbrocken', 'kesselturm', 'tauling', 'zitterlinge', 'muehlenbande', 'wolfszwinger'] },
-  { name: 'Glutkessel',     at: 1600, unlock: ['kieselbande', 'steinschleuder', 'sturmrufer', 'glutofen', 'sprengkaefer', 'segensturm', 'pulverwicht', 'raeuberlager', 'knallfrosch', 'bodengrollen'] },
+  { name: 'Glutkessel',     at: 1600, unlock: ['kieselbande', 'steinschleuder', 'glutofen', 'sprengkaefer', 'segensturm', 'pulverwicht', 'raeuberlager', 'knallfrosch', 'bodengrollen'] },
   { name: 'Sternwarte',     at: 2000, unlock: ['wurzelmutter', 'hornbulle', 'kriegstrommel', 'rollstein', 'blasrohrwicht', 'keilerrotte', 'grenzwache', 'wachkiste', 'splitterjaeger'] },
   { name: 'Runenthron',     at: 2300, unlock: ['erzritter', 'donnerkaefer', 'sumpfdunst', 'panzerhornisse', 'wichtwurf', 'sturmbrueder', 'astriese', 'falterhueterin', 'widerhall'] },
   { name: 'Frostzinnen',    at: 2600, unlock: ['frostnacht', 'feldheilerin', 'wuehler', 'weitschuetzin', 'wegelagerin', 'seilwerfer', 'armbrustwagen', 'maulwurfshuegel'] },
@@ -117,7 +117,7 @@ export function newProfile() {
     v: 2, trophies: 0, best: 0, arena: 0, gold: 0, gems: 0, xp: 0, cards, decks, slot: 0, deck: decks[0], level: 'leicht', sound: true,
     wins: 0, losses: 0, draws: 0, seenHelp: false, name: 'Runenwächter', set: newSet(), stats: newStats(), log: [],
     runes: {}, wild: 0, road: [], day: '', quests: [], shop: { bought: [], gift: false }, wish: '', bosses: [], modeDay: '', towerSel: DEFAULT_TOWER,
-    jk: newJokers(), potions: 0, boosts: {}, stash: [], dayWins: 0, modeWins: 0, season: newSeason(), coll: [], mast: {}, note: null, slots: 1, heroCoins: 0, forms: {}, surv: { best: 0, got: [], runs: 0 }, sim: { spent: 0, n: 0, once: [] }, names: Array.from({ length: DECK_SLOTS }, (_, i) => `Deck ${i + 1}`),
+    jk: newJokers(), potions: 0, boosts: {}, stash: [], dayWins: 0, modeWins: 0, season: newSeason(), coll: [], mast: {}, note: null, gone: null, slots: 1, heroCoins: 0, forms: {}, surv: { best: 0, got: [], runs: 0 }, sim: { spent: 0, n: 0, once: [] }, names: Array.from({ length: DECK_SLOTS }, (_, i) => `Deck ${i + 1}`),
   };
 }
 
@@ -139,7 +139,7 @@ export function splitJokers(p, n) {
 // Gespeichertes Profil prüfen und fehlende Felder ergänzen (nie abstürzen, wenn der Speicher beschädigt ist).
 export function loadProfile(raw) {
   const p = newProfile();
-  let d = null;
+  let d = null, refundShards = 0;
   try { d = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { d = null; }
   if (!d || typeof d !== 'object') return p;
   p.trophies = num(d.trophies, 0); p.best = Math.max(num(d.best, 0), p.trophies); p.gold = num(d.gold, 0); p.gems = num(d.gems, 0); p.xp = num(d.xp, 0);
@@ -151,6 +151,18 @@ export function loadProfile(raw) {
   for (const id of unlockedIds(p)) {
     const c = d.cards && d.cards[id];
     p.cards[id] = { lvl: Math.min(MAX_LEVEL, Math.max(1, num(c && c.lvl, 1))), n: num(c && c.n, 0) };
+  }
+  // Karten ohne Vorbild gibt es nicht mehr (GONE): Das Gold ihrer Aufwertungen kommt zurück, dazu je übrige Karte ein kleiner Betrag.
+  // Geschieht genau einmal – danach stehen sie nicht mehr im Spielstand. p.gone merkt es für den Hinweis im Menü.
+  if (d.gone && typeof d.gone === 'object' && Array.isArray(d.gone.ids)) p.gone = { ids: d.gone.ids.filter(id => GONE[id]), gold: num(d.gone.gold, 0), shards: num(d.gone.shards, 0) };
+  for (const id of Object.keys(GONE)) {
+    const c = d.cards && d.cards[id]; if (!c || typeof c !== 'object') continue;
+    const lvl = Math.min(MAX_LEVEL, Math.max(1, num(c.lvl, 1))), per = { gewoehnlich: 2, selten: 10, episch: 60, legendaer: 400, held: 400 }[GONE[id]];
+    let gold = num(c.n, 0) * per; for (let k = 1; k < lvl; k++) gold += UP_GOLD[k - 1];
+    const shards = d.runes && typeof d.runes === 'object' ? Math.min(RUNE_SHARDS, num(d.runes[id], 0)) : 0;
+    if (!p.gone) p.gone = { ids: [], gold: 0, shards: 0 };
+    p.gone.ids.push(id); p.gone.gold += gold; p.gone.shards += shards;
+    p.gold += gold; refundShards += shards;
   }
   const fix = list => {
     const out = sanitizeDeck((Array.isArray(list) ? list : []).filter(id => p.cards[id])).filter(id => p.cards[id]);
@@ -175,7 +187,7 @@ export function loadProfile(raw) {
   // Runenformen: alte Spielstände kennen keine Scherben – wer die Form über die Kartenstufe schon hatte, behält sie
   if (d.runes && typeof d.runes === 'object') { for (const id of Object.keys(RUNES)) if (p.cards[id] && num(d.runes[id], 0)) p.runes[id] = Math.min(RUNE_SHARDS, num(d.runes[id], 0)); }
   else for (const id of Object.keys(RUNES)) if (p.cards[id] && p.cards[id].lvl >= RUNE_LEVEL) p.runes[id] = RUNE_SHARDS;
-  p.wild = num(d.wild, 0);
+  p.wild = num(d.wild, 0) + refundShards;   // Scherben einer entfernten Karte werden freie Scherben
   // Truhenlager: Truhen, die ein alter Spielstand noch auf Truhenplätzen liegen hatte, lassen sich sofort öffnen. Dazu
   // als Ersatz für die freie Truhe zwei Stück und für eine volle Kronentruhe eine; angefangene Kronen zählen für den Runenpfad.
   const stashOf = c => (c && typeof c === 'object' && CHESTS[c.k] ? { k: c.k, a: Math.min(p.arena, num(c.a, 0)) } : null);
@@ -1063,17 +1075,17 @@ export function draftDecks(pairs, picks, rnd) {
 
 // ---- Bosskämpfe: ein Wächter je Arena, mit festem Deck und einer Verstärkung --------------------
 export const BOSSES = [
-  { name: 'Borkenhüterin Ylva',   deck: ['wurzelwichte', 'waldlaeufer', 'steinhueter', 'ballistenturm', 'raufbold', 'sturmkraehen', 'funkenweberin', 'sternschlag'], text: 'Aus ihrem Hauptturm kriecht alle 16 Sekunden ein Wurzelwicht.', rules: { passive: { unit: 'wicht', count: 1, every: 16 } } },
-  { name: 'Flussvogt Garrun',     deck: ['eisenwaechter', 'eisenmarschall', 'dornwerfer', 'glutling', 'hagelschauer', 'steinhueter', 'waldlaeufer', 'ballistenturm'], text: 'Flussbefestigung: Seine Türme sind 30 % zäher.', rules: { towerHp: 1.3 } },
+  { name: 'Borkenhüterin Ylva',   deck: ['wurzelwichte', 'waldlaeufer', 'steinhueter', 'bolzenschuetzin', 'eisenwaechter', 'sturmkraehen', 'funkenweberin', 'sternschlag'], text: 'Aus ihrem Hauptturm kriecht alle 16 Sekunden ein Wurzelwicht.', rules: { passive: { unit: 'wicht', count: 1, every: 16 } } },
+  { name: 'Flussvogt Garrun',     deck: ['eisenwaechter', 'frostling', 'dornwerfer', 'glutling', 'hagelschauer', 'steinhueter', 'waldlaeufer', 'kieselhaufen'], text: 'Flussbefestigung: Seine Türme sind 30 % zäher.', rules: { towerHp: 1.3 } },
   { name: 'Nebelmutter Sefa',     deck: ['nebelrochen', 'nachtfalter', 'sturmkraehen', 'bolzenschuetzin', 'funkenschlag', 'erdloch', 'wurzelwichte', 'funkenweberin'], text: 'Alle 22 Sekunden steigt ein Nachtfalter von ihrem Hauptturm auf.', rules: { passive: { unit: 'nachtfalter', count: 1, every: 22 } } },
-  { name: 'Schmiedemeister Dunmar', tower: 'geschuetzturm', adj: 1, deck: ['hammerschmied', 'eisenwaechter', 'schildknappen', 'zuendler', 'klingentaenzerin', 'ballistenturm', 'wurzelgriff', 'sternschlag'], text: 'Seine Türme sind gepanzert: 30 % mehr Leben. Seine Karten sind eine Stufe höher.', rules: { towerHp: 1.3 } },
+  { name: 'Schmiedemeister Dunmar', tower: 'geschuetzturm', adj: 1, deck: ['hammerschmied', 'eisenwaechter', 'schildknappen', 'zuendler', 'klingentaenzerin', 'funkenpfahl', 'wurzelgriff', 'sternschlag'], text: 'Seine Türme sind gepanzert: 30 % mehr Leben. Seine Karten sind eine Stufe höher.', rules: { towerHp: 1.3 } },
   { name: 'Windruferin Astrid',   tower: 'klingenturm', adj: 1, deck: ['frostschamane', 'torknacker', 'sturmkraehen', 'nebelrochen', 'heilquell', 'eisbrocken', 'kesselturm', 'hagelschauer'], text: 'Rückenwind: Ihre Truppen laufen 10 % schneller und sind eine Stufe höher.', rules: { speed: 1.1 } },
-  { name: 'Glutfürst Varek',      deck: ['glutling', 'glutofen', 'sprengkaefer', 'kieselbande', 'sturmrufer', 'steinschleuder', 'sternschlag', 'hammerschmied'], text: 'Alle acht Sekunden hüpft ein Glutling aus seinem Hauptturm.', rules: { passive: { unit: 'glutling', count: 1, every: 8 } } },
+  { name: 'Glutfürst Varek',      deck: ['glutling', 'glutofen', 'sprengkaefer', 'kieselbande', 'knallfrosch', 'steinschleuder', 'sternschlag', 'hammerschmied'], text: 'Alle acht Sekunden hüpft ein Glutling aus seinem Hauptturm.', rules: { passive: { unit: 'glutling', count: 1, every: 8 } } },
   { name: 'Sterndeuter Oswin',    deck: ['wurzelmutter', 'blasrohrwicht', 'hornbulle', 'kriegstrommel', 'rollstein', 'sternschlag', 'funkenweberin', 'bolzenschuetzin'], text: 'Sternenwind: Seine Truppen laufen ein Zehntel schneller.', rules: { speed: 1.1 } },
-  { name: 'Runenkönigin Thalea',  tower: 'segensturm', adj: -2, deck: ['raufbold', 'waldlaeufer', 'steinhueter', 'eisenwaechter', 'funkenweberin', 'hammerschmied', 'ballistenturm', 'sumpfdunst'], text: 'Runenmacht: Jede ihrer Karten erscheint immer in Runenform – dafür zwei Stufen niedriger.', rules: { runeAlways: true } },
+  { name: 'Runenkönigin Thalea',  tower: 'segensturm', adj: -2, deck: ['wurzelmutter', 'waldlaeufer', 'steinhueter', 'eisenwaechter', 'funkenweberin', 'hammerschmied', 'steinschleuder', 'sumpfdunst'], text: 'Runenmacht: Jede ihrer Karten erscheint immer in Runenform – dafür zwei Stufen niedriger.', rules: { runeAlways: true } },
   { name: 'Frostwächter Eskil',   adj: 1, deck: ['frostnacht', 'frostschamane', 'eisbrocken', 'feldheilerin', 'wuehler', 'weitschuetzin', 'hagelschauer', 'steinhueter'], text: 'Alle 34 Sekunden löst sich ein Eisbrocken von seinem Hauptturm. Seine Karten sind eine Stufe höher.', rules: { passive: { unit: 'eisbrocken', count: 1, every: 34 } } },
   { name: 'Moorhexe Ombra',       adj: -1, deck: ['nebelschleicher', 'schattenjaegerin', 'kraehenschwarm', 'wirbelwind', 'sumpfdunst', 'nachtfalter', 'wurzelgriff', 'erdloch'], text: 'Alle 35 Sekunden schleicht ein unsichtbarer Nebelschleicher los. Ihre Karten sind dafür eine Stufe niedriger.', rules: { passive: { unit: 'nebelschleicher', count: 1, every: 35 } } },
-  { name: 'Donnerbaron Rurik',    tower: 'geschuetzturm', deck: ['blitzfaenger', 'gewitterkarren', 'donnerkeil', 'fernschleuder', 'funkenschlag', 'eisenwaechter', 'bolzenschuetzin', 'sturmrufer'], text: 'Aufgeladen: 10 % mehr Kraft.', rules: { kraft: 1.1 } },
+  { name: 'Donnerbaron Rurik',    tower: 'geschuetzturm', deck: ['blitzfaenger', 'gewitterkarren', 'donnerkeil', 'fernschleuder', 'funkenschlag', 'eisenwaechter', 'bolzenschuetzin', 'gewitterrochen'], text: 'Aufgeladen: 10 % mehr Kraft.', rules: { kraft: 1.1 } },
   { name: 'Kristallseher Jorin',  deck: ['sternschuetzin', 'laternenfisch', 'sonnenspiegel', 'kraftquell', 'heilquell', 'schildknappen', 'klingentaenzerin', 'sternschlag'], text: 'Kristallpanzer: Seine Türme sind um ein Fünftel zäher.', rules: { towerHp: 1.2 } },
   { name: 'Aschenkönig Mogrim',   tower: 'klingenturm', deck: ['fasstraeger', 'trommelschlaeger', 'kegler', 'felssturz', 'wurzelkoenig', 'glutling', 'sprengkaefer', 'glutofen'], text: 'Alle neun Sekunden springt ein Glutling aus seinem Hauptturm.', rules: { passive: { unit: 'glutling', count: 1, every: 9 } } },
   { name: 'Himmelsfürstin Liora', tower: 'segensturm', deck: ['panzerbaer', 'basaltriese', 'brockenwerfer', 'windlaeufer', 'donnerkeil', 'panzerhornisse', 'feldheilerin', 'frostnacht'], text: 'Herrin der Brücke: ein Fünftel mehr Kraft und um ein Viertel zähere Türme.', rules: { kraft: 1.2, towerHp: 1.25 } },

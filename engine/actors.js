@@ -13,9 +13,11 @@ const TOWERS = { aussenturm: {}, hauptturm: {}, geschuetzturm: { bob: 0.012, spi
 // aim: das Oberteil dreht sich zum Ziel · spin/bob: es kreist und schwebt · burrow: es versinkt so tief, solange die Spielregeln das Gebäude als vergraben führen
 // Zeichengröße: Die Modelle aus Blender sind alle rund anderthalb Felder breit. Gezeichnet werden sie nach ihrer Grundfläche im Spiel
 // (Körperradius r aus den Spielregeln, siehe WIDE): wide = eigene Breite in Feldern · size = fester Faktor, sticht alles andere.
-const BUILDINGS = { ballista: { aim: true }, steinschleuder: { aim: true }, kesselturm: { aim: true }, fernschleuder: { aim: true, wide: 2.25 }, sonnenspiegel: { aim: true }, kurbelbogen: { aim: true, wide: 2.25 },
+const BUILDINGS = { ballista: { aim: true }, steinschleuder: { aim: true, wide: 2.2 }, kesselturm: { aim: true, wide: 2.5 }, fernschleuder: { aim: true, wide: 1.85 }, sonnenspiegel: { aim: true, wide: 2.5 }, kurbelbogen: { aim: true, wide: 2.25 },
   armbrustwagen_w: { aim: true, size: 1 },   // das Wrack bleibt so groß wie der Wagen, aus dem es wird
-  kraftquell: { spin: 1.4, bob: 0.07 }, funkenpfahl: { burrow: 1.55 }, erdloch: {}, raeuberlager: {}, kieselhaufen: { wide: 2.2 }, wolfszwinger: { size: 1.7 }, maulwurfshuegel: {} };   // Zwinger: 1,7 = 2,6 Felder, das Maß für die anderen großen Gebäude
+  kraftquell: { spin: 1.4, bob: 0.07 }, funkenpfahl: { burrow: 1.55, wide: 1.8 }, erdloch: {}, raeuberlager: { wide: 2.7 }, kieselhaufen: { wide: 2.0 }, wolfszwinger: { wide: 2.3 }, maulwurfshuegel: {} };
+// wide = am Vorbild gemessene größte Breite in Feldern (tools/abgleich/bilanz-gebaeude-2026-11-11.txt): Cannon 2,2 · Bomb Tower 2,5 · Mortar 1,85 ·
+// Tesla 1,8 · Tombstone 2,0 · Goblin Cage 2,3 · Goblin Hut 2,4–2,8 · Inferno Tower 2,5 · Barbarian Hut 2,4 (Dach) bis 2,8 (Hörner). Ohne Messung gilt die Regel nach Grundfläche (WIDE).
 // Breite in Feldern nach Grundfläche: 2 × 2 Felder (r 0,5) · 3 × 3 Felder mit kleinem Körper (r 0,6: Geschütze) · 3 × 3 Felder mit großem Körper (r 1: Lager, Quell, Zwinger)
 const WIDE = r => (r >= 0.9 ? 2.6 : r >= 0.55 ? 2.05 : 1.75);
 

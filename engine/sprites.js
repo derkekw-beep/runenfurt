@@ -2,6 +2,7 @@
 // Teamfarbe kommt aus einer Maske (ein Sammelbild für beide Seiten), der Schatten ist dasselbe Bild flach auf den
 // Boden gelegt. Die Bewegung folgt allein dem Zustand der Spielregeln (laufen, ausholen, zuschlagen, stehen).
 import { THREE, TEAM, ASSETS, RIVER_TOP, RIVER_BOT } from './deps.js';
+import { anchor } from './halten.js';
 import { PITCH, SUN } from './look.js';
 
 const TAU = Math.PI * 2;
@@ -134,7 +135,7 @@ const FRAG = `
     col *= uTint;
     col += col * m.b * uGlow;
     col = mix(col, vec3(0.72, 0.9, 1.15) * (0.4 + dot(col, vec3(0.5))), uFrost * 0.6);
-    col = mix(col, vec3(1.0), uFlash);
+    col = mix(col, vec3(1.0, 0.5, 0.48), uFlash);   // Treffer: die ganze Figur rötlich überzogen, wie im Vorbild
     float a = c.a * uAlpha;
     gl_FragColor = vec4(col * a, a);
   }`;
@@ -171,6 +172,8 @@ export function createSprites(look, hooks = {}) {
     vertexShader: SH_VERT, fragmentShader: SH_FRAG, transparent: true, depthWrite: false, side: THREE.DoubleSide,
     blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.ZeroFactor, blendDst: THREE.SrcColorFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,
   });
+
+  anchor(look.world, geo, baseMat); anchor(look.world, shGeo, shMat);   // Shader bleiben übersetzt, auch wenn gerade keine Figur auf dem Feld steht (engine/halten.js)
 
   function make(def, side, id = 0) {
     const mat = baseMat.clone(), sm = shMat.clone();
@@ -235,7 +238,7 @@ export function createSprites(look, hooks = {}) {
     inst.lunge *= Math.exp(-dt * 11);
     // Treffer: aufblitzen, stauchen, ein kleiner Stoß weg vom Gegner
     if (inst.hp !== null && e.hp < inst.hp - 0.5) {
-      inst.flash = 0.1; inst.sqv -= 2.4;
+      inst.flash = 0.14; inst.sqv -= 2.4;
       const a = inst.yaw + Math.PI; inst.kx += Math.sin(a) * 0.07; inst.kz += Math.cos(a) * 0.07;
     }
     inst.hp = e.hp;
@@ -258,7 +261,7 @@ export function createSprites(look, hooks = {}) {
     inst.mesh.renderOrder = (inst.fly ? 3000 : 1000) + Math.round((e._y + inst.kz + lz) * 24);
     setFront(u, frontOf(e._x, e._y, occ));
     u.uTint.value.copy(look.lightTint); inst.su.uCol.value.copy(look.shadowTint);
-    u.uFlash.value = inst.flash > 0 ? 0.7 * Math.min(1, inst.flash / 0.05) : 0;
+    u.uFlash.value = inst.flash > 0 ? 0.88 * Math.min(1, inst.flash / 0.06) : 0;
     u.uAlpha.value = e.hidden ? 0.42 : 1;
     u.uFrost.value = e.iceT > 0 ? 1 : e.slowT > 0 ? 0.5 : 0;
     // Schatten bleibt am Boden; in der Luft kleiner und blasser

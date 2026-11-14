@@ -2,6 +2,7 @@
 // Trümmer, zeitversetzte Schritte. Rezepte (registry.js) setzen daraus Treffer, Zauber und Einschläge zusammen.
 // Farben dürfen heller als Weiß sein (hdr): solche Stellen leuchten in der Nachbearbeitung nach.
 import { THREE } from './deps.js';
+import { anchor } from './halten.js';
 
 const TAU = Math.PI * 2;
 export const CELL = { glow: 0, spark: 1, star: 2, smoke: 3, ring: 4, shard: 5, dust: 6, diamond: 7 };
@@ -107,6 +108,7 @@ export function createFx(look) {
         gl_FragColor = vec4(uCol * a, 0.0); }`,
     transparent: true, premultipliedAlpha: true, depthWrite: false,
   });
+  anchor(world, flatGeo, ringMat);   // der Ring-Shader bleibt übersetzt (engine/halten.js)
   const live = [];     // laufende Effekte: { t, d, update(k, dt), end() }
   const flats = [];
   function flat(o) {
@@ -129,19 +131,32 @@ export function createFx(look) {
     m.scale.set(o.r, 1, o.r);
     live.push({ t: 0, d: o.dur || 0.6, update(k, dt, time) { u.uSpin.value = time * 1.6; u.uA.value = Math.min(1, k * 8) * (0.7 + 0.3 * Math.sin(time * 14)); const s = o.r * (1 + 0.06 * (1 - k)); m.scale.set(s, 1, s); }, end() { drop(m); } });
   }
+  // Pfütze: farbige Scheibe, die sich kurz ausbreitet und dann langsam verblasst (Tod einer Runenform: violett, eines Helden: gold)
+  function puddle(o) {
+    const m = flat({ ...o, y: 0.03 }), u = m.material.uniforms, c = rgb(o.color || '#ffffff', o.hdr || 1.15);
+    u.uCol.value.set(c[0], c[1], c[2]); u.uW.value = 0.16; u.uFill.value = 0.9; m.renderOrder = 6;
+    live.push({ t: 0, d: o.dur || 2.8, update(k) { const g = Math.min(1, k * 10), r = (o.r || 0.9) * (0.3 + 0.7 * (1 - (1 - g) * (1 - g))); m.scale.set(r, 1, r * 0.9); u.uA.value = (o.alpha ?? 0.8) * (k < 0.5 ? 1 : 1 - (k - 0.5) / 0.5); }, end() { drop(m); } });
+  }
   // Brandfleck: dunkelt den Boden ab und verblasst langsam
-  let scorchTex = null;
-  function decal(o) {
+  let scorchTex = null, scorchMat = null;
+  function scorchSetup() {
     if (!scorchTex) {
       const cv = document.createElement('canvas'); cv.width = cv.height = 128; const c = cv.getContext('2d');
       c.fillStyle = '#fff'; c.fillRect(0, 0, 128, 128);
       for (let i = 0; i < 26; i++) { const a = Math.random() * TAU, r = Math.random() * 30, s = 14 + Math.random() * 22; const g = c.createRadialGradient(64 + Math.cos(a) * r, 64 + Math.sin(a) * r, 0, 64 + Math.cos(a) * r, 64 + Math.sin(a) * r, s); g.addColorStop(0, 'rgba(40,30,34,.5)'); g.addColorStop(1, 'rgba(40,30,34,0)'); c.fillStyle = g; c.fillRect(0, 0, 128, 128); }
       scorchTex = new THREE.CanvasTexture(cv);
     }
-    const mat = new THREE.ShaderMaterial({ uniforms: { map: { value: scorchTex }, uK: { value: 1 } },
-      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: 'uniform sampler2D map; uniform float uK; varying vec2 vUv; void main(){ vec3 c = texture2D(map, vUv).rgb; gl_FragColor = vec4(mix(vec3(1.0), c, uK), 1.0); }',
-      transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.ZeroFactor, blendDst: THREE.SrcColorFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor });
+    if (!scorchMat) {   // ein Vorbild für alle Brandflecken; sein Shader bleibt übersetzt (engine/halten.js)
+      scorchMat = new THREE.ShaderMaterial({ uniforms: { map: { value: scorchTex }, uK: { value: 1 } },
+        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: 'uniform sampler2D map; uniform float uK; varying vec2 vUv; void main(){ vec3 c = texture2D(map, vUv).rgb; gl_FragColor = vec4(mix(vec3(1.0), c, uK), 1.0); }',
+        transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.ZeroFactor, blendDst: THREE.SrcColorFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor });
+      anchor(world, flatGeo, scorchMat);
+    }
+  }
+  scorchSetup();   // gleich beim Start: der Shader ist übersetzt, bevor der erste Fleck entsteht
+  function decal(o) {
+    const mat = scorchMat.clone(); mat.uniforms.map.value = scorchTex;
     const m = new THREE.Mesh(flatGeo, mat); m.position.set(o.x, 0.02, o.z); m.scale.set(o.r, 1, o.r); m.rotation.y = Math.random() * TAU; m.renderOrder = 3; world.add(m);
     live.push({ t: 0, d: o.dur || 6, update(k) { mat.uniforms.uK.value = (o.strength ?? 0.8) * (1 - k * k); }, end() { world.remove(m); mat.dispose(); } });
   }
@@ -193,5 +208,5 @@ export function createFx(look) {
   }
   function clear() { for (const f of live) f.end(); live.length = 0; P.n = 0; geo.instanceCount = 0; }
 
-  return { burst, ring, zone, decal, beam, debris, fall, after, marker, update, clear, count: () => P.n, CELL };
+  return { burst, ring, zone, puddle, decal, beam, debris, fall, after, marker, update, clear, count: () => P.n, CELL };
 }

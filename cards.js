@@ -7,7 +7,6 @@ const SLOW = 0.9, MEDIUM = 1.2, FAST = 1.8, VERY_FAST = 2.4;   // Tempo-Klassen 
 const SHORT = 0.6, REACH = 1.0;                                // Nahkampf-Reichweiten
 
 export const UNITS = {
-  raufbold:        { hp: 860,  dmg: 126, atk: 1.0, range: SHORT, speed: FAST, r: 0.5, mass: 4 },
   waldlaeufer:     { hp: 304,  dmg: 112, atk: 0.9, range: 5.0, speed: MEDIUM, r: 0.5, mass: 3, hitsAir: true, proj: 12, first: 0.5 },
   steinhueter:     { hp: 3968, dmg: 253, atk: 1.5, range: 1.2, speed: SLOW, r: 0.75, mass: 18, sight: 7.5, targets: 'buildings', first: 0.5 },
   wicht:           { hp: 202,  dmg: 125, atk: 1.1, range: 0.5, speed: VERY_FAST, r: 0.5, mass: 2, first: 0.6 },
@@ -125,10 +124,7 @@ export const UNITS = {
   funkenpfahl:     { building: true, hp: 1182, life: 25, dmg: 220, atk: 1.1, range: 5.5, r: 0.5, hitsAir: true, proj: 26.4, burrow: true, first: 0.5 },
   kurbelbogen:     { building: true, hp: 1600, life: 30, dmg: 61, atk: 0.4, load: 3.5, range: 11.5, r: 0.6, proj: 21.6, first: 0.4 },
   // Helden: eine auslösbare Fähigkeit, nur einmal gleichzeitig auf dem Feld
-  marschall:       { hp: 1980, dmg: 178, atk: 0.9, range: REACH, speed: MEDIUM, r: 0.6, mass: 10, hero: true },
-  sturmrufer:      { hp: 1000, dmg: 230, atk: 1.2, range: 5.0, speed: MEDIUM, r: 0.5, mass: 5, hitsAir: true, proj: 14.4, hero: true },
   // Gebäude
-  ballista:        { building: true, hp: 1180, life: 30, dmg: 215, atk: 1.1, range: 5.5, r: 0.6, hitsAir: true, proj: 16.8 },
   steinschleuder:  { building: true, hp: 824,  life: 30, dmg: 201, atk: 1.0, range: 5.5, r: 0.6, proj: 20, first: 1 },
   erdloch:         { building: true, hp: 1179, life: 30, r: 1, spawn: { unit: 'dornwerfer', every: 2.2, count: 1, first: 0.5, near: 6 }, deathSpawn: { unit: 'dornwerfer', count: 1 } },
   aussenturm:      { tower: true, hp: 3052, dmg: 109, atk: 0.8, range: 7.5, r: 1, hitsAir: true, proj: 12 },
@@ -146,11 +142,9 @@ export const UNITS = {
 UNITS.bundschuetzin = { ...UNITS.bolzenschuetzin, hp: 906, dmg: 204, atk: 1.3, melee: { dmg: 314, range: 1.6 }, model: 'bolzenschuetzin' };
 const rune = (base, extra) => ({ ...UNITS[base], ...extra, rune: true, model: base });
 Object.assign(UNITS, {
-  raufbold_r:      rune('raufbold', { hp: 1030, frenzy: { max: 3, f: 0.82 } }),
   waldlaeufer_r:   rune('waldlaeufer', { range: 6.0, farBonus: { min: 4.0, f: 1.25 } }),   // wie die Evolution des Vorbilds: +1 Feld, Fernschuss +25 %
   steinhueter_r:   rune('steinhueter', { rageTrail: { below: 0.5, every: 1.433, dur: 1.5, r0: 2.0, grow: 0.5, max: 3.5 } }),
   eisenwaechter_r: rune('eisenwaechter', { guard: 0.4 }),   // wie die Evolution des Vorbilds: 60 % weniger Schaden, solange er läuft
-  ballista_r:      rune('ballista', { multi: 2 }),
   funkenweberin_r: rune('funkenweberin', { shield: 192, shieldBurst: { dmg: 281, r: 3.0, knock: 3 } }),
   bolzenschuetzin_r: rune('bolzenschuetzin', { snipe: { n: 3, dmg: 390, range: 30, w: 2, proj: 52.8 } }),   // wie die Evolution des Vorbilds: drei Scharfschüsse über das ganze Feld, 1,8-facher Schaden
   // ---- Evolutionen des Vorbilds (Stand 2026-11-10, Einzelheiten in tools/abgleich/evo-details.txt)
@@ -202,11 +196,9 @@ Object.assign(UNITS, {
 });
 
 export const RUNES = {
-  raufbold:      { cycles: 2, unit: 'raufbold_r',      desc: '20 % mehr Leben. Jeder Treffer macht seine Schläge schneller (bis zu dreimal).' },
   waldlaeufer:   { cycles: 2, unit: 'waldlaeufer_r',   desc: 'Ein Feld mehr Reichweite; Schüsse aus mindestens vier Feldern Abstand treffen 25 % härter.' },
   steinhueter:   { cycles: 1, unit: 'steinhueter_r',   desc: 'Unter halbem Leben reißt er alle Eigenen um sich herum immer wieder mit: ein Antrieb, dessen Kreis mit jedem Schlag wächst.' },
   eisenwaechter: { cycles: 2, unit: 'eisenwaechter_r', desc: 'Hält den Schild hoch: nimmt 60 % weniger Schaden, solange er läuft und noch nicht zuschlägt.' },
-  ballistenturm: { cycles: 2, unit: 'ballista_r',      desc: 'Verschießt zwei Bolzen auf einmal – auf zwei verschiedene Ziele.' },
   funkenweberin: { cycles: 1, unit: 'funkenweberin_r', desc: 'Ein Feuerschild fängt den ersten Schaden ab. Bricht er, trifft eine Stichflamme alles ringsum und stößt kleine Truppen weit zurück.' },
   bolzenschuetzin: { cycles: 2, unit: 'bolzenschuetzin_r', desc: 'Ihre ersten drei Schüsse sind Scharfschüsse: Sie treffen das nächste Ziel in ihrer Bahn über das ganze Feld hinweg – mit 1,8-fachem Schaden.' },
   flussraeuber:  { cycles: 1, unit: 'raeuber_r',       desc: 'Jeder Schlag treibt ihn an: fünf Sekunden lang 30 % schneller im Lauf und im Hieb.' },
@@ -256,8 +248,6 @@ export const RUNES = {
 export const RUNE_LEVEL = 3; // ab dieser Kartenstufe ist die Runenform verfügbar
 
 export const CARDS = {
-  raufbold:      { name: 'Raufbold',      cost: 2, type: 'troop', unit: 'raufbold', count: 1, role: 'Nahkampf',
-                   desc: 'Flinker Schläger. Billig, lenkt ab und räumt Fernkämpfer weg.' },
   waldlaeufer:   { name: 'Waldläufer',    cost: 3, type: 'troop', unit: 'waldlaeufer', count: 2, role: 'Fernkampf',
                    desc: 'Zwei Schützen mit großer Reichweite. Treffen auch Flieger.' },
   steinhueter:   { name: 'Steinhüter',    cost: 5, type: 'troop', unit: 'steinhueter', count: 1, role: 'Tank',
@@ -294,12 +284,6 @@ export const CARDS = {
                    desc: 'Ruft alle sieben Sekunden vier Kiesel und verschießt Dornenkugeln.' },
   hornbulle:     { name: 'Hornbulle',     cost: 5, type: 'troop', unit: 'hornbulle', count: 1, role: 'Ansturm',
                    desc: 'Nimmt Anlauf: nach kurzer Strecke rennt er doppelt so schnell und der erste Stoß trifft doppelt.' },
-  eisenmarschall: { name: 'Eisenmarschall', cost: 4, type: 'troop', hero: true, unit: 'marschall', count: 1, role: 'Held',
-                   desc: 'Held im Nahkampf. Sein Schlachtruf treibt alle Verbündeten in der Nähe an.',
-                   ability: { id: 'schlachtruf', name: 'Schlachtruf', cost: 1, cd: 12, radius: 4.5, dur: 6, desc: 'Verbündete im Umkreis laufen und schlagen 6 Sekunden lang 30 % schneller.' } },
-  sturmrufer:    { name: 'Sturmrufer',    cost: 5, type: 'troop', hero: true, unit: 'sturmrufer', count: 1, role: 'Held',
-                   desc: 'Held im Fernkampf. Ruft auf Befehl Blitze auf die nächsten Gegner.',
-                   ability: { id: 'blitzkette', name: 'Blitzkette', cost: 2, cd: 14, radius: 6, dmg: 400, stun: 0.6, count: 4, desc: 'Blitze treffen bis zu vier Gegner in der Nähe und betäuben sie kurz.' } },
   sternschlag:   { name: 'Sternschlag',   cost: 4, type: 'spell', spell: 'sternschlag', fly: 12, role: 'Zauber',
                    radius: 2.5, dmg: 688, delay: 0.9, knock: 1.0, knockOut: true, desc: 'Ein Stern stürzt herab: hoher Schaden auf kleiner Fläche, leichte Truppen fliegen ein Feld weit weg. Türme nehmen nur ein Viertel.' },
   hagelschauer:  { name: 'Hagelschauer',  cost: 3, type: 'spell', spell: 'hagelschauer', fly: 22, role: 'Zauber',
@@ -314,8 +298,6 @@ export const CARDS = {
                    radius: 3.5, dot: 92, tick: 1, dur: 8, snare: 0.85, delay: 0.3, towerF: 0.23, desc: 'Giftiger Dunst: acht Sekunden lang Schaden an allem im Kreis, auch an Gebäuden. Truppen darin laufen etwas langsamer.' },
   kriegstrommel: { name: 'Kriegstrommel', cost: 2, type: 'spell', spell: 'kriegstrommel', role: 'Zauber',
                    radius: 3.0, haste: 4.5, dur: 4.5, linger: 1, delay: 0.5, dmg: 179, desc: 'Der Kreis bleibt 4,5 Sekunden liegen: Eigene Truppen und Gebäude darin sind 30 % schneller, Gegner dort nehmen zu Beginn etwas Schaden.' },
-  ballistenturm: { name: 'Ballistenturm', cost: 4, type: 'building', unit: 'ballista', count: 1, role: 'Gebäude',
-                   desc: 'Verteidigt 30 Sekunden lang gegen Boden und Luft und zieht Belagerer auf sich.' },
   steinschleuder: { name: 'Steinschleuder', cost: 3, type: 'building', unit: 'steinschleuder', count: 1, role: 'Gebäude',
                    desc: 'Günstige Abwehr gegen Bodentruppen. Kommt nicht an Flieger heran.' },
   erdloch:       { name: 'Erdloch',       cost: 4, type: 'building', unit: 'erdloch', count: 1, role: 'Gebäude',
@@ -530,7 +512,10 @@ export const TOWER_IDS = Object.keys(CARDS).filter(id => CARDS[id].type === 'tow
 export const DEFAULT_TOWER = 'wachturm';
 export const CARD_IDS = Object.keys(CARDS).filter(id => CARDS[id].type !== 'tower'); // alles, was ins Deck kann
 export const DECK_SIZE = 8;
-export const DEFAULT_DECK = ['raufbold', 'waldlaeufer', 'steinhueter', 'wurzelwichte', 'sturmkraehen', 'funkenweberin', 'sternschlag', 'ballistenturm'];
+// Startdeck. Bis 2026-11-14 standen hier zwei Karten ohne Vorbild (Raufbold, Ballistenturm); seither nur noch Karten des Vorbilds.
+export const DEFAULT_DECK = ['eisenwaechter', 'waldlaeufer', 'steinhueter', 'wurzelwichte', 'sturmkraehen', 'funkenweberin', 'sternschlag', 'bolzenschuetzin'];
+// Entfernte Karten ohne Vorbild mit ihrer Seltenheit: Wer sie besaß, bekommt beim Laden des Spielstands das Gold der Aufwertungen zurück (progress.js: loadProfile)
+export const GONE = { raufbold: 'gewoehnlich', ballistenturm: 'selten', eisenmarschall: 'held', sturmrufer: 'held' };
 export const TOWER_SPELL_FACTOR = 0.25;
 export const HASTE = 1.3, SLOW_FACTOR = 0.7;
 
@@ -597,10 +582,10 @@ export const FORMS = {
 // <RARITY> Seltenheit je Karte wie beim Vorbild (erzeugt von tools/abgleich/geometrie.mjs eintragen)
 export const RARITIES = ['gewoehnlich', 'selten', 'episch', 'legendaer', 'held'];
 export const RARITY = Object.fromEntries(Object.entries({
-  gewoehnlich: 'raufbold waldlaeufer wurzelwichte sturmkraehen eisenwaechter glutling hagelschauer funkenschlag steinschleuder dornwerfer nachtfalter kraehenschwarm brockenwerfer zuendler fernschleuder kieseltrio flussraeuber sturmbrueder flugsamen wurzelrotte frostling funkling grenzwache muehlenbande knallfrosch rochenbrut wueterich eiswurf wachkiste funkenpfahl wachturm',
-  selten: 'steinhueter funkenweberin torknacker hammerschmied klingentaenzerin bolzenschuetzin sternschlag heilquell ballistenturm erdloch eisbrocken blasrohrwicht panzerhornisse feldheilerin felssturz sonnenspiegel kesselturm glutofen kraftquell tauling pulverwicht stammlaeufer schuetzenbund segelwicht keilerrotte zitterlinge kraftkloss wanderbusch bodengrollen raeuberlager kieselhaufen wolfszwinger',
+  gewoehnlich: 'waldlaeufer wurzelwichte sturmkraehen eisenwaechter glutling hagelschauer funkenschlag steinschleuder dornwerfer nachtfalter kraehenschwarm brockenwerfer zuendler fernschleuder kieseltrio flussraeuber sturmbrueder flugsamen wurzelrotte frostling funkling grenzwache muehlenbande knallfrosch rochenbrut wueterich eiswurf wachkiste funkenpfahl wachturm',
+  selten: 'steinhueter funkenweberin torknacker hammerschmied klingentaenzerin bolzenschuetzin sternschlag heilquell erdloch eisbrocken blasrohrwicht panzerhornisse feldheilerin felssturz sonnenspiegel kesselturm glutofen kraftquell tauling pulverwicht stammlaeufer schuetzenbund segelwicht keilerrotte zitterlinge kraftkloss wanderbusch bodengrollen raeuberlager kieselhaufen wolfszwinger',
   episch: 'nebelrochen donnerkaefer kieselbande erzritter wurzelmutter hornbulle wurzelgriff sumpfdunst kriegstrommel schildknappen kegler basaltriese sprengkaefer fasstraeger frostnacht donnerkeil wichtwurf wirbelwind distelritter sichelwerfer armbrustwagen gewitterrochen splitterjaeger astriese dornenkoloss runenhuene hohlstamm trugbild wurzelfluch widerhall sternenschlund maulwurfshuegel kurbelbogen geschuetzturm',
   legendaer: 'frostschamane gewitterkarren sternschuetzin wuehler blitzfaenger trommelschlaeger panzerbaer weitschuetzin laternenfisch nebelschleicher rollstein aschenschwinge wegelagerin falterhueterin rankenreiterin seilwerfer fluchweberin glutfalke stelzenkessel geroellfeld klingenturm segensturm',
-  held: 'eisenmarschall sturmrufer schattenjaegerin wurzelkoenig windlaeufer stollenmeister flussmoench jungfuerst',
+  held: 'schattenjaegerin wurzelkoenig windlaeufer stollenmeister flussmoench jungfuerst',
 }).flatMap(([k, ids]) => ids.split(' ').map(id => [id, k])));
 // </RARITY>

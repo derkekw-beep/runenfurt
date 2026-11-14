@@ -4,6 +4,7 @@
 import { THREE, W, H, RIVER_TOP, RIVER_BOT, BRIDGES, BRIDGE_HALF, OUTER_Y, MAIN_Y, THEMES, merge, P, sph } from './deps.js';
 import { groundTheme, paintGround, paintOuter } from './ground.js';
 import { loadProps, propMaterial } from './meshes.js';
+import { pinPrograms } from './halten.js';
 
 export const PITCH = 58 * Math.PI / 180;     // steil von oben, mit langer Brennweite: das Feld füllt die Breite fast ohne Verzerrung
 export const SUN = new THREE.Vector3(-9, 20, 7).normalize();          // Richtung zum Licht
@@ -93,6 +94,7 @@ export function createLook(canvas, opt = {}) {
     for (let i = LEVELS - 1; i > 0; i--) { matUp.uniforms.tSrc.value = chain[i].texture; matUp.uniforms.uTexel.value.set(0.5 / chain[i].width, 0.5 / chain[i].height); pass(matUp, chain[i - 1]); }
     matOut.uniforms.tScene.value = rtScene.texture; matOut.uniforms.tBloom.value = chain[0].texture; grade.uTime.value = time % 10;
     pass(matOut, null);
+    pinPrograms(renderer);   // kein Programm wird je wieder verworfen und neu übersetzt (engine/halten.js)
   }
 
   // ---- Kamera: das ganze Feld passt ins Bild ----------------------------------------------------------

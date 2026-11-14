@@ -10,12 +10,13 @@ import * as SIM from './sim.js'; // nur für deployTiles: wird benutzt, sobald e
 import { TEAM } from './render.js';
 import { getDef, merge, P, box, cyl, cone, sph, rock, FLY, USCALE, STONE, STONE_D, STONE_L, WOOD_D } from './models3d.js';
 import { createLook, PITCH } from './engine/look.js';
+import { anchor, warmBuiltins } from './engine/halten.js';
 import { createSprites, setTexMode, loadUnit, getUnit, unitIndex, loadPortraits, hasPortrait, releaseUnits, warmUnits, frontOf, setFront, portrait, SCALE } from './engine/sprites.js';
-import { createFx } from './engine/fx.js';
+import { createFx, CELL } from './engine/fx.js';
 import { createActors } from './engine/actors.js';
 
 const PI = Math.PI;
-const BUILDING_ART = ['ballista', 'aussenturm', 'geschuetzturm', 'klingenturm', 'segensturm', 'steinschleuder', 'kesselturm', 'fernschleuder', 'sonnenspiegel', 'kraftquell', 'erdloch', 'raeuberlager', 'kieselhaufen', 'wolfszwinger', 'maulwurfshuegel', 'funkenpfahl', 'kurbelbogen', 'armbrustwagen_w']; // Gebäude und Türme mit eigenem Kartenbild aus Blender (engine/assets/units/<modell>_k.webp)
+const BUILDING_ART = ['aussenturm', 'geschuetzturm', 'klingenturm', 'segensturm', 'steinschleuder', 'kesselturm', 'fernschleuder', 'sonnenspiegel', 'kraftquell', 'erdloch', 'raeuberlager', 'kieselhaufen', 'wolfszwinger', 'maulwurfshuegel', 'funkenpfahl', 'kurbelbogen', 'armbrustwagen_w']; // Gebäude und Türme mit eigenem Kartenbild aus Blender (engine/assets/units/<modell>_k.webp)
 const RUNE_COLOR = '#c98bff', GOLD = '#f5c542';
 const ease = t => 1 - (1 - t) * (1 - t);
 const LEAN = -0.3; // Figuren leicht zur Kamera kippen, damit man Gesichter statt Scheitel sieht
@@ -90,7 +91,20 @@ export function createRenderer3D(canvas, overlay) {
   const auraGeo = new THREE.RingGeometry(0.72, 1.12, 32), octaGeo = new THREE.OctahedronGeometry(1), beamGeo = new THREE.CylinderGeometry(1, 1, 1, 5).rotateX(PI / 2);
   const flatMat = (color, opacity) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide });
   const flat = (geo, color, opacity) => { const m = new THREE.Mesh(geo, flatMat(color, opacity)); m.rotation.x = -PI / 2; return m; };
-  const runeMat = new THREE.MeshBasicMaterial({ color: RUNE_COLOR }), runeAura = flatMat(RUNE_COLOR, 0.55), heroAura = flatMat(GOLD, 0.45);
+  const runeMat = new THREE.MeshBasicMaterial({ color: RUNE_COLOR }), runeAura = flatMat(RUNE_COLOR, 0.8), heroAura = flatMat(GOLD, 0.75);
+  const markDisc = new THREE.CircleGeometry(1, 28), runeGlow = flatMat(RUNE_COLOR, 0.22), heroGlow = flatMat(GOLD, 0.2);
+  // Kennzeichen von Held (gold) und Runenform (violett) am Boden: drehender Ring, pulsierende Scheibe, aufsteigende Funken
+  function markTick(e, inst, dt, time) {
+    const beat = 1 + Math.sin(time * 4.2 + e.id) * 0.07, r = Math.max(0.55, e.r) * 1.6;
+    inst.aura.position.set(e._x, 0.035, e._y); inst.aura.rotation.z = time * 1.5; inst.aura.scale.setScalar(r * beat);
+    if (inst.glow) { inst.glow.position.set(e._x, 0.03, e._y); inst.glow.scale.setScalar(r * 1.15 * (2 - beat)); }
+    inst.markT = (inst.markT || 0) - dt;
+    if (inst.markT <= 0 && e.deployT <= 0) {
+      inst.markT = 0.24 + Math.random() * 0.12;
+      const a = Math.random() * PI * 2, d = r * (0.3 + Math.random() * 0.6), col = e.rune ? RUNE_COLOR : GOLD;
+      efx.burst({ x: e._x + Math.cos(a) * d, y: 0.12, z: e._y + Math.sin(a) * d, n: 1, cell: CELL.diamond, color: '#ffffff', color2: col, hdr: 2.4, size: [0.1, 0.16], size2: 0.02, life: [0.55, 0.85], speed: [0, 0.15], up: [1.1, 1.9], drag: 0.6 });
+    }
+  }
   const STATUS = { ice: '#e6f7ff', stun: '#fff27a', root: '#4fa646', slow: '#9fdcff', haste: '#ffa53d', curse: '#b06adf', ward: '#ffffff' };
 
   const insts = new Map();
@@ -245,7 +259,7 @@ export function createRenderer3D(canvas, overlay) {
     if (mode !== inst.flashing) { inst.flashing = mode; for (const m of inst.lit) { m.material = mode === 2 ? matGhost : mode === 1 ? matHit : matLit; m.children[0].visible = mode !== 2; m.castShadow = mode !== 2; } }
 
     // Runen- oder Heldenkranz, Zustandsring (betäubt, festgehalten, gebremst, angetrieben)
-    if (inst.aura) { inst.aura.position.set(e._x, 0.035, e._y); inst.aura.rotation.z = time * 1.5; }
+    if (inst.aura) markTick(e, inst, dt, time);
     if (inst.gem) { inst.gem.position.set(px, y + def.h * scale + 0.28 + Math.sin(time * 3 + e.id) * 0.05, pz); inst.gem.rotation.y = time * 3; }
     if (!inst.staged) statusRing(e, inst, time);
   }
@@ -364,6 +378,8 @@ export function createRenderer3D(canvas, overlay) {
         gl_FragColor = vec4(mix(c.rgb, vec3(1.0), uFlash), 1.0);
       }`,
   });
+  warmBuiltins(world);
+  { const keep = spriteMat.clone(); keep.uniforms.uSize.value.set(0, 0); anchor(world, quadGeo, keep); }   // Shader des alten Figuren-Zeichners bleibt übersetzt (engine/halten.js)
   const blobMat = flatMat('#000000', 0.22);
 
   function makeSprite(e) {
@@ -531,6 +547,7 @@ export function createRenderer3D(canvas, overlay) {
       pop(ev.x, 0.6, ev.y, ev.frost ? '#bfeaff' : ev.root ? '#7fd069' : ev.curse ? '#b06adf' : ev.from === 'tauling' ? '#7dffa8' : ev.splash ? '#ffd27a' : '#ffffff', ev.splash ? ev.splash * 0.9 : ev.heavy ? 0.55 : 0.3, ev.splash ? 0.3 : 0.16);
       if (ev.heavy) ringFx(ev.x, ev.y, '#ffffff', 0.9, 0.22);
     } else if (ev.t === 'die') {
+      if ((ev.rune || ev.hero) && !ev.air) efx.puddle({ x: ev.x, z: ev.y, r: ev.kind === 'building' ? 1.3 : 0.95, color: ev.rune ? RUNE_COLOR : GOLD });   // wie im Vorbild: eine farbige Pfütze bleibt kurz zurück
       if (ev.kind === 'tower') {
         const r = ev.main ? 1.3 : 1, parts = [];
         for (let i = 0; i < 9; i++) parts.push(P(rock(0.22 + (i % 3) * 0.1), i % 2 ? STONE : STONE_D, [Math.sin(i * 2.4) * r * 0.75, 0.12 + (i % 2) * 0.1, Math.cos(i * 2.4) * r * 0.75], [i, i * 2, 0]));
@@ -762,8 +779,9 @@ export function createRenderer3D(canvas, overlay) {
       if (!inst) {
         inst = neu ? (e.kind === 'tower' ? actors.makeTower(e) : e.kind === 'building' ? actors.makeBuilding(e) : sprites.make(getUnit(model), e.side, e.id)) : isFlat(e) ? makeSprite(e) : makeInst(e); insts.set(e.id, inst);
         if (neu && e.air) sprites.setFlier(inst, FLY[model] || 1.5);
-        if (neu && e.kind === 'unit' && (e.rune || e.hero)) {   // Schein am Boden, bei Runenformen ein Stein über dem Kopf
+        if (neu && (e.kind === 'unit' || e.kind === 'building') && (e.rune || e.hero)) {   // Schein am Boden, bei Runenformen ein Stein über dem Kopf
           const aura = new THREE.Mesh(auraGeo, e.rune ? runeAura : heroAura); aura.rotation.x = -PI / 2; aura.scale.setScalar(e.r * 1.5); inst.aura = aura; inst.extras.push(aura);
+          const glow = new THREE.Mesh(markDisc, e.rune ? runeGlow : heroGlow); glow.rotation.x = -PI / 2; glow.renderOrder = 4; inst.glow = glow; inst.extras.push(glow);
           if (e.rune) { const gem = new THREE.Mesh(octaGeo, runeMat); gem.scale.set(0.09, 0.15, 0.09); inst.gem = gem; inst.extras.push(gem); }
           for (const m of inst.extras) world.add(m);
         }
@@ -772,8 +790,8 @@ export function createRenderer3D(canvas, overlay) {
         if (e.kind === 'unit' && (inst.airNow ?? !!e.d.air) !== !!e.air) { inst.airNow = !!e.air; inst.fly = e.air ? FLY[model] || 1.5 : 0; }   // hebt ab oder landet: Funkenflug, Netz und Ranken, fallende Keiler
         if (inst.tower) actors.updateTower(e, inst, dt, time); else if (inst.building) actors.updateBuilding(e, inst, g, dt, time); else { sprites.update(e, inst, g, dt, time, occ); if (e.clone) inst.u.uFrost.value = 0.8; }
         statusRing(e, inst, time);
-        if (inst.aura) { inst.aura.position.set(e._x, 0.035, e._y); inst.aura.rotation.z = time * 1.5; }
-        if (inst.gem) { inst.gem.position.set(inst.mesh.position.x, inst.mesh.position.y + inst.h + 0.3 + Math.sin(time * 3 + e.id) * 0.05, inst.mesh.position.z); inst.gem.rotation.y = time * 3; }
+        if (inst.aura) markTick(e, inst, dt, time);
+        if (inst.gem) { const at = (inst.mesh || inst.group).position, top = inst.mesh ? inst.h : inst.def.h; inst.gem.position.set(at.x, at.y + top + 0.3 + Math.sin(time * 3 + e.id) * 0.05, at.z); inst.gem.rotation.y = time * 3; }   // Gebäude in Runenform haben eine Gruppe statt einer Bildtafel
       } else if (inst.sprite) animateSprite(e, inst, time, dt, g, moving); else animate(e, inst, time, dt, g, moving);
       if (e.d.ramp) rampBeam(e, inst, g, time);
     }
@@ -880,32 +898,56 @@ export function createRenderer3D(canvas, overlay) {
     o2.clearRect(0, 0, width, height);
     o2.textAlign = 'center'; o2.textBaseline = 'middle'; o2.lineJoin = 'round';
     let lvlFont = '';
+    const clocks = [];   // schon gezeichnete Aufstell-Uhren dieses Bilds: [Seite, x, y]
     for (const e of opt.bars === false ? [] : g.ents) {
       const tower = e.kind === 'tower';
-      if (e.deployT > 0 && e.kind === 'unit') { // Aufmarsch-Uhr am Standpunkt
-        const [fx0, fy0] = project(e._x, 0, e._y), [fx1] = project(e._x + 1, 0, e._y), pp = fx1 - fx0, q = 1 - Math.min(1, e.deployT), r = Math.max(4.5, pp * 0.2);
-        o2.lineWidth = Math.max(2.5, pp * 0.085); o2.strokeStyle = 'rgba(12,20,28,.75)'; o2.beginPath(); o2.arc(fx0, fy0 + r * 1.9, r, 0, PI * 2); o2.stroke();
-        o2.strokeStyle = '#ffffff'; o2.beginPath(); o2.arc(fx0, fy0 + r * 1.9, r, -PI / 2, -PI / 2 + PI * 2 * q); o2.stroke();
+      if (e.deployT > 0 && e.kind === 'unit') { // Aufstell-Uhr wie im Vorbild: Stoppuhr am Fuß, der Kreissektor in Teamfarbe zeigt die Restzeit; eine Uhr je Gruppe
+        let lead = true;
+        for (const c of clocks) if (c[0] === e.side && Math.abs(c[1] - e._x) + Math.abs(c[2] - e._y) < 2.6) { lead = false; break; }
+        if (lead) {
+          clocks.push([e.side, e._x, e._y]);
+          const [fx0, fy0] = project(e._x, 0, e._y), [fx1] = project(e._x + 1, 0, e._y), pp = fx1 - fx0, q = Math.min(1, e.deployT), r = Math.max(7, pp * 0.44), cy = fy0 + r * 0.7, T = TEAM[e.side];
+          o2.fillStyle = 'rgba(12,20,28,.9)'; o2.fillRect(fx0 - r * 0.2, cy - r * 1.42, r * 0.4, r * 0.5);                      // Aufzugsknopf
+          o2.beginPath(); o2.arc(fx0, cy, r + Math.max(1.5, r * 0.14), 0, PI * 2); o2.fill();                                   // Gehäuse
+          o2.fillStyle = '#f4f7fb'; o2.beginPath(); o2.arc(fx0, cy, r, 0, PI * 2); o2.fill();                                   // Zifferblatt
+          o2.fillStyle = T.main; o2.beginPath(); o2.moveTo(fx0, cy); o2.arc(fx0, cy, r * 0.88, -PI / 2, -PI / 2 + PI * 2 * q); o2.closePath(); o2.fill();   // Rest der Aufstellzeit
+          o2.fillStyle = 'rgba(12,20,28,.9)'; o2.beginPath(); o2.arc(fx0, cy, Math.max(1.2, r * 0.12), 0, PI * 2); o2.fill();
+        }
       }
-      const bar = tower || e.hero || e.hp < e.maxHp || e.maxShield;
+      const bar = tower || e.kind === 'building' || e.hp < e.maxHp || e.maxShield;   // wie im Vorbild: Truppen zeigen bei vollem Leben nur das Stufenschild, Gebäude und Türme den Balken immer
       const inst = insts.get(e.id); if (!inst) continue;
       if (inst.bar == null) inst.bar = e.hp;
       inst.bar += (e.hp - inst.bar) * Math.min(1, dt * 5);
       const top = inst.def.h * inst.scale + (e.air ? FLY[inst.model] || 1.5 : 0) + (tower ? 0.15 : 0.85);   // Stufenschild und Balken schweben wie beim Vorbild deutlich über dem Kopf der Figur
       const [sx, sy] = project(e._x, top, e._y), [sx2] = project(e._x + 1, top, e._y);
       const ppt = sx2 - sx; // Pixel je Feld in dieser Tiefe
-      const w = (tower ? 1.9 : e.hero ? 1.5 : Math.max(0.8, e.r * 2.2)) * ppt, h = Math.max(4, (tower ? 0.34 : e.hero ? 0.22 : 0.17) * ppt);
+      const w = (tower ? 1.9 : e.hero ? 1.5 : Math.max(0.8, e.r * 2.2)) * ppt, h = Math.max(4, (tower ? 0.34 : e.hero ? 0.22 : 0.2) * ppt);   // am Vorbild gemessen: Balken rund 1,05 Felder lang und 0,2 hoch, Schild 0,5 Felder
       const y = Math.max(2, sy - h);
       if (e.blessed) { o2.fillStyle = GOLD; o2.strokeStyle = 'rgba(15,20,26,.9)'; o2.lineWidth = 1.5; const q = Math.max(3.5, ppt * 0.16), my = y - q - 2; o2.beginPath(); o2.moveTo(sx, my - q); o2.lineTo(sx + q, my); o2.lineTo(sx, my + q); o2.lineTo(sx - q, my); o2.closePath(); o2.fill(); o2.stroke(); }
       if (e.ench) { o2.fillStyle = RUNE_COLOR; o2.strokeStyle = 'rgba(15,20,26,.9)'; o2.lineWidth = 1.5; const q = Math.max(3, ppt * 0.13), mx = sx + (e.blessed ? q * 2.6 : 0), my = y - q - 2; o2.beginPath(); o2.moveTo(mx, my - q); o2.lineTo(mx + q, my); o2.lineTo(mx, my + q); o2.lineTo(mx - q, my); o2.closePath(); o2.fill(); o2.stroke(); }
       // Stufenschild in Teamfarbe: immer da; mit Balken (nach dem ersten Schaden) steht es links daneben
       if (!tower) {
-        const q = Math.max(9, Math.round(ppt * 0.36)), two = e.lvl > 9, bw = two ? q * 1.45 : q, lx = bar ? sx - w / 2 - bw - 3 : sx - bw / 2, ly = bar ? y + h / 2 - q / 2 : y + h - q;
+        const q = Math.max(10, Math.round(ppt * 0.46)), two = e.lvl > 9, bw = two ? q * 1.45 : q, lx = bar ? sx - w / 2 - bw - 3 : sx - bw / 2, ly = bar ? y + h / 2 - q / 2 : y + h - q;
         const font = `800 ${Math.max(8, Math.round(q * 0.82))}px -apple-system, system-ui, "Segoe UI", sans-serif`;
         if (lvlFont !== font) { lvlFont = font; o2.font = font; } // Schrift nur setzen, wenn sie wechselt (Schwärme)
-        o2.fillStyle = 'rgba(10,16,24,.9)'; o2.fillRect(lx - 1.5, ly - 1.5, bw + 3, q + 3);
-        o2.fillStyle = TEAM[e.side].dark; o2.fillRect(lx, ly, bw, q);
-        o2.fillStyle = '#fff'; o2.fillText(String(e.lvl), lx + bw / 2, ly + q / 2 + 0.5);
+        const cx = lx + bw / 2, cy = ly + q / 2;
+        if (e.rune) {   // Runenform: violette Raute mit hellem Rand – auf einen Blick von jeder anderen Figur zu unterscheiden
+          const rx = bw * 0.78, ry = q * 0.8;
+          o2.beginPath(); o2.moveTo(cx, cy - ry - 2); o2.lineTo(cx + rx + 2, cy); o2.lineTo(cx, cy + ry + 2); o2.lineTo(cx - rx - 2, cy); o2.closePath(); o2.fillStyle = 'rgba(10,16,24,.92)'; o2.fill();
+          o2.beginPath(); o2.moveTo(cx, cy - ry); o2.lineTo(cx + rx, cy); o2.lineTo(cx, cy + ry); o2.lineTo(cx - rx, cy); o2.closePath(); o2.fillStyle = '#8a3fe0'; o2.fill();
+          o2.strokeStyle = '#ecd6ff'; o2.lineWidth = Math.max(1, q * 0.09); o2.stroke();
+        } else if (e.hero) {   // Held oder Heldenform: goldenes Schild mit Krone
+          const cr = q * 0.34;
+          o2.fillStyle = 'rgba(10,16,24,.92)'; o2.beginPath(); o2.roundRect(lx - 2, ly - 2, bw + 4, q + 4, q * 0.28); o2.fill();
+          o2.beginPath(); o2.moveTo(lx - 1, ly - 1); o2.lineTo(lx - 1, ly - cr - 2); o2.lineTo(lx + bw * 0.25, ly - cr * 0.45); o2.lineTo(cx, ly - cr - 3); o2.lineTo(lx + bw * 0.75, ly - cr * 0.45); o2.lineTo(lx + bw + 1, ly - cr - 2); o2.lineTo(lx + bw + 1, ly - 1); o2.closePath(); o2.fill();
+          o2.fillStyle = '#e0a418'; o2.beginPath(); o2.roundRect(lx, ly, bw, q, q * 0.22); o2.fill();
+          o2.fillStyle = GOLD; o2.fillRect(lx + 1, ly + 1, bw - 2, q * 0.42);
+          o2.beginPath(); o2.moveTo(lx + 0.5, ly); o2.lineTo(lx + 0.5, ly - cr); o2.lineTo(lx + bw * 0.25, ly - cr * 0.3); o2.lineTo(cx, ly - cr - 1); o2.lineTo(lx + bw * 0.75, ly - cr * 0.3); o2.lineTo(lx + bw - 0.5, ly - cr); o2.lineTo(lx + bw - 0.5, ly); o2.closePath(); o2.fill();
+        } else {
+          o2.fillStyle = 'rgba(10,16,24,.9)'; o2.fillRect(lx - 1.5, ly - 1.5, bw + 3, q + 3);
+          o2.fillStyle = TEAM[e.side].dark; o2.fillRect(lx, ly, bw, q);
+        }
+        o2.fillStyle = e.hero && !e.rune ? '#3a2500' : '#fff'; o2.fillText(String(e.lvl), cx, cy + 0.5);
       }
       if (!bar) continue;
       const bx0 = sx - w / 2, rr = h * 0.45, T = TEAM[e.side];

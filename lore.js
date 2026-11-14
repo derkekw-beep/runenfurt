@@ -4,7 +4,6 @@ import { CARDS, UNITS, RUNES, RUNE_LEVEL, TOWER_SPELL_FACTOR, UNIT_NAMES } from 
 import { cardMult, towerMult } from './sim.js';
 
 export const STORY = {
-  raufbold: 'Früher Türsteher im Gasthaus „Zur nassen Furt“, heute der Erste, der über die Brücke rennt. Das Stirnband hat ihm seine Mutter gestrickt – wer darüber lacht, lernt seine Fäuste kennen.',
   waldlaeufer: 'Zwei Geschwister aus dem Moosgrund, die seit Kindertagen um die Wette schießen. Wer zuerst trifft, muss abends nicht abwaschen.',
   steinhueter: 'Ein Stück Flussufer, das eines Morgens aufstand und losging. Seit hundert Jahren sucht er den Turm, aus dem man ihn einst gebrochen hat – und prüft jeden sehr gründlich.',
   wurzelwichte: 'Sie wohnen unter den Wurzeln der alten Weiden und halten alles, was über ihnen trampelt, für eine Einladung zum Beißen.',
@@ -23,8 +22,6 @@ export const STORY = {
   erzritter: 'In der Rüstung stecke seit Jahren niemand mehr, sagen die einen. Die anderen sagen lieber nichts, weil er gerade vorbeigeht.',
   wurzelmutter: 'Die Wichte nennen sie Mutter, obwohl sie nur ein einziges Mal „Raus aus meinem Garten!“ gerufen hat. Sie kamen. Sie blieben.',
   hornbulle: 'Der Bulle vom Aschenfeld erträgt keine Türme am Horizont. Er nimmt Anlauf, um die Sache ein für alle Mal zu klären.',
-  eisenmarschall: 'Marschall Garmund hat die Furt dreimal gehalten und zweimal zurückerobert. Wenn er ruft, laufen selbst die Wichte in Reih und Glied.',
-  sturmrufer: 'Auf der Sturmhöhe lernte er, die Blitze beim Namen zu rufen. Sie kommen nicht immer gern, aber sie kommen.',
   sternschlag: 'Die Sternwarte behauptet, jeder Stern falle genau dorthin, wo man ihn braucht. Die Sternwarte steht deshalb möglichst weit weg vom Schlachtfeld.',
   hagelschauer: 'Wetter aus den Frostzinnen, in Fässern gelagert und bei Bedarf über dem Gegner geöffnet. Haltbar bis zum nächsten Frühling.',
   wurzelgriff: 'Die Weiden an der Furt mögen es nicht, wenn man rennt. Ein leises Wort genügt, und sie halten jeden fest, der es eilig hat.',
@@ -32,7 +29,6 @@ export const STORY = {
   funkenschlag: 'Ein Blitz im Kleinformat: reicht nicht zum Angeben, aber genau zum Stören.',
   sumpfdunst: 'Im Schattenmoor füllt man den Abendnebel in Krüge. Wer den Deckel hebt, sollte auf der richtigen Seite stehen.',
   kriegstrommel: 'Drei Schläge, und selbst der müdeste Wicht findet, dass heute ein guter Tag zum Stürmen ist.',
-  ballistenturm: 'Aus dem Holz eines gesunkenen Fährboots gebaut. Die Fähre fährt nicht mehr, aber die Bolzen kommen noch pünktlich an.',
   steinschleuder: 'Die einfachste Maschine der Furt: ein Balken, ein Stein und jemand mit schlechter Laune.',
   erdloch: 'Niemand hat es gegraben. Es war eines Tages da, und seitdem kommt alle paar Augenblicke etwas Bissiges heraus.',
   dornwerfer: 'Waldgeister, die mit Dornen werfen, seit ihnen jemand die Kirschkerne weggenommen hat. Der Jemand wird noch gesucht.',

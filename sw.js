@@ -1,7 +1,7 @@
 // Offline-Cache für den Spiel-Code. Spielstände liegen NICHT hier, sondern im localStorage.
 // Das Spiel kommt immer komplett aus dem Cache EINER Version – nie halb alt, halb neu.
 // Bei jeder Änderung die Versionsnummer erhöhen (macht tools/deploy.mjs).
-const VERSION = 'runenfurt-v13';
+const VERSION = 'runenfurt-v14';
 // Die großen Bildfolgen der Figuren liegen in einem eigenen Speicher, der Versionen überdauert: Sie werden beim ersten
 // Gebrauch gespeichert (und vom Spiel im Hintergrund nachgeladen). Ihre Adresse trägt ?v=<Stand der Figur> – ändert sich
 // eine Figur, ändert sich die Adresse, und nur sie wird neu geholt. Die Liste unten pflegt tools/engine_dateien.mjs.
@@ -42,6 +42,7 @@ const FILES = [
   './engine/deps.js',
   './engine/fx.js',
   './engine/ground.js',
+  './engine/halten.js',
   './engine/look.js',
   './engine/meshes.js',
   './engine/registry.js',
@@ -56,7 +57,6 @@ const FILES = [
   './engine/assets/units/aschenschwinge_k.webp',
   './engine/assets/units/astriese_k.webp',
   './engine/assets/units/aussenturm_k.webp',
-  './engine/assets/units/ballista_k.webp',
   './engine/assets/units/basaltriese_k.webp',
   './engine/assets/units/blasrohrwicht_k.webp',
   './engine/assets/units/blitzfaenger_k.webp',
@@ -111,7 +111,6 @@ const FILES = [
   './engine/assets/units/kurbelbogen_k.webp',
   './engine/assets/units/laternenfisch_k.webp',
   './engine/assets/units/leibwaechterin_k.webp',
-  './engine/assets/units/marschall_k.webp',
   './engine/assets/units/maulwurfshuegel_k.webp',
   './engine/assets/units/muellerbursche_k.webp',
   './engine/assets/units/nachtfalter_k.webp',
@@ -123,7 +122,6 @@ const FILES = [
   './engine/assets/units/raeuber_k.webp',
   './engine/assets/units/raeuberlager_k.webp',
   './engine/assets/units/rankenreiterin_k.webp',
-  './engine/assets/units/raufbold_k.webp',
   './engine/assets/units/rochen_k.webp',
   './engine/assets/units/runenhuene_k.webp',
   './engine/assets/units/schattenjaegerin_k.webp',
@@ -145,7 +143,6 @@ const FILES = [
   './engine/assets/units/sternschuetzin_k.webp',
   './engine/assets/units/stollenmeister_k.webp',
   './engine/assets/units/sturmbruder_k.webp',
-  './engine/assets/units/sturmrufer_k.webp',
   './engine/assets/units/tauling_k.webp',
   './engine/assets/units/torknacker_k.webp',
   './engine/assets/units/trommelschlaeger_k.webp',
@@ -163,15 +160,18 @@ const FILES = [
   './engine/assets/units/zitterling_k.webp',
   './engine/assets/units/zuendler_k.webp',
   './engine/assets/units/zwingerwolf_k.webp',
+  './engine/assets/units/bolzenschuetzin.json',
+  './engine/assets/units/bolzenschuetzin.webp',
+  './engine/assets/units/bolzenschuetzin_m.webp',
+  './engine/assets/units/eisenwaechter.json',
+  './engine/assets/units/eisenwaechter.webp',
+  './engine/assets/units/eisenwaechter_m.webp',
   './engine/assets/units/funkenweberin.json',
   './engine/assets/units/funkenweberin.webp',
   './engine/assets/units/funkenweberin_m.webp',
   './engine/assets/units/kraehe.json',
   './engine/assets/units/kraehe.webp',
   './engine/assets/units/kraehe_m.webp',
-  './engine/assets/units/raufbold.json',
-  './engine/assets/units/raufbold.webp',
-  './engine/assets/units/raufbold_m.webp',
   './engine/assets/units/steinhueter.json',
   './engine/assets/units/steinhueter.webp',
   './engine/assets/units/steinhueter_m.webp',

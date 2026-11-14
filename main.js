@@ -147,8 +147,19 @@ function stageSync() {
   const on = screen === 'menu' && tab === 'home' && overlay.hidden && fxLayer.hidden && !document.hidden;
   if (on) { stage.setDeck(profile.deck, profile.arena); stage.start(); } else stage.stop();
 }
+// Entfernte Karten ohne Vorbild (cards.js: GONE): einmal sagen, was zurückerstattet wurde
+const GONE_NAMES = { raufbold: 'Raufbold', ballistenturm: 'Ballistenturm', eisenmarschall: 'Eisenmarschall', sturmrufer: 'Sturmrufer' };
+function goneNote() {
+  const n = profile.gone;
+  if (!n || !overlay.hidden || !fxLayer.hidden) return false;
+  profile.gone = null; save();
+  const names = n.ids.map(id => GONE_NAMES[id] || id);
+  simpleSheet('Nur noch Karten des Vorbilds', el('div', 'chestCard', `<span class="ico cards huge"></span><p class="center">${names.length === 1 ? 'Eine eigene Karte ist' : 'Eigene Karten sind'} aus dem Spiel genommen: <b>${names.join(', ')}</b>. Deine Decks sind aufgefüllt – sieh sie dir im Reiter „Karten“ an.</p><p class="center">Zurück bekommst du <b><span class="ico coin"></span>${fmt(n.gold)} Gold</b>${n.shards ? ` und <b>${n.shards} freie Runenscherben</b>` : ''}.</p>`));
+  return true;
+}
 // Saisonwechsel: einmal sagen, was aus der alten Saison gutgeschrieben wurde
 function seasonNote() {
+  if (goneNote()) return;
   const n = profile.note;
   if (!n || !overlay.hidden || !fxLayer.hidden) return;
   profile.note = null; save();
@@ -162,6 +173,7 @@ function render() {
   else if (tab === 'road') renderRoad();
   else renderMore();
 }
+for (const pill of document.querySelectorAll('.bar .pill:not(#lvlPill)')) pill.addEventListener('click', () => { if (screen === 'menu') { sfx('tab'); show('shop'); } });   // das Plus an Gold und Splittern führt in den Laden
 $('#nav').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; sfx('click'); swap = null; roadSeen = false; show(b.dataset.tab); });
 
 const overlay = $('#overlay'), sheet = $('#sheet'), fxLayer = $('#fx');
@@ -1669,7 +1681,7 @@ function handleEvents() {
     else if (ev.t === 'pulse') sfx('pulse');
     else if (ev.t === 'morph' || ev.t === 'hatch' || ev.t === 'curse' || ev.t === 'clone') sfx('morph');
     else if (ev.t === 'ench') sfx('heavy');
-    else if (ev.t === 'die' && ev.kind === 'tower') { sfx('fall'); if (!ev.main && !g.over) banner(ev.side === 1 ? 'Turm zerstört!' : 'Turm verloren!'); if (SPEED === 1) B.slowT = 0.75; flyCrown(ev); }
+    else if (ev.t === 'die' && ev.kind === 'tower') { sfx('fall'); if (!ev.main && !g.over) banner(ev.side === 1 ? 'Turm zerstört!' : 'Turm verloren!'); flyCrown(ev); }
     else if (ev.t === 'wake') sfx('wake');
     else if (ev.t === 'shield' || ev.t === 'fuse') sfx(ev.t);
     else if (ev.t === 'kraft') { if (ev.side === 0) sfx('kraft'); }
@@ -1732,7 +1744,7 @@ function updateHud(force) {
   if (force || B.flags.cr !== cr) { B.flags.cr = cr; $('#crownFoe').textContent = g.sides[1].crowns; $('#crownMe').textContent = S.crowns; }
   $('#kraftFill').style.width = `${S.kraft * 10}%`;
   const k = Math.floor(S.kraft + 1e-6);
-  if (force || B.flags.k !== k) { B.flags.k = k; $('#kraftNum').textContent = k; $('#kraft').classList.toggle('full', k >= sim.MAX_KRAFT); }
+  if (force || B.flags.k !== k) { B.flags.k = k; $('#kraftNum').textContent = k; $('#kraft').classList.toggle('full', k >= sim.MAX_KRAFT); $('#hand').classList.toggle('full', k >= sim.MAX_KRAFT); }
   const hand = $('#hand');
   for (let i = 0; i < 4; i++) {
     const id = S.hand[i], R = S.runes.has(id) ? RUNES[id] : null;
