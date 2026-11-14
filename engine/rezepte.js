@@ -241,20 +241,26 @@ Object.assign(SPELLS, {
       const { x, y: z, r } = ev, dur = 8;
       fx.burst({ x, y: 0.5, z, n: 1, cell: CELL.glow, color: '#c5ee6a', hdr: 1.2, alpha: 0.6, size: r * 1.8, size2: r * 1.2, life: 0.5 });
       fx.ring({ x, z, r0: r * 0.2, r, dur: 0.45, color: '#e2f7a8', hdr: 1.6, width: 0.14 }); stay(fx, x, z, r, dur, '#a6d94a');
-      every(fx, dur, 0.35, () => { const [px, pz] = around(x, z, r * 0.9);
-        fx.burst({ x: px, y: 0.25, z: pz, n: 2, cell: CELL.smoke, add: 0, color: '#c5ee6a', color2: '#6f9a2a', alpha: 0.45, size: [0.6, 0.9], size2: [1.3, 1.8], life: [1.0, 1.6], speed: [0.1, 0.4], up: [0.2, 0.6], drag: 1.5, spin: [0.2, 0.8], spread: 0.6 });
-        fx.burst({ x: px, y: 0.15, z: pz, n: 2, cell: CELL.ring, color: '#e2f7a8', hdr: 1.5, alpha: 0.8, size: [0.1, 0.18], size2: [0.22, 0.3], life: [0.5, 0.8], up: [0.5, 1.0], drag: 0.5, spread: 0.5 }); });
+      fx.puddle({ x, z, r: r * 1.04, color: '#5fa01e', hdr: 1.0, alpha: 0.46, dur, hold: 0.88, body: 1 });   // die ganze Fläche steht giftgrün, solange der Dunst wirkt
+      for (let k = 0; k < 10; k++) { const [px, pz] = around(x, z, r * 0.85); fx.burst({ x: px, y: 0.3, z: pz, n: 1, cell: CELL.smoke, add: 0, color: '#c5ee6a', color2: '#5d8a1e', alpha: 0.55, size: [0.7, 1.0], size2: [1.5, 2.1], life: [1.1, 1.7], speed: [0.2, 0.6], up: [0.3, 0.8], drag: 1.5, spin: [0.2, 0.8] }); }   // der erste Schwall
+      every(fx, dur, 0.16, i => { const [px, pz] = around(x, z, r * 0.9);
+        fx.burst({ x: px, y: 0.25, z: pz, n: 2, cell: CELL.smoke, add: 0, color: '#c5ee6a', color2: '#5d8a1e', alpha: 0.5, size: [0.6, 0.9], size2: [1.3, 1.9], life: [1.0, 1.6], speed: [0.1, 0.4], up: [0.2, 0.7], drag: 1.5, spin: [0.2, 0.8], spread: 0.6 });
+        fx.burst({ x: px, y: 0.12, z: pz, n: 2, cell: CELL.ring, color: '#e9ffb0', hdr: 1.7, alpha: 0.9, size: [0.1, 0.2], size2: [0.26, 0.38], life: [0.45, 0.8], up: [0.5, 1.1], drag: 0.5, spread: 0.6 });
+        if (i % 3 === 0) fx.burst({ x: px, y: 0.2, z: pz, n: 1, cell: CELL.glow, color: '#d8ff7a', color2: '#6fae24', hdr: 1.8, alpha: 0.7, size: [0.3, 0.45], size2: 0.05, life: [0.3, 0.5], up: [0.4, 0.9] }); });
     },
   },
-  // Kriegstrommel: ein Schlag, zwei Wellen in Orange – wer darin steht, wird schneller
+  // Kriegstrommel: ein Schlag, zwei Wellen in Rosa-Violett – wer darin steht, wird schneller und glüht am Rand rosa
+  // (die Farbe der Raserei wie im Vorbild; engine/sprites.js: uRim)
   kriegstrommel: {
-    cast(fx, ev) { fx.zone({ x: ev.x, z: ev.y, r: ev.r, dur: Math.max(0.12, ev.delay), color: '#ffb347', hdr: 1.4, fill: 0.22 }); },
+    cast(fx, ev) { fx.zone({ x: ev.x, z: ev.y, r: ev.r, dur: Math.max(0.12, ev.delay), color: '#ff7ad1', hdr: 1.4, fill: 0.22 }); },
     impact(fx, ev, C) {
-      const { x, y: z, r } = ev;
-      fx.burst({ x, y: 0.6, z, n: 1, cell: CELL.glow, color: '#ffb347', hdr: 2.2, size: r * 1.7, size2: r * 0.8, life: 0.25 });
-      fx.ring({ x, z, r0: r * 0.15, r: r * 1.05, dur: 0.35, color: '#ffe2a8', hdr: 2.2, width: 0.14 }); fx.ring({ x, z, r0: r * 0.1, r, dur: 0.55, color: '#ffa53d', hdr: 1.7, width: 0.3, delay: 0.12 });
-      stay(fx, x, z, r, 4.5, '#ffa53d');
-      fx.burst({ x, y: 0.3, z, n: 14, cell: CELL.diamond, color: '#fff3c4', color2: '#ffa53d', hdr: 2.2, size: [0.1, 0.18], size2: 0.02, life: [0.6, 1.1], speed: [0.1, 0.5], up: [1.2, 2.6], drag: 0.8, spin: [1, 4], spread: r * 0.85 });
+      const { x, y: z, r } = ev, dur = 4.5;
+      fx.burst({ x, y: 0.6, z, n: 1, cell: CELL.glow, color: '#ff8fd8', hdr: 2.2, size: r * 1.7, size2: r * 0.8, life: 0.25 });
+      fx.ring({ x, z, r0: r * 0.15, r: r * 1.05, dur: 0.35, color: '#ffd9f2', hdr: 2.2, width: 0.14 }); fx.ring({ x, z, r0: r * 0.1, r, dur: 0.55, color: '#ff4fb8', hdr: 1.7, width: 0.3, delay: 0.12 });
+      stay(fx, x, z, r, dur, '#ff5cc0');
+      fx.puddle({ x, z, r: r * 1.02, color: '#d04aa8', hdr: 1.0, alpha: 0.26, dur, hold: 0.85, body: 1 });
+      fx.burst({ x, y: 0.3, z, n: 16, cell: CELL.diamond, color: '#ffe3f6', color2: '#ff4fb8', hdr: 2.2, size: [0.1, 0.18], size2: 0.02, life: [0.6, 1.1], speed: [0.1, 0.5], up: [1.2, 2.6], drag: 0.8, spin: [1, 4], spread: r * 0.85 });
+      every(fx, dur, 0.22, () => { const [px, pz] = around(x, z, r * 0.9); fx.burst({ x: px, y: 0.15, z: pz, n: 1, cell: CELL.diamond, color: '#ffe3f6', color2: '#ff4fb8', hdr: 2, size: [0.08, 0.14], size2: 0.02, life: [0.6, 0.9], up: [1.0, 1.9], drag: 0.6, spin: [1, 3] }); });
       C.shake(0.3);
     },
   },
@@ -287,9 +293,13 @@ Object.assign(SPELLS, {
     impact(fx, ev) {
       const { x, y: z, r } = ev, dur = 1.1;
       every(fx, dur, 0.18, i => fx.ring({ x, z, r0: r, r: r * 0.12, dur: 0.5, color: '#e6f6ff', hdr: 1.6, width: 0.1, alpha: 0.8 }));
-      every(fx, dur, 0.04, i => { const a = i * 0.9, q = r * (0.2 + (i % 7) / 8), px = x + Math.cos(a) * q, pz = z + Math.sin(a) * q;
-        fx.burst({ x: px, y: 0.3 + (i % 5) * 0.35, z: pz, n: 1, cell: CELL.smoke, add: 0, color: '#ffffff', color2: '#cfe6f5', alpha: 0.6, size: [0.35, 0.5], size2: [0.7, 1.0], life: [0.35, 0.55], dir: [-Math.sin(a) - Math.cos(a) * 0.5, 0.25, Math.cos(a) - Math.sin(a) * 0.5], cone: 0.15, speed: [3, 4.5], drag: 1.5 }); });
-      fx.beam({ from: [x, 0.1, z], to: [x, 3.6, z], color: '#e6f6ff', hdr: 1.2, width: 0.5, dur });
+      // der Wirbel: je Schritt drei Staubfetzen auf verschiedenen Bahnen, die kreisend nach innen und oben gezogen werden
+      every(fx, dur, 0.03, i => { for (let k = 0; k < 3; k++) { const a = i * 0.9 + k * 2.09, q = r * (0.15 + ((i * 3 + k * 5) % 9) / 10), px = x + Math.cos(a) * q, pz = z + Math.sin(a) * q;
+        fx.burst({ x: px, y: 0.2 + ((i + k) % 6) * 0.42, z: pz, n: 1, cell: CELL.smoke, add: 0, color: k ? '#ffffff' : '#d9c8a8', color2: '#cfe6f5', alpha: 0.6, size: [0.35, 0.55], size2: [0.75, 1.1], life: [0.35, 0.6], dir: [-Math.sin(a) - Math.cos(a) * 0.55, 0.35, Math.cos(a) - Math.sin(a) * 0.55], cone: 0.15, speed: [3.2, 5], drag: 1.4 }); }
+        const b = i * 1.7; fx.burst({ x: x + Math.cos(b) * r * 0.7, y: 0.5 + (i % 4) * 0.5, z: z + Math.sin(b) * r * 0.7, n: 1, cell: CELL.spark, color: '#ffffff', color2: '#bfe6ff', hdr: 2.2, size: [0.1, 0.18], life: [0.25, 0.4], dir: [-Math.sin(b), 0.2, Math.cos(b)], cone: 0.1, speed: [5, 7], drag: 1 }); });
+      fx.beam({ from: [x, 0.1, z], to: [x, 4.2, z], color: '#e6f6ff', hdr: 1.1, width: 0.7, dur });
+      fx.beam({ from: [x, 0.1, z], to: [x, 3.0, z], color: '#ffffff', hdr: 1.3, width: 0.25, dur });
+      fx.puddle({ x, z, r: r * 0.9, color: '#cfe6f5', hdr: 1.0, alpha: 0.16, dur: dur * 1.3, hold: 0.6 });
     },
   },
   // Trugbild: kalter Spiegelschein; die Abbilder selbst meldet das Ereignis 'clone'
@@ -307,7 +317,10 @@ Object.assign(SPELLS, {
     impact(fx, ev, C) {
       const { x, y: z, r } = ev, dur = 3;
       fx.ring({ x, z, r0: r * 0.2, r: r * 1.05, dur: 0.45, color: '#e9dfc8', hdr: 1.7, width: 0.16 }); stay(fx, x, z, r, dur, '#b08a5a');
-      fx.decal({ x, z, r: r * 0.9, dur: 9, strength: 0.5 });
+      fx.decal({ x, z, r: r * 0.9, dur: 9, strength: 0.55 });
+      for (let k = 0; k < 7; k++) { const a = k * 0.9 + 0.3, q = r * (0.35 + (k % 3) * 0.2); fx.decal({ x: x + Math.cos(a) * q, z: z + Math.sin(a) * q, r: r * (0.22 + (k % 2) * 0.1), dur: 9, strength: 0.9 }); }   // Risse: dunkle Stellen im Boden
+      fx.puddle({ x, z, r: r * 1.02, color: '#6e5232', hdr: 1.0, alpha: 0.3, dur, hold: 0.8, body: 1 });
+      every(fx, dur, 0.5, i => { const [px, pz] = around(x, z, r * 0.7); fx.debris({ x: px, z: pz, n: 3, color: '#8a6a43', power: 0.55, size: 0.6 }); fx.ring({ x: px, z: pz, r0: 0.15, r: 0.9, dur: 0.3, color: '#e9dfc8', hdr: 1.3, width: 0.12, alpha: 0.7 }); });
       every(fx, dur, 0.12, i => { const [px, pz] = around(x, z, r * 0.92);
         fx.burst({ x: px, y: 0.12, z: pz, n: 2, cell: CELL.dust, add: 0, color: '#d9c8a8', alpha: 0.6, size: [0.35, 0.5], size2: [0.8, 1.1], life: [0.3, 0.55], speed: [0.2, 0.8], up: [0.8, 1.8], drag: 3, spread: 0.2 });
         if (i % 2 === 0) fx.burst({ x: px, y: 0.15, z: pz, n: 2, cell: CELL.shard, add: 0, color: '#8a6a43', size: [0.07, 0.13], life: [0.3, 0.5], speed: [0.5, 1.5], up: [2, 3.6], gravity: -14, spin: [5, 12] });
@@ -360,6 +373,9 @@ Object.assign(SPELLS, {
       const { x, y: z, r } = ev, dur = 4;
       fx.burst({ x, y: 0.4, z, n: 1, cell: CELL.glow, color: '#7a4fd0', hdr: 1.4, alpha: 0.75, size: r * 1.9, size2: r * 1.4, life: 0.5 });
       stay(fx, x, z, r, dur, '#7a4fd0');
+      fx.puddle({ x, z, r: r * 1.03, color: '#1e0d44', hdr: 1.0, alpha: 0.62, dur, hold: 0.85, body: 1 });   // der Schlund: dunkel violett, solange er wirkt
+      fx.beam({ from: [x, 0.1, z], to: [x, 11, z], color: '#b78bff', hdr: 1.6, width: 0.34, dur: dur * 0.9 });
+      fx.beam({ from: [x, 0.1, z], to: [x, 11, z], color: '#ffffff', hdr: 1.4, width: 0.1, dur: dur * 0.9 });
       every(fx, dur, 0.28, () => fx.ring({ x, z, r0: r, r: r * 0.08, dur: 0.6, color: '#b06adf', hdr: 1.5, width: 0.1, alpha: 0.7 }));
       every(fx, dur, 0.1, i => { const a = i * 1.3, px = x + Math.cos(a) * r * 0.9, pz = z + Math.sin(a) * r * 0.9;
         fx.burst({ x: px, y: 0.25, z: pz, n: 1, cell: CELL.star, color: '#f0d9ff', color2: '#7a4fd0', hdr: 2.2, size: [0.12, 0.2], size2: 0.02, life: [0.4, 0.6], dir: [-Math.cos(a), 0.1, -Math.sin(a)], cone: 0.1, speed: [r * 1.4, r * 1.9], drag: 0.5, spin: [3, 8] }); });

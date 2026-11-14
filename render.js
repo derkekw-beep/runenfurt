@@ -609,6 +609,7 @@ export function createRenderer(canvas) {
 
     const list = g.ents.slice().sort((p, q) => (p.air - q.air) || (p.y - q.y));
     for (const e of list) {
+      if (e.stub) continue;   // unsichtbarer Platzhalter (Riss-Arena)
       const x = e.ox + (e.x - e.ox) * a, y = e.oy + (e.y - e.oy) * a;
       e._x = x; e._y = y;
       const moving = e.kind === 'unit' && !e.inRange && e.deployT <= 0 && e.rootT <= 0;

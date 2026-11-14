@@ -16,7 +16,7 @@ const ICON = {
   pakt:   SVG('<path d="M12 2l2.6 6.300L21 9l-4.800 4.300L17.600 20 12 16.500 6.400 20l1.400-6.700L3 9l6.400-.7z" fill="currentColor"/>'),
 };
 const BOON_ICON = { kraftfluss: 'kraft', doppelkraft: 'kraft', vorrat: 'kraft', beutezug: 'kraft', mauerwerk: 'turm', bollwerk: 'turm', turmschuetzen: 'turm', turmstaerke: 'turm', wiederaufbau: 'turm', letztewehr: 'turm',
-  drill: 'karte', schulung: 'karte', meisterschaft: 'karte', runenmacht: 'karte', blitzwacht: 'blitz', frostfalle: 'blitz', eilmarsch: 'trupp', wachposten: 'trupp', verstaerkung: 'trupp', schutzbann: 'schild', pakt: 'pakt' };
+  drill: 'karte', schulung: 'karte', meisterschaft: 'karte', runenmacht: 'karte', blitzwacht: 'blitz', frostfalle: 'blitz', eilmarsch: 'trupp', wachposten: 'trupp', verstaerkung: 'trupp', schutzbann: 'schild', pakt: 'pakt', kk: 'karte' };
 const icon = id => ICON[BOON_ICON[id] || 'blitz'];
 
 // ctx: { el, fmt, sfx, banner, toast, openSheet, closeSheet, setDismiss, B, P, profile(), save(), today(), start(opts), auto(), mileRow, collected, askHelp(go) }
@@ -45,18 +45,18 @@ export function createSurvUi(ctx) {
     if (h.choice && !choosing && !g.over && !B.loading) { choose(); force = true; }   // die Anzeige zeigt beim Wählen den Stand von jetzt
     if (!force && now - lastT < 200) return;
     lastT = now;
-    const q = h.quest, key = [h.wave, h.theme, h.score, h.phase, Math.ceil(h.nextIn), h.left, q && q.have, q && q.done, h.boons.length, h.boons.reduce((s, b) => s + b.n, 0), h.boss && Math.round(h.boss.hp / h.boss.maxHp * 50), h.boss && h.boss.rage].join('|');
+    const q = h.quest, key = [h.mood, h.powers.length, h.wave, h.theme, h.score, h.phase, Math.ceil(h.nextIn), h.left, q && q.have, q && q.done, h.boons.length, h.boons.reduce((s, b) => s + b.n, 0), h.boss && Math.round(h.boss.hp / h.boss.maxHp * 50), h.boss && h.boss.rage].join('|');
     if (key === lastKey) return;
     lastKey = key;
-    parts.wave.innerHTML = h.wave ? `<b>Welle ${h.wave}</b> ${h.theme}` : '<b>Überleben</b> gleich geht es los';
+    parts.wave.innerHTML = h.wave ? `<b>Welle ${h.wave}</b> ${h.theme}${h.mood ? ` <em class="svMood">${h.mood}</em>` : ''}` : '<b>Überleben</b> gleich geht es los';
     parts.pts.innerHTML = `<b>${fmt(h.score)}</b> Punkte${h.mult > 1 ? ` <em>×${String(h.mult).replace('.', ',')}</em>` : ''}`;
-    parts.next.textContent = h.phase === 'pause' ? (h.choice ? 'Wähle einen Segen' : `Nächste: ${h.next} in ${Math.ceil(h.nextIn)} s`) : `Noch ${h.left} ${h.left === 1 ? 'Gegner' : 'Gegner'} · danach: ${h.next}`;
+    parts.next.textContent = h.phase === 'pause' ? (h.choice ? (h.kind === 'kraft' ? 'Wähle eine Kartenkraft' : 'Wähle einen Segen') : `Nächste: ${h.next} in ${Math.ceil(h.nextIn)} s`) : `Noch ${h.left} ${h.left === 1 ? 'Gegner' : 'Gegner'} · danach: ${h.next}`;
     parts.quest.innerHTML = q ? `<span class="${q.done ? 'ok' : ''}">${q.done ? '✓ ' : ''}${q.name} ${q.done ? '' : `${q.have}/${q.need}`}</span>` : '';
     parts.quest.title = q ? q.text : '';
     parts.boss.hidden = !h.boss;
     if (h.boss) { parts.boss.firstChild.style.width = `${Math.max(0, 100 * h.boss.hp / h.boss.maxHp)}%`; parts.boss.lastChild.textContent = h.boss.rage ? `${h.boss.name} · in Raserei` : h.boss.name; parts.boss.classList.toggle('rage', h.boss.rage); }
     const shown = h.boons.slice(-5);
-    parts.boons.innerHTML = shown.map(b => `<span class="svBoon" title="${b.name}">${icon(b.id)}${b.n > 1 ? `<i>${b.n}</i>` : ''}</span>`).join('') + (h.boons.length > shown.length ? `<span class="svMore">+${h.boons.length - shown.length}</span>` : '');
+    parts.boons.innerHTML = h.powers.map(p => `<span class="svBoon kk" title="${p.name}">${ICON.karte}</span>`).join('') + shown.map(b => `<span class="svBoon" title="${b.name}">${icon(b.id)}${b.n > 1 ? `<i>${b.n}</i>` : ''}</span>`).join('') + (h.boons.length > shown.length ? `<span class="svMore">+${h.boons.length - shown.length}</span>` : '');
   }
 
   // Ereignisse des Laufs: Ansagen, Klänge. Gibt true zurück, wenn das Ereignis hier behandelt ist.
@@ -77,6 +77,10 @@ export function createSurvUi(ctx) {
     else if (ev.k === 'ruf') sfx('wake');
     else if (ev.k === 'elite') sfx('shield');
     else if (ev.k === 'wehr') { sfx('bless'); ctx.banner('Letzte Wehr!'); }
+    else if (ev.k === 'laune') { sfx('horn'); ctx.banner(`Feldlaune: ${ev.name}`); ctx.toast(ev.text, 4200); }
+    else if (ev.k === 'frost') sfx('frostnacht');
+    else if (ev.k === 'bers') sfx('charge');
+    else if (ev.k === 'kraft') sfx('rune');
     return true;
   }
   // kleine Punkte-Einblendung an der Punktzahl
@@ -94,18 +98,18 @@ export function createSurvUi(ctx) {
     choosing = true; B.paused = true; B.sel = null; B.ghost = null; B.drag = null;
     const draw = () => {
       const ch = u.choice, d = el('div', 'boonPick');
-      d.append(el('h3', '', ch.first ? 'Dein Startsegen' : ch.big ? 'Großer Segen' : 'Wähle einen Segen'));
-      d.append(el('p', 'center small', ch.first ? 'Jeder Lauf beginnt mit einer Wahl. Segen gelten bis zum Ende des Laufs.' : ch.big ? `Bosswelle ${g.waves.n} überstanden – hier sind seltene Segen häufiger.` : `Welle ${g.waves.n} überstanden. Die nächste: ${U.hud(g).next}.`));
+      d.append(el('h3', '', ch.kind === 'kraft' ? 'Kartenkraft' : ch.first ? 'Dein Startsegen' : ch.big ? 'Großer Segen' : 'Wähle einen Segen'));
+      d.append(el('p', 'center small', ch.kind === 'kraft' ? 'Der Boss ist gefallen: Eine deiner Karten bekommt für den Rest des Laufs eine besondere Kraft. Jede Karte kann nur eine tragen.' : ch.first ? 'Jeder Lauf beginnt mit einer Wahl. Segen gelten bis zum Ende des Laufs.' : ch.big ? `Bosswelle ${g.waves.n} überstanden – hier sind seltene Segen häufiger.` : `Welle ${g.waves.n} überstanden. Die nächste: ${U.hud(g).next}.`));
       const row = el('div', 'boonRow');
       ch.options.forEach((o, k) => {
-        const rar = o.id === 'pakt' ? 3 : U.BOONS[o.id].rar, have = u.boons[o.id] || 0;
+        const rar = U.boonRar(o), have = u.boons[o.id] || 0;
         const b = el('button', `boon r${rar}`, `<span class="bIco">${icon(o.id)}</span><span class="bTxt"><b>${U.boonName(o)}${have ? ` <i>${have + 1}. Mal</i>` : ''}</b><small>${U.boonText(g, o)}</small></span><em>${rar === 3 ? 'Wagnis' : U.RAR_NAME[rar]}</em>`);
         b.dataset.k = k;
         b.addEventListener('click', () => { sfx(rar >= 2 ? 'rune' : 'buy'); const got = U.pick(g, k); if (!got) return; if (u.choice) draw(); else done(); });
         row.append(b);
       });
       d.append(row);
-      if (u.rerolls > 0) { const r = el('button', 'btn rerollBtn', `Neu würfeln <em>${u.rerolls}</em>`); r.addEventListener('click', () => { if (U.reroll(g)) { sfx('flip'); draw(); } }); d.append(r); }
+      if (u.rerolls > 0 && ch.kind !== 'kraft') { const r = el('button', 'btn rerollBtn', `Neu würfeln <em>${u.rerolls}</em>`); r.addEventListener('click', () => { if (U.reroll(g)) { sfx('flip'); draw(); } }); d.append(r); }
       if (u.order.length) d.append(el('p', 'center small boonHave', `Deine Segen: ${listBoons(u)}`));
       ctx.setDismiss(null);
       ctx.openSheet(d, true);

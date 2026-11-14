@@ -255,7 +255,7 @@ export function loadProfile(raw) {
   if (Array.isArray(d.names)) p.names = p.names.map((n, i) => (typeof d.names[i] === 'string' && d.names[i].trim() ? d.names[i].trim().slice(0, 14) : n));
   if (d.sim && typeof d.sim === 'object') p.sim = { spent: Math.max(0, Math.round(num(d.sim.spent, 0))), n: num(d.sim.n, 0), once: Array.isArray(d.sim.once) ? d.sim.once.filter(x => STORE.some(o => o.id === x && o.once)) : [] };
   if (d.modi && typeof d.modi === 'object') p.modi = JSON.parse(JSON.stringify(d.modi));   // Serien und Rangliste (modi.js prüft den Inhalt beim ersten Zugriff)
-  if (d.surv && typeof d.surv === 'object') p.surv = { ...(d.surv.top || d.surv.daily ? survLoad(d.surv) : {}), best: Math.max(0, Math.floor(num(d.surv.best, 0))), got: Array.isArray(d.surv.got) ? [...new Set(d.surv.got.filter(a => SURV.some(m => m.at === a)))] : [], runs: num(d.surv.runs, 0) };
+  if (d.surv && typeof d.surv === 'object') p.surv = { ...(d.surv.top || d.surv.daily || d.surv.danger || d.surv.dgot ? survLoad(d.surv) : {}), best: Math.max(0, Math.floor(num(d.surv.best, 0))), got: Array.isArray(d.surv.got) ? [...new Set(d.surv.got.filter(a => SURV.some(m => m.at === a)))] : [], runs: num(d.surv.runs, 0) };
   if (typeof d.day === 'string') p.day = d.day.slice(0, 10);
   if (Array.isArray(d.quests)) p.quests = d.quests.filter(q => q && QUESTS[q.id]).slice(0, 3).map(q => ({ id: q.id, need: Math.max(1, num(q.need, 1)), have: num(q.have, 0), claimed: !!q.claimed }));
   if (d.shop && typeof d.shop === 'object') p.shop = { bought: Array.isArray(d.shop.bought) ? d.shop.bought.filter(i => Number.isInteger(i) && i >= 0 && i < 8) : [], gift: !!d.shop.gift, ...(d.shop.wild ? { wild: true } : {}) };
@@ -268,6 +268,21 @@ export function loadProfile(raw) {
   p.decks = p.decks.map(dk => slotOrder(dk, p.arena, { pool: own, runes: d.slots ? null : Object.keys(RUNES).filter(id => hasRune(p, id)) }));
   p.deck = p.decks[p.slot]; p.slots = 1;
   return p;
+}
+
+// Alles freischalten (Knopf im Reiter „Mehr“, zum Ausprobieren): letzte Arena, jede Karte und jede Turmkarte auf der Höchststufe,
+// alle Runenformen erweckt, alle Heldenformen freigeschaltet, alle Gefahrenstufen des Überlebens offen, dazu reichlich Gold,
+// Runensplitter und Heldenmünzen. Lässt sich nicht zurücknehmen. Gibt die Zahl der Karten zurück, die jetzt auf Höchststufe stehen.
+export function unlockAll(p) {
+  const last = ARENAS.length - 1;
+  p.trophies = Math.max(p.trophies, ARENAS[last].at); p.best = Math.max(p.best, p.trophies); p.arena = last;
+  for (const ar of ARENAS) for (const id of ar.unlock) { if (!p.cards[id]) p.cards[id] = { lvl: MAX_LEVEL, n: 0 }; p.cards[id].lvl = MAX_LEVEL; }
+  for (const id of Object.keys(RUNES)) if (p.cards[id]) p.runes[id] = RUNE_SHARDS;
+  for (const id of HERO_FORM_IDS) if (p.cards[id]) p.forms[id] = 1;
+  p.kt = MAX_LEVEL;
+  p.gold = Math.max(p.gold, 1000000); p.gems = Math.max(p.gems, 10000); p.heroCoins = Math.max(p.heroCoins || 0, 1000);
+  p.surv = { ...p.surv, danger: 5 };
+  return Object.keys(p.cards).length;
 }
 
 export const arenaIndex = trophies => { let i = 0; while (i + 1 < ARENAS.length && trophies >= ARENAS[i + 1].at) i++; return i; };

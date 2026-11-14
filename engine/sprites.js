@@ -137,6 +137,7 @@ const VERT = `
 const FRAG = `
   uniform sampler2D map; uniform sampler2D mask; uniform vec3 uMain; uniform vec3 uDark; uniform vec3 uTint;
   uniform float uFlash; uniform float uAlpha; uniform float uGlow; uniform float uSolid; uniform float uFrost;
+  uniform float uRune; uniform vec4 uRim;
   varying vec2 vUv;
   void main() {
     vec4 c = texture2D(map, vUv);
@@ -148,6 +149,22 @@ const FRAG = `
     col = mix(col, k * uMain, m.r); col = mix(col, k * uDark, m.g);
     col *= uTint;
     col += col * m.b * uGlow;
+    if (uRune > 0.0) {
+      // Runenform: Alles Graue an der Figur – Rüstung, Stein, Fell, Stoff ohne Farbe – wird violett; Haut, Holz und die
+      // Teamfarbe bleiben, damit man weiter sieht, wem sie gehört. Leuchtende Teile strahlen violett.
+      float mx = max(col.r, max(col.g, col.b)), mn = min(col.r, min(col.g, col.b));
+      float sat = (mx - mn) / max(mx, 0.001), lum = dot(col, vec3(0.3, 0.59, 0.11));
+      float plate = (1.0 - smoothstep(0.16, 0.44, sat)) * (1.0 - max(m.r, m.g)) * smoothstep(0.04, 0.2, lum);
+      vec3 viol = mix(vec3(0.27, 0.11, 0.55), vec3(0.70, 0.46, 0.98), smoothstep(0.1, 0.95, lum)) * (0.5 + lum * 0.62);
+      col = mix(col, viol, plate * 0.86 * uRune);
+      col += vec3(0.5, 0.2, 1.0) * m.b * uGlow * 0.6 * uRune;
+    }
+    if (uRim.a > 0.0) {
+      // Kantenglühen (Runenform violett, Antrieb und Raserei rosa): wo wenige Bildpunkte weiter nichts mehr von der Figur ist
+      vec2 d = min(fwidth(vUv) * 2.4, vec2(0.0024));
+      float n = texture2D(map, vUv + vec2(d.x, 0.0)).a + texture2D(map, vUv - vec2(d.x, 0.0)).a + texture2D(map, vUv + vec2(0.0, d.y)).a + texture2D(map, vUv - vec2(0.0, d.y)).a;
+      col += uRim.rgb * clamp(1.0 - n * 0.25, 0.0, 1.0) * uRim.a * 1.5;
+    }
     col = mix(col, vec3(0.72, 0.9, 1.15) * (0.4 + dot(col, vec3(0.5))), uFrost * 0.6);
     col = mix(col, vec3(1.0, 0.5, 0.48), uFlash);   // Treffer: die ganze Figur rötlich überzogen, wie im Vorbild
     float a = c.a * uAlpha;
@@ -175,7 +192,8 @@ export function createSprites(look, hooks = {}) {
   const baseMat = new THREE.ShaderMaterial({
     uniforms: { map: { value: null }, mask: { value: null }, uQuad: { value: new THREE.Vector4() }, uRect: { value: new THREE.Vector4() }, uScale: { value: new THREE.Vector2(1, 1) },
       uTrig: { value: new THREE.Vector2(1 / Math.cos(PITCH), 1 / Math.sin(PITCH)) }, uBias: { value: BIAS }, uFront: { value: new THREE.Vector3() }, uMain: { value: new THREE.Color() }, uDark: { value: new THREE.Color() },
-      uTint: { value: new THREE.Color(1, 1, 1) }, uFlash: { value: 0 }, uAlpha: { value: 1 }, uGlow: { value: 1.5 }, uSolid: { value: 0 }, uFrost: { value: 0 } },
+      uTint: { value: new THREE.Color(1, 1, 1) }, uFlash: { value: 0 }, uAlpha: { value: 1 }, uGlow: { value: 1.5 }, uSolid: { value: 0 }, uFrost: { value: 0 },
+      uRune: { value: 0 }, uRim: { value: new THREE.Vector4(0, 0, 0, 0) } },
     vertexShader: VERT, fragmentShader: FRAG, transparent: true, premultipliedAlpha: true, depthWrite: false, side: THREE.DoubleSide,
   });
   // Schatten: so lang, wie die Sonne ihn wirft; die Bildhöhe wird dafür in echte Höhe umgerechnet
@@ -278,6 +296,11 @@ export function createSprites(look, hooks = {}) {
     u.uFlash.value = inst.flash > 0 ? 0.88 * Math.min(1, inst.flash / 0.06) : 0;
     u.uAlpha.value = e.hidden ? 0.42 : 1;
     u.uFrost.value = e.iceT > 0 ? 1 : e.slowT > 0 ? 0.5 : 0;
+    // Runenform: violette Rüstung und ein ruhig atmender violetter Rand · Antrieb (Kriegstrommel, Raserei): rosa Rand, der schnell pulst
+    u.uRune.value = e.rune ? 1 : 0;
+    if (e.hasteT > 0) u.uRim.value.set(1.0, 0.3, 0.72, 0.55 + 0.3 * Math.sin(time * 9 + e.id));
+    else if (e.rune) u.uRim.value.set(0.66, 0.34, 1.0, 0.5 + 0.2 * Math.sin(time * 2.6 + e.id));
+    else u.uRim.value.w = 0;
     // Schatten bleibt am Boden; in der Luft kleiner und blasser
     const air = Math.min(1, (y - drop0 * 0.6) / 5.5 + hop * 0.25);
     inst.shadow.position.set(e._x + inst.kx + lx + y * 0.3, 0.025, e._y + inst.kz + lz - y * 0.22);

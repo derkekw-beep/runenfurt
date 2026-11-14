@@ -47,7 +47,8 @@ function copy(o, memo) {
 
 // Was die KI vom Gegner nie liest – in der Kopie stehen dafür leere Werte
 const SECRET = { hand: () => [null, null, null, null], next: () => null, queue: () => [], kraft: () => 0, last: () => '', away: () => [], cycle: () => ({}), spent: () => 0 };
-const SKIP = { events: 1, dead: 1, occ: 1, sides: 1 };   // Ereignisse und Zwischenspeicher braucht die Kopie nicht
+const SKIP = { events: 1, dead: 1, occ: 1, sides: 1, waves: 1 };   // Ereignisse und Zwischenspeicher braucht die Kopie nicht; Wellen: siehe unten
+const NO_WAVES = () => {};
 export function cloneGame(g, side) {
   const memo = new Map(), c = {};
   memo.set(g, c);
@@ -61,7 +62,8 @@ export function cloneGame(g, side) {
     for (const k in S) B[k] = SECRET[k] ? SECRET[k]() : copy(S[k], memo);
     c.sides.push(B);
   }
-  if (c.waves) c.waves = null;   // Wellen gehören nicht in die Vorschau eines Zugs
+  // Wellen (Überleben): In der Kopie kommen keine neuen Gegner nach – der Ablauf ruht, der Lauf selbst (Wellenzahl, Ziel) bleibt lesbar
+  c.waves = g.waves ? { ...g.waves, u: null, director: NO_WAVES } : null;
   return c;
 }
 

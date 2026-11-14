@@ -1324,3 +1324,8 @@ body.ddLive { cursor: grabbing; }
 .megaGrid .card:disabled { opacity: .8; } .megaGrid .card.gone { opacity: .28; filter: grayscale(.8); }
 .megaGrid .card.gone.s0 { outline: 2px solid var(--teal); opacity: .4; } .megaGrid .card.gone.s1 { outline: 2px solid var(--rose); opacity: .4; }
 @media (max-width: 340px) { .modiSeg button { font-size: 12px; } .serie .sPips .wins i { width: 11px; height: 11px; } .megaDeck { grid-template-columns: 66px 1fr; } }
+
+
+/* Runenform an der Reihe: das Kartenbild selbst ist violett getönt, wie die Figur auf dem Feld (engine/sprites.js: uRune) */
+#hand .card.rune canvas { filter: saturate(1.1) brightness(1.04); }
+#hand .card.rune::before { content: ''; position: absolute; inset: 0; z-index: 1; border-radius: inherit; background: linear-gradient(165deg, rgba(160,90,255,.6), rgba(96,40,210,.42)); mix-blend-mode: color; pointer-events: none; }

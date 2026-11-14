@@ -4,6 +4,8 @@ import { THREE, TEAM, CARDS, UNITS } from './deps.js';
 import { propMaterial } from './meshes.js';
 import { CELL } from './fx.js';
 import { figScale } from './sprites.js';
+
+const RUNE_LIGHT = '#d9b8ff', RUNE_DEEP = '#8a45ff';   // Violett der Runenformen in ihren Effekten
 import { PROJECTILES, MELEE, HITS, EVENTS, SPELLS } from './registry.js';
 import './rezepte.js';   // ergänzt die Rezepte um alle übrigen Karten
 
@@ -93,6 +95,7 @@ export function createActors(look, fx) {
       const tm = new THREE.Mesh(P.parts.top.geo, mat); tm.castShadow = true; top.add(tm);
       if (P.parts.bolt) { bolt = new THREE.Mesh(P.parts.bolt.geo, mat); bolt.castShadow = true; top.add(bolt); }
     }
+    if (e.rune) mat.userData.u.uTintMul.value.set(0.9, 0.6, 1.45);   // Runenform: Stein und Holz des Gebäudes violett getönt (die Teamfarbe bleibt)
     look.world.add(group);
     return { neu: true, building: true, model, cfg: BUILDINGS[model], group, top, bolt, ty, sink: 0, mat, size: sizeOf(model), def: { h: P.h * sizeOf(model), kind: 'building' }, scale: 1, hp: e.hp, flash: 0, age: 0, yaw: e.side === 0 ? Math.PI : 0, kick: 0, wasAnim: 0, status: null, statusKey: '', extras: [] };
   }
@@ -138,7 +141,7 @@ export function createActors(look, fx) {
     for (const a of [Math.PI / 4, -Math.PI / 4]) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.03, 0.09), grau); b.rotation.y = a; g.add(b); }
     return g;
   })();
-  const logGeo = new THREE.CylinderGeometry(0.45, 0.45, 1, 12).rotateZ(Math.PI / 2);
+  const logGeo = new THREE.CylinderGeometry(0.45, 0.45, 1, 12).rotateZ(Math.PI / 2), studGeo = new THREE.BoxGeometry(0.16, 0.12, 0.16);
   const hasProj = p => Object.hasOwn(PROJECTILES, p.from) && p.from !== '_' && !!p.line === !!PROJECTILES[p.from].line;
   function makeProj(p) {
     const d = PROJECTILES[p.from];
@@ -146,8 +149,15 @@ export function createActors(look, fx) {
     if (d.kind === 'arrow' || d.kind === 'blade') { m = (d.kind === 'arrow' ? arrow : blade).clone(); if (d.scale) m.scale.setScalar(d.scale);
       if (d.color) m.traverse(o => { if (o.material) o.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(d.color).multiplyScalar(2.6) }); });   // leuchtender Pfeil
     } else if (d.kind === 'log') {   // Walze quer zur Bahn (Breite aus den Spielregeln)
-      m = new THREE.Group(); const roll = new THREE.Mesh(logGeo, new THREE.MeshLambertMaterial({ color: d.color || '#8d939c', flatShading: true })); roll.castShadow = true;
-      roll.scale.set(p.w || 2, d.k || 1, d.k || 1); m.add(roll); m.userData.roll = roll;
+      m = new THREE.Group();
+      const roll = new THREE.Group(), w = p.w || 2, k = d.k || 1, base = new THREE.Color(d.color || '#8d939c');
+      const mat = c => new THREE.MeshLambertMaterial({ color: c, flatShading: true }), dark = mat(base.clone().multiplyScalar(0.55)), light = mat(base.clone().multiplyScalar(1.3));
+      const body = new THREE.Mesh(logGeo, mat(base)); body.castShadow = true; body.scale.set(w, k, k); roll.add(body);
+      for (const sx of [-0.34, 0, 0.34]) { const band = new THREE.Mesh(logGeo, dark); band.scale.set(0.11, k * 1.1, k * 1.1); band.position.x = sx * w; roll.add(band); }          // drei Reifen
+      for (const sx of [-0.5, 0.5]) { const cap = new THREE.Mesh(logGeo, dark); cap.scale.set(0.04, k * 0.72, k * 0.72); cap.position.x = sx * w * 1.005; roll.add(cap); }          // dunkle Stirnseiten
+      for (let i = 0; i < 18; i++) { const a = (i % 6) * 1.047 + (i < 6 ? 0 : i < 12 ? 0.5 : 0.25), stud = new THREE.Mesh(studGeo, light);                                    // Buckel: an ihnen sieht man das Rollen
+        stud.position.set((Math.floor(i / 6) - 1) * 0.17 * w + (i % 2 ? 0.06 : -0.06) * w, Math.cos(a) * 0.46 * k, Math.sin(a) * 0.46 * k); stud.rotation.x = a; roll.add(stud); }
+      m.add(roll); m.userData.roll = roll;
     } else if (d.kind === 'fan') {   // Fächer aus Glutkernen quer zur Bahn
       m = new THREE.Group(); const c = new THREE.Color(d.color || '#ffd75a').multiplyScalar(3), w = p.w || 1.5;
       for (let k = 0; k < 5; k++) { const b = new THREE.Mesh(orbGeo, new THREE.MeshBasicMaterial({ color: c })); b.scale.setScalar(0.07); b.position.set((k / 4 - 0.5) * w, 0, (k % 2) * 0.25 - 0.1); m.add(b); }
@@ -185,6 +195,7 @@ export function createActors(look, fx) {
       else if (o.d.trail === 'smoke') fx.burst({ x: pv.x, y: pv.y, z: pv.z, n: 1, cell: CELL.smoke, add: 0, color: '#d5d8df', alpha: 0.5, size: [0.2, 0.28], size2: [0.45, 0.6], life: [0.3, 0.45], spread: 0.03 });
       else if (o.d.trail === 'fuse') fx.burst({ x: pv.x, y: pv.y + 0.12, z: pv.z, n: 1, cell: CELL.spark, color: '#fff1b8', color2: '#ff8a2a', hdr: 2.6, size: [0.07, 0.13], life: [0.15, 0.28], speed: [0.3, 1], up: [0.2, 1.2] });
       else fx.burst({ x: pv.x, y: pv.y, z: pv.z, n: 1, cell: CELL.glow, color: o.d.color === 'team' ? TEAM[p.side].light : o.d.color, color2: o.d.color === 'team' ? TEAM[p.side].main : o.d.glow || o.d.color, hdr: 2.6, size: (o.d.size || 0.18) * 3.2, size2: 0.05, life: [0.16, 0.26], spread: 0.03 });
+      if (p.rune) fx.burst({ x: pv.x, y: pv.y, z: pv.z, n: 1, cell: CELL.glow, color: RUNE_LIGHT, color2: RUNE_DEEP, hdr: 2.3, size: 0.34, size2: 0.04, life: [0.2, 0.3], spread: 0.04 });   // Geschoss einer Runenform: violette Spur
     }
   }
   const removeProj = o => look.world.remove(o.m);
@@ -204,6 +215,10 @@ export function createActors(look, fx) {
       if (ev.spin) { if (!MELEE[ev.from]) return false; HITS.spin(fx, ev, C); return true; }
       HITS[known ? PROJECTILES[ev.from].hit : MELEE[ev.from]](fx, ev, ctx(sideOf(ev, g, projs)), known ? PROJECTILES[ev.from] : null);
       if (ev.heavy) { fx.ring({ x: ev.x, z: ev.y, r0: 0.3, r: 1.3, dur: 0.25, color: '#ffffff', hdr: 1.6 }); trauma = Math.max(trauma, 0.2); }
+      if (ev.rune) {   // Treffer einer Runenform: violette Rauten stieben auf, ein schmaler violetter Ring
+        fx.burst({ x: ev.x, y: 0.7, z: ev.y, n: 4, cell: CELL.diamond, color: '#ffffff', color2: RUNE_DEEP, hdr: 2.6, size: [0.1, 0.17], size2: 0.02, life: [0.3, 0.5], speed: [1, 2.6], up: [0.8, 2.4], gravity: -6, drag: 2 });
+        fx.ring({ x: ev.x, z: ev.y, r0: 0.2, r: 0.85, dur: 0.22, color: RUNE_LIGHT, hdr: 1.7, width: 0.1 });
+      }
       if (ev.splash) fx.ring({ x: ev.x, z: ev.y, r0: ev.splash * 0.3, r: ev.splash, dur: 0.3, color: ev.frost ? '#bfeaff' : '#ffd27a', hdr: 1.6, width: 0.25 });
       return true;
     }

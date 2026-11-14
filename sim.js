@@ -63,6 +63,7 @@ function spawn(g, type, side, x, y, extra, lvl = STD_LEVEL) {
     ...extra,
   };
   if (g.rageAll) e.hasteT = 1e9;   // Modus „Raserei“: dauerhaft angetrieben
+  if (g.rifts && side === 0 && e.targets === 'buildings') e.targets = 'all';   // Riss-Arena: es gibt keine Gebäude zu jagen – Gebäudejäger kämpfen wie alle anderen
   g.ents.push(e);
   g.byId.set(e.id, e);
   return e;
@@ -92,12 +93,16 @@ export function hurt(g, e, amount, bySide) { damage(g, e, amount, bySide); }
 //                                              als Sieg zählt der Lauf ab Welle goal
 //          dazu director: fn(g, dt)            eigener Ablauf der Wellen statt des eingebauten (Überleben mit Themen, Bossen und Segen: ueberleben.js)
 //          dazu floor: fn(kartenId)            Mindeststufe einer Karte in den Wellen (ihre Startstufe: keine Karte tritt darunter an)
+//          dazu rifts: true                    Überleben in eigener Arena: die Wellenseite hat keine Türme (nur ein unsichtbarer,
+//                                              unangreifbarer Platzhalter für den Hauptturm bleibt, e.stub). Eigene Truppen ohne Ziel
+//                                              halten ihre Stellung; Gebäudejäger greifen hier auch Truppen an; aufstellen darf man bis
+//                                              ins gegnerische Vorfeld (wie nach einem gefallenen Außenturm).
 export function createGame({ decks, levels, seed = 1, duration = 180, overtime = 120, rules = {} } = {}) {
   duration = rules.duration ?? duration; overtime = rules.overtime ?? overtime;
   const g = {
     sudden: !!rules.sudden, kraftFixed: rules.kraftFixed || 0, kraftPlan: Array.isArray(rules.kraftPlan) && rules.kraftPlan.length ? rules.kraftPlan : null, rageAll: !!rules.rage,
     waves: rules.waves ? { t: 6, n: 0, pool: rules.waves.pool, lvl: rules.waves.lvl || STD_LEVEL, endless: !!rules.waves.endless, goal: rules.waves.goal || 0, director: rules.waves.director || null, floor: rules.waves.floor || null } : null,
-    endless: !!(rules.waves && rules.waves.endless),
+    endless: !!(rules.waves && rules.waves.endless), rifts: !!(rules.waves && rules.waves.rifts),
     seed: seed >>> 0, time: 0, duration, overtime, phase: 'main', over: false, winner: null,
     ents: [], projs: [], zones: [], events: [], dead: [], byId: new Map(), nextId: 1, sides: [], banners: [], whirls: [], arcs: [], gusts: [], nextGroup: 1,
   };
@@ -115,10 +120,14 @@ export function createGame({ decks, levels, seed = 1, duration = 180, overtime =
     if (s === 1 && rules.mirror) { const A = g.sides[0], B = g.sides[1]; B.hand = [...A.hand]; B.next = A.next; B.queue = [...A.queue]; }   // Spiegelkampf: gleiche Karten in gleicher Folge
     const my = y => (s === 0 ? H - y : y);
     const tc = CARDS[lv.towerType], outer = tc && tc.type === 'tower' ? tc.unit : 'aussenturm', outerLvl = lv.outer || lv.tower;
-    spawn(g, outer, s, 3.5, my(OUTER_Y), { lane: 0 }, outerLvl);
-    spawn(g, outer, s, 14.5, my(OUTER_Y), { lane: 1 }, outerLvl);
-    if (UNITS[outer].bless) g.sides[s].blessT = UNITS[outer].bless.every + UNITS[outer].bless.first;
-    spawn(g, 'hauptturm', s, 9, my(MAIN_Y), { lane: -1 }, lv.tower);
+    const bare = s === 1 && g.rifts;   // Überleben mit Rissen: die Wellenseite steht ohne Türme da
+    if (!bare) {
+      spawn(g, outer, s, 3.5, my(OUTER_Y), { lane: 0 }, outerLvl);
+      spawn(g, outer, s, 14.5, my(OUTER_Y), { lane: 1 }, outerLvl);
+      if (UNITS[outer].bless) g.sides[s].blessT = UNITS[outer].bless.every + UNITS[outer].bless.first;
+    }
+    const mt = spawn(g, 'hauptturm', s, 9, my(MAIN_Y), { lane: -1 }, lv.tower);
+    if (bare) { mt.stub = true; mt.dmg = 0; }   // Platzhalter: unsichtbar, unangreifbar, ohne Schuss und ohne Kollision
     const hm = pick('towerHp') || 1;
     if (hm !== 1) for (const e of g.ents) if (e.side === s) e.hp = e.maxHp = Math.round(e.maxHp * hm);
   }
@@ -670,7 +679,7 @@ const edgeDist = (a, b) => dist(a, b) - a.r - b.r;
 const reachDist = edgeDist;
 
 function canHit(u, e) {
-  if (e.side === u.side || e.hp <= 0 || e.hidden) return false;
+  if (e.side === u.side || e.hp <= 0 || e.hidden || e.stub) return false;
   if (e.air && !u.hitsAir) return false;
   if (u.targets === 'buildings' && e.kind === 'unit') return false;
   return true;
@@ -795,7 +804,7 @@ function strike(g, u, t) {
       const amt = Math.round(d.healBurst.amt * cardMult(u.lvl));
       for (const e of g.ents) if (e !== u && e.side === u.side && e.kind === 'unit' && e.hp > 0 && Math.hypot(e.x - t.x, e.y - t.y) <= d.healBurst.r + e.r) healOver(e, amt, d.healBurst.pulses, d.healBurst.every);
     }
-    emit(g, { t: 'hit', from: u.model, x: t.x, y: t.y, splash: u.splash || (d.healBurst ? d.healBurst.r : 0), frost: !!d.ice });
+    emit(g, { t: 'hit', from: u.model, x: t.x, y: t.y, splash: u.splash || (d.healBurst ? d.healBurst.r : 0), frost: !!d.ice, ...(u.rune && { rune: true }) });
     if (u.hp > 0) die(g, u);
     return;
   }
@@ -826,7 +835,7 @@ function strike(g, u, t) {
     }
     if (knock && t.hp > 0 && (canKnock(t) || (d.combo && d.combo.all && t.kind === 'unit'))) { const fwd = d.combo && d.combo.fwd; push(t, fwd ? 0 : t.x - u.x, fwd ? (u.side === 0 ? -1 : 1) : t.y - u.y, knock); }   // fwd: immer in Richtung der gegnerischen Türme
     if (d.ramp && !d.rampMelee) emit(g, { t: 'beam', x: u.x, y: u.y, tx: t.x, ty: t.y, from: u.model, air: u.air, tair: t.air, hot: dmg / u.dmg });
-    else emit(g, { t: 'hit', from: u.model, x: d.spin ? u.x : t.x, y: d.spin ? u.y : t.y, heavy: dmg >= 300, spin: d.spin ? d.spin + u.r : 0 });
+    else emit(g, { t: 'hit', from: u.model, x: d.spin ? u.x : t.x, y: d.spin ? u.y : t.y, heavy: dmg >= 300, spin: d.spin ? d.spin + u.r : 0, ...(u.rune && { rune: true }) });   // rune: der Zeichner setzt violette Akzente
   }
   if (d.healHit) healAround(g, u, d.healHit);
   if (d.frenzy) u.stacks = Math.min(d.frenzy.stages ? d.frenzy.per * (d.frenzy.stages.length - 1) : d.frenzy.max, u.stacks + 1);
@@ -922,11 +931,11 @@ function occluded(g, side) {
   if (o.time !== g.time) {
     o.time = g.time;
     let ver = 7;
-    for (const e of g.ents) if (e.kind !== 'unit' && e.hp > 0) ver = (Math.imul(ver, 31) + e.id * 4 + (e.buried ? 1 : 0)) | 0;
+    for (const e of g.ents) if (e.kind !== 'unit' && e.hp > 0 && !e.stub) ver = (Math.imul(ver, 31) + e.id * 4 + (e.buried ? 1 : 0)) | 0;
     if (ver !== o.ver) {
       o.ver = ver; o.cells[0].fill(0); o.cells[1].fill(0);
       for (const e of g.ents) {
-        if (e.kind === 'unit' || e.hp <= 0 || e.digT > 0) continue;
+        if (e.kind === 'unit' || e.hp <= 0 || e.digT > 0 || e.stub) continue;
         const c0 = Math.max(0, Math.floor((e.x - e.r) * 2 + 1e-6)), c1 = Math.min(CW - 1, Math.ceil((e.x + e.r) * 2 - 1e-6) - 1);
         const r0 = Math.max(0, Math.floor((e.y - e.r) * 2 + 1e-6)), r1 = Math.min(CH - 1, Math.ceil((e.y + e.r) * 2 - 1e-6) - 1);
         for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) o.cells[e.side][r * CW + c] = 1;
@@ -1023,6 +1032,7 @@ function routePoint(g, u, t) {
 
 function updateEnt(g, u, dt) {
   const d = u.d;
+  if (u.stub) return;
   if (u.anim > 0) u.anim -= dt;
   if (u.digT > 0) { // noch unter der Erde unterwegs: eine Staubspur zeigt, wo er gerade gräbt
     u.digT -= dt; u.hidden = u.digT > 0;
@@ -1310,10 +1320,10 @@ function separate(g) {
   const E = g.ents;
   for (let i = 0; i < E.length; i++) {
     const a = E[i];
-    if (a.hp <= 0 || a.digT > 0 || noContact(a)) continue;
+    if (a.hp <= 0 || a.digT > 0 || a.stub || noContact(a)) continue;
     for (let j = i + 1; j < E.length; j++) {
       const b = E[j];
-      if (b.hp <= 0 || b.digT > 0 || a.air !== b.air || noContact(b)) continue;
+      if (b.hp <= 0 || b.digT > 0 || b.stub || a.air !== b.air || noContact(b)) continue;
       const aS = a.kind !== 'unit', bS = b.kind !== 'unit';
       if (aS && bS) continue;
       let dx = b.x - a.x, dy = b.y - a.y;
@@ -1509,7 +1519,7 @@ function updateProjs(g, dt) {
         const close = p.near && Math.hypot(e.x - p.sx, e.y - p.sy) <= p.near.max, hd = close ? Math.round(p.dmg * p.near.f) : p.dmg;   // Evolution: wer nah am Werfer steht, bekommt mehr ab
         if (close && p.near.knock && !p.rev && canKnock(e)) { e.x = clamp(e.x + p.vx * p.near.knock, 0.4, W - 0.4); e.y = clamp(e.y + p.vy * p.near.knock, 0.4, H - 0.4); e.inRange = false; e.runT = 0; e.charging = false; }
         damage(g, e, e.kind === 'tower' ? hd * p.towerFactor : hd, p.side, p.srcId ? g.byId.get(p.srcId) : undefined);
-        emit(g, { t: 'hit', from: p.from, x: e.x, y: e.y });
+        emit(g, { t: 'hit', from: p.from, x: e.x, y: e.y, ...(p.rune && { rune: true }) });
       }
       if (p.left <= 1e-6) {
         if (p.back) { p.back = false; p.rev = true; p.vx = -p.vx; p.vy = -p.vy; p.left = p.len; p.hit = new Set(); } // kehrt um und trifft alle noch einmal
@@ -1551,7 +1561,7 @@ function updateProjs(g, dt) {
         if (p.curse && t.kind === 'unit') { t.curseT = p.curse.dur; t.curseSide = p.curse.side; t.curseUnit = p.curse.unit; t.curseLvl = p.curse.lvl; t.curseWait = p.curse.wait; t.curseHit1 = 0; }
         damage(g, t, p.dmg, p.side, src);
       }
-      emit(g, { t: 'hit', from: p.from, x: p.tx, y: p.ty, splash: p.splash, frost: !!p.slow, root: !!p.root, curse: !!p.curse });
+      emit(g, { t: 'hit', from: p.from, x: p.tx, y: p.ty, splash: p.splash, frost: !!p.slow, root: !!p.root, curse: !!p.curse, ...(p.rune && { rune: true }) });
     } else { p.x += (dx / d) * stepLen; p.y += (dy / d) * stepLen; }
   }
   if (g.projs.some(p => p.done)) g.projs = g.projs.filter(p => !p.done);

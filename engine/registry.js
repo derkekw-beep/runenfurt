@@ -200,11 +200,25 @@ export const SPELLS = {
   },
 };
 
-// Gezackter Blitz vom Himmel bis zum Boden (aus kurzen Strahlen)
-function bolt(fx, x, z, color = '#fff9b0', top = 9) {
-  let p = [x + (Math.random() - 0.5) * 1.6, top, z + (Math.random() - 0.5) * 0.8];
-  for (let i = 1; i <= 5; i++) { const k = 1 - i / 5, j = i < 5 ? 0.5 : 0, q = [x + (Math.random() - 0.5) * j + (p[0] - x) * k * 0.5, top * k + 0.15, z + (Math.random() - 0.5) * j * 0.6];
-    fx.beam({ from: p, to: q, color, hdr: 2.0, width: 0.06, dur: 0.24 }); fx.beam({ from: p, to: q, color: '#ffffff', hdr: 2.4, width: 0.022, dur: 0.18 }); p = q; }
+// Gezackter Blitz vom Himmel bis zum Boden: heller Kern in bläulichem Schein, hier und da ein Seitenast, ein kurzes Nachzucken,
+// ein Lichtfleck und eine Brandstelle am Einschlag. (Bis 2026-11-14: zwei dünne gelbe Linien aus fünf Stücken.)
+function bolt(fx, x, z, color = '#4f9dff', top = 9) {
+  const strike = (dur, w, glow) => {
+    const N = 6;
+    let p = [x + (Math.random() - 0.5) * 2.4, top, z + (Math.random() - 0.5) * 1.0];
+    for (let i = 1; i <= N; i++) {
+      const k = 1 - i / N, j = i < N ? 0.8 : 0, q = [x + (Math.random() - 0.5) * j + (p[0] - x) * k * 0.55, top * k + 0.12, z + (Math.random() - 0.5) * j * 0.6];
+      if (glow) fx.beam({ from: p, to: q, color, hdr: 0.95, width: w * 2.5, dur: dur * 1.2 });   // Schein
+      fx.beam({ from: p, to: q, color: '#ffffff', hdr: 2.3, width: w * 0.8, dur });             // Kern
+      if (glow && i > 1 && i < N && Math.random() < 0.4) { const b = [q[0] + (Math.random() - 0.5) * 1.8, Math.max(0.3, q[1] - 0.5 - Math.random() * 0.9), q[2] + (Math.random() - 0.5) * 0.8]; fx.beam({ from: q, to: b, color: '#dff1ff', hdr: 1.9, width: w * 0.55, dur: dur * 0.7 }); }   // Seitenast
+      p = q;
+    }
+  };
+  strike(0.2, 0.05, true);
+  fx.after(0.08, () => strike(0.14, 0.035, false));   // Nachzucken
+  fx.burst({ x, y: 0.18, z, n: 1, cell: CELL.glow, color: '#ffffff', color2: color, hdr: 2.4, size: 1.3, size2: 0.3, life: 0.18 });
+  fx.burst({ x, y: 0.2, z, n: 3, cell: CELL.ring, color: '#dff1ff', hdr: 2, alpha: 0.9, size: [0.15, 0.25], size2: [0.5, 0.8], life: [0.25, 0.4], spread: 0.4 });   // kleine Lichtbögen am Boden
+  fx.decal({ x, z, r: 0.5, dur: 5, strength: 0.6 });
 }
 const lump = (r, color, hdr = 1) => () => new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), hdr > 1 ? new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(hdr) }) : new THREE.MeshLambertMaterial({ color, flatShading: true }));
 

@@ -9,10 +9,14 @@
 //   pick(g, k) · reroll(g) · autoPick(g)    Segen wählen (k = Nummer des Angebots), neu würfeln, den Computer wählen lassen
 //   hud(g) · summary(g)                     was die Anzeige braucht · Abrechnung am Ende
 //   survLoad · bookRun · dangerOpen · dailyInfo …   Bestenliste, Gefahrenstufen und Tagesherausforderung im Spielstand
-import { CARDS, UNITS } from './cards.js';
-import { W, RIVER_TOP, BRIDGES, MAX_KRAFT, STD_LEVEL, cardMult, towerMult, spawnUnit, hurt, formation, mainTower } from './sim.js';
+import { CARDS, UNITS, RUNES } from './cards.js';
+import { W, RIVER_TOP, BRIDGES, OUTER_Y, MAIN_Y, MAX_KRAFT, STD_LEVEL, cardMult, towerMult, spawnUnit, hurt, formation, mainTower } from './sim.js';
 
 export const STAGE = 5;        // Wellen je Etappe; die letzte ist die Bosswelle
+// Die Risse: Seit dem 2026-11-14 hat die Wellenseite keine Türme mehr. Die Gegner steigen aus drei Rissen am oberen Feldrand –
+// linke Bahn, rechte Bahn, in der Mitte der Boss. Sie liegen genau auf den Sockeln, auf denen sonst die gegnerischen Türme stehen.
+// [x, y] in Feldmaßen; der Zeichner malt sie an dieselben Stellen (render3d.js).
+export const RIFTS = [[BRIDGES[0], OUTER_Y], [BRIDGES[1], OUTER_Y], [W / 2, MAIN_Y]];
 export const TOP_RUNS = 8;     // so viele Läufe behält die Bestenliste
 export const DAILY_GOAL = 10;  // Tagesherausforderung: ab dieser Welle gibt es die Tagesbelohnung
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -90,8 +94,9 @@ export const BOONS = {
 };
 export const RAR_NAME = ['Gewöhnlich', 'Selten', 'Episch'];
 export const PACT = { id: 'pakt', name: 'Dunkler Pakt', rar: 3, text: 'Alle Gegner steigen eine Stufe. Dafür wählst du gleich zwei Segen und bekommst 25 % mehr Punkte.' };
-export const boonText = (g, o) => { const b = o.id === 'pakt' ? PACT : BOONS[o.id]; return typeof b.text === 'function' ? b.text(g, g.waves.u, o) : b.text; };
-export const boonName = o => (o.id === 'pakt' ? PACT.name : BOONS[o.id].name);
+export const boonText = (g, o) => { if (o.id === 'kk') return `${CARDS[o.card].name}: ${POWERS[o.power].text}.`; const b = o.id === 'pakt' ? PACT : BOONS[o.id]; return typeof b.text === 'function' ? b.text(g, g.waves.u, o) : b.text; };
+export const boonName = o => (o.id === 'kk' ? `${POWERS[o.power].name} · ${CARDS[o.card].name}` : o.id === 'pakt' ? PACT.name : BOONS[o.id].name);
+export const boonRar = o => (o.id === 'kk' ? POWERS[o.power].rar : o.id === 'pakt' ? 3 : BOONS[o.id].rar);
 
 // ---- Hilfen --------------------------------------------------------------------------------------------------------
 const rnd = u => ((u.seed = (Math.imul(u.seed, 1664525) + 1013904223) >>> 0) / 4294967296);   // eigener Zufall: Wellen und Angebote hängen nur vom Keim ab
@@ -103,11 +108,117 @@ const towerHp = g => { let s = 0; for (const e of g.ents) if (e.kind === 'tower'
 const score = (u, pts) => { const n = Math.round(pts * u.mult); u.score += n; return n; };
 const foesLeft = g => g.ents.some(e => e.side === 1 && e.kind !== 'tower' && e.hp > 0);
 
+
+// ---- Kartenkräfte ----------------------------------------------------------------------------------------------------
+// Wie die Modifikatoren im Chaos-Modus des Vorbilds (Wiki „C.H.A.O.S.“): nach jedem Boss die Wahl zwischen zweien, jede gilt für eine
+// Karte des Decks und bleibt bis zum Ende des Laufs; eine Karte bekommt höchstens eine. Drei Seltenheiten, die selteneren kommen mit
+// jeder Etappe öfter (POWER_ODDS: die Wahrscheinlichkeiten des Vorbilds je Wahl). Die Arten folgen den Verstärkungen des Vorbilds
+// (Wiki „Buff“: Rage, Shield Boost, Passive Heal, Initial Spawn, Death Spawn, Death Damage, Stun Attack, Berserk) – dazu Eilschritt
+// und Zwilling. Die Einzelliste der 150 Modifikatoren des Vorbilds steht nicht im Wiki; Namen und Zuschnitt sind eigene.
+//   fits(c, d): passt die Kraft zu dieser Karte? (c = Karte, d = ihre Einheit) · on(g, u, e): Wirkung auf eine frisch erschienene Einheit
+export const POWERS = {
+  raserei:   { name: 'Raserei',      rar: 0, text: 'läuft und schlägt dauerhaft 30 % schneller', fits: (c, d) => !d.building && d.dmg > 0, on: (g, u, e) => { e.hasteT = 1e9; e.pwHaste = true; } },
+  schild:    { name: 'Schildträger', rar: 0, text: 'erscheint mit einem Schild in Höhe von 30 % ihres Lebens', fits: (c, d) => !d.shield, on: (g, u, e) => { e.shield = e.maxShield = Math.round(e.maxHp * 0.3); } },
+  eile:      { name: 'Eilschritt',   rar: 0, text: 'läuft 75 % schneller', fits: (c, d) => !d.building && d.speed > 0 && d.speed < 2.2, on: (g, u, e) => { e.speed *= 1.75; } },
+  heil:      { name: 'Heilpuls',     rar: 1, text: 'heilt jede Sekunde 4 % ihres Lebens', fits: (c, d) => d.hp >= 600, on: (g, u, e) => { e.regen = 0.04; } },
+  laehm:     { name: 'Lähmschlag',   rar: 1, text: 'jeder Schuss lähmt das Ziel eine halbe Sekunde', fits: (c, d) => d.proj > 0 && !d.stunHit && !d.building, on: (g, u, e) => { e.d = { ...e.d, stunHit: 0.5 }; } },
+  gefolge:   { name: 'Gefolge',      rar: 1, text: 'bringt drei Kiesel mit', fits: (c, d) => !d.building && !d.air && c.unit !== 'kiesel', on: (g, u, e, first) => { if (first) for (let i = 0; i < 3; i++) mark(spawnUnit(g, 'kiesel', 0, clamp(e.x + (i - 1) * 0.7, 0.4, W - 0.4), e.y + 0.8, e.lvl, { deployT: e.deployT })); } },
+  brut:      { name: 'Totenbrut',    rar: 1, text: 'zerfällt beim Tod in drei Kiesel', fits: (c, d) => !d.deathSpawn && !d.building && c.unit !== 'kiesel' && d.hp >= 300, on: (g, u, e) => { e.d = { ...e.d, deathSpawn: { unit: 'kiesel', count: 3 } }; } },
+  bombe:     { name: 'Sterbebombe',  rar: 2, text: 'hinterlässt beim Tod eine Bombe: 230 Schaden im Umkreis von drei Feldern', fits: (c, d) => !d.deathDmg && !d.kamikaze, on: (g, u, e) => { e.d = { ...e.d, deathDmg: { dmg: 230, r: 3, knock: 1.5 } }; } },
+  berserker: { name: 'Berserker',    rar: 2, text: 'gerät unter halbem Leben in Raserei: 30 % schneller, 40 % mehr Schaden', fits: (c, d) => !d.building && d.dmg > 0 && d.hp >= 500, on: (g, u, e) => { e.bers = 1; } },
+  zwilling:  { name: 'Zwilling',     rar: 2, text: 'erscheint doppelt', fits: (c, d) => !d.building && c.cost <= 6, on: (g, u, e) => { mark(spawnUnit(g, e.type, 0, clamp(e.x + 0.7, 0.4, W - 0.4), e.y, e.lvl, { deployT: e.deployT })); } },
+};
+// Seltenheit je Wahl (Zeile = die wievielte Wahl des Laufs): gewöhnlich / selten / episch in Prozent – die Tabelle des Vorbilds
+export const POWER_ODDS = [[90, 10, 0], [20, 80, 0], [0, 50, 50], [0, 20, 80], [0, 0, 100]];
+const mark = e => { e.pw = true; return e; };   // schon behandelt: bekommt keine Kartenkraft mehr (Gefolge, Zwilling)
+const cardUnit = id => { const c = CARDS[id]; return c && c.type !== 'spell' && c.type !== 'tower' ? UNITS[c.mix ? c.mix[0][0] : c.unit] : null; };
+function offerPower(g) {
+  const u = g.waves.u, odds = POWER_ODDS[Math.min(POWER_ODDS.length - 1, u.powerN)], opts = [];
+  const cards = deckOf(g).filter(id => cardUnit(id) && !u.powers[id]);
+  for (let tries = 0; opts.length < 2 && tries < 80 && cards.length; tries++) {
+    let x = rnd(u) * 100, rar = 0;
+    while (rar < 2 && x >= odds[rar]) x -= odds[rar++];
+    const card = cards[Math.floor(rnd(u) * cards.length)], c = CARDS[card], d = cardUnit(card);
+    let ids = Object.keys(POWERS).filter(id => POWERS[id].rar === rar && POWERS[id].fits(c, d));
+    if (!ids.length && tries > 40) ids = Object.keys(POWERS).filter(id => POWERS[id].fits(c, d));
+    ids = ids.filter(id => !opts.some(o => o.power === id || o.card === card));
+    if (!ids.length) continue;
+    opts.push({ id: 'kk', power: ids[Math.floor(rnd(u) * ids.length)], card });
+  }
+  if (!opts.length) return;
+  u.powerN++;
+  u.choice = { big: true, first: false, kind: 'kraft', options: opts };
+  emit(g, { t: 'boon', big: true, first: false, n: g.waves.n, kind: 'kraft' });
+}
+// Kartenkräfte auf frisch erschienene eigene Einheiten legen; laufende Wirkungen (Heilpuls, Berserker)
+function powerTick(g, u, dt) {
+  if (u.powerList.length) {
+    const firsts = new Set();
+    for (const e of g.ents) {
+      if (e.id < u.seen || e.side !== 0 || e.kind === 'tower' || e.pw) continue;
+      e.pw = true;
+      const card = u.cardOf.get(e.type), pw = card && u.powers[card];
+      if (!pw) continue;
+      POWERS[pw].on(g, u, e, !firsts.has(card));
+      firsts.add(card);
+    }
+  }
+  u.pulse = (u.pulse || 0) + dt;
+  const beat = u.pulse >= 1;
+  if (beat) u.pulse -= 1;
+  for (const e of g.ents) {
+    if (e.hp <= 0) continue;
+    if (beat && e.regen && e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + Math.round(e.maxHp * e.regen));
+    if (e.bers === 1 && e.hp < e.maxHp / 2) { e.bers = 2; e.hasteT = 1e9; e.dmg = Math.round(e.dmg * 1.4); emit(g, { t: 'surv', k: 'bers', x: e.x, y: e.y }); }
+  }
+}
+
+// ---- Feldlaunen ---------------------------------------------------------------------------------------------------------
+// Wie die Feld-Zauber des Vorbilds (Wiki „Global Spell“): Ab der zweiten Etappe liegt über jeder Etappe eine Laune, die für BEIDE
+// Seiten gilt – Raserei (alles 30 % schneller, Kraft fließt ein Drittel schneller), Heilender Boden (alles heilt jede Sekunde),
+// Gewitter (alle 15 Sekunden trifft ein Blitz die drei zähesten Truppen auf dem Feld), Schneesturm (alle 12 Sekunden friert alles
+// kurz ein). Die Bosswelle gehört noch dazu; mit der nächsten Etappe wechselt die Laune.
+export const MOODS = {
+  raserei:   { name: 'Raserei',          text: 'Alles läuft und schlägt 30 % schneller – auch die Gegner. Deine Kraft fließt ein Drittel schneller.' },
+  heilboden: { name: 'Heilender Boden',  text: 'Alles auf dem Feld heilt jede Sekunde ein wenig – Truppen, Gebäude und Türme beider Seiten.' },
+  gewitter:  { name: 'Gewitter',         text: 'Alle 15 Sekunden trifft ein Blitz die drei zähesten Truppen auf dem Feld – gleich, wem sie gehören.' },
+  schnee:    { name: 'Schneesturm',      text: 'Alle 12 Sekunden friert ein Kälteeinbruch alle Truppen kurz ein.' },
+};
+function setMood(g, u, id) {
+  const S = g.sides[0];
+  if (u.mood === 'raserei') { g.rageAll = false; S.kraftMult -= 0.35; for (const e of g.ents) if (e.moodHaste) { e.moodHaste = false; if (e.bers !== 2 && !e.pwHaste) e.hasteT = 0; } }   // die Raserei endet – außer bei denen, die sie aus eigener Kraft haben
+  u.mood = id; u.moodT = id === 'gewitter' ? 15 : id === 'schnee' ? 12 : 1;
+  if (id === 'raserei') { g.rageAll = true; S.kraftMult += 0.35; u.seenMood = g.nextId; for (const e of g.ents) { if (e.hasteT > 1e5) e.pwHaste = true; else e.moodHaste = true; e.hasteT = 1e9; } }   // alles, auch die Türme
+  if (id) emit(g, { t: 'surv', k: 'laune', id, name: MOODS[id].name, text: MOODS[id].text });
+}
+function moodTick(g, u, dt) {
+  if (!u.mood) return;
+  if (u.mood === 'raserei') { for (const e of g.ents) if (e.id >= u.seenMood && !e.pwHaste) e.moodHaste = true; u.seenMood = g.nextId; return; }   // Neue sind durch g.rageAll schon angetrieben: nur vormerken, damit die Raserei am Etappenende endet
+  u.moodT -= dt;
+  if (u.moodT > 0) return;
+  if (u.mood === 'heilboden') {
+    u.moodT = 1;
+    for (const e of g.ents) if (e.hp > 0 && e.hp < e.maxHp && !e.stub) e.hp = Math.min(e.maxHp, e.hp + Math.round(20 * cardMult(e.lvl) * (e.kind === 'tower' ? 2 : 1)));
+  } else if (u.mood === 'gewitter') {
+    u.moodT = 15;
+    const top = g.ents.filter(e => e.kind === 'unit' && e.hp > 0 && !e.hidden).sort((a, b) => b.hp - a.hp).slice(0, 3);
+    if (top.length) {
+      emit(g, { t: 'bolts', x: top[0].x, y: top[0].y, hits: top.map(e => ({ x: e.x, y: e.y, air: e.air })) });
+      const dmg = Math.round(420 * cardMult(foeLevel(g, Math.max(1, g.waves.n))));
+      for (const e of top) hurt(g, e, e.boss ? Math.round(dmg * 0.5) : dmg, 1 - e.side);
+    }
+  } else if (u.mood === 'schnee') {
+    u.moodT = 12;
+    for (const e of g.ents) if (e.kind === 'unit' && e.hp > 0) { e.iceT = Math.max(e.iceT || 0, 1.2); e.slowT = Math.max(e.slowT || 0, 3); }
+    emit(g, { t: 'burst', x: W / 2, y: 16, r: 9, frost: true, big: true, side: 0 }); emit(g, { t: 'surv', k: 'frost' });
+  }
+}
+
 // ---- Aufbau eines Laufs -------------------------------------------------------------------------------------------
 // waves: { pool, lvl, endless, goal } aus progress.modeRules · seed: Zufallskeim · danger: 0 bis 5 · daily: Tagesherausforderung (Kennzeichen)
 export function setup(waves, { seed = 1, danger = 0, daily = '' } = {}) {
   const cfg = { seed: (seed >>> 0) || 1, danger: clamp(danger | 0, 0, DANGER.length), daily: daily || '' };
-  return { ...waves, endless: true, director: (g, dt) => { if (!g.waves.u) init(g, cfg); tick(g, dt); } };
+  return { ...waves, endless: true, rifts: true, director: (g, dt) => { if (!g.waves.u) init(g, cfg); tick(g, dt); } };   // rifts: eigene Arena ohne gegnerische Türme (sim.js)
 }
 
 function init(g, cfg) {
@@ -121,7 +232,10 @@ function init(g, cfg) {
     boons: {}, order: [], choice: null, extra: 0, rerolls: 1, pacts: 0, foeLvl: cfg.danger >= 1 ? 1 : 0, foeSpeed: cfg.danger >= 2 ? 1.1 : 1,
     waveKraft: 0, wehr: false, seen: g.nextId, twr: 0, hurtNow: false, cleared: 0, bolt: 0,
     quest: null, boss: null, outer: [], last: null,
+    powers: {}, powerList: [], powerN: 0, powerDue: false, cardOf: new Map(), mood: '', moodT: 0, seenMood: g.nextId, pulse: 0,
   };
+  // welche Einheit zu welcher Karte des Decks gehört (für die Kartenkräfte)
+  for (const id of deckOf(g)) { const c = CARDS[id]; if (c.type === 'spell') continue; for (const [t] of c.mix || [[c.unit]]) u.cardOf.set(t, id); const R = RUNES[id]; if (R && R.unit) u.cardOf.set(R.unit, id); }
   for (const e of g.ents) if (e.kind === 'tower' && e.side === 0 && !e.main) u.outer.push({ type: e.type, x: e.x, y: e.y, lane: e.lane, lvl: e.lvl });
   if (cfg.danger >= 3) { S.kraft = 2; S.kraftMult *= 0.9; }
   if (cfg.danger >= 5) for (const e of g.ents) if (e.kind === 'tower' && e.side === 0) e.hp = e.maxHp = Math.round(e.maxHp * 0.8);
@@ -132,7 +246,7 @@ function init(g, cfg) {
 
 // ---- Wellen ---------------------------------------------------------------------------------------------------------
 const isBoss = n => n % STAGE === 0;
-export const TUNE = { base: 4, lin: 0.7, quad: 0.045 };
+export const TUNE = { base: 5, lin: 1.5, quad: 0.18 };   // seit der Riss-Arena (2026-11-14) deutlich steiler: eigene Truppen halten die Stellung und sammeln sich an
 const floorOf = (g, id) => (g.waves.floor ? g.waves.floor(id) : 0);   // Mindeststufe einer Karte (ihre Startstufe, progress.js) – wie beim Computergegner
 const budget = n => TUNE.base + n * TUNE.lin + n * n * TUNE.quad;   // Kraftwert einer Welle: wächst erst gemächlich, dann immer steiler – kein Lauf geht ewig
 // Türme wachsen im Vorbild langsamer als Karten: auf niedrigen Stufen sind sie im Verhältnis stärker (Stufe 2: gut ein Viertel).
@@ -155,7 +269,7 @@ function startWave(g) {
   u.phase = 'welle'; u.waveT = 0; u.theme = u.next; u.next = themeFor(u, n + 1);
   u.twr = towerHp(g); u.hurtNow = false; u.bolt = u.boons.blitzwacht ? 2.6 : 0;
   if (u.waveKraft) addKraft(g, u.waveKraft);
-  if ((n - 1) % STAGE === 0) newQuest(u, stage);
+  if ((n - 1) % STAGE === 0) { newQuest(u, stage); const ids = Object.keys(MOODS).filter(id => id !== u.mood); setMood(g, u, stage >= 2 ? ids[Math.floor(rnd(u) * ids.length)] : ''); }
   let lvl = foeLevel(g, n);
   const T = THEMES[u.theme] || THEMES.gemischt, lanes = T.both || boss ? [0, 1] : [rnd(u) < 0.5 ? 0 : 1];
   const themed = u.pool.filter(T.fits);
@@ -175,7 +289,7 @@ function startWave(g) {
   const tough = [...groups].sort((a, b) => unitOf(b.id).hp - unitOf(a.id).hp);
   for (let i = 0; i < eliteN && i < tough.length; i++) { const ks = Object.keys(ELITES).filter(e => e !== 'brut' || UNITS.kiesel); tough[i].elite = ks[Math.floor(rnd(u) * ks.length)]; elite = elite || tough[i].elite; }
   for (const gr of groups) {
-    const x = BRIDGES[gr.lane] + (rnd(u) - 0.5) * 3, y = 4 + rnd(u) * 5, c = CARDS[gr.id], us = unitsOf(gr.id), pts = Math.max(2, Math.round(8 * c.cost / us.length));
+    const [rx, ry] = RIFTS[gr.lane], x = rx + (rnd(u) - 0.5) * 2.6, y = ry + rnd(u) * 2.4, c = CARDS[gr.id], us = unitsOf(gr.id), pts = Math.max(2, Math.round(8 * c.cost / us.length));
     formation(us.length, 0.5, 1).forEach(([dx, dy], i) => u.queue.push({ at: gr.at, unit: us[i], x: clamp(x + dx, 0.4, W - 0.4), y: clamp(y + dy, 0.4, RIVER_TOP - 0.5), lvl: Math.max(lvl, floorOf(g, gr.id)), pts, elite: i === 0 ? gr.elite || '' : '', card: i === 0 ? gr.id : '' }));
   }
   let bossName = '';
@@ -183,7 +297,7 @@ function startWave(g) {
     const kind = BOSS_KINDS[(stage - 1) % BOSS_KINDS.length], single = u.pool.filter(id => unitsOf(id).length === 1);
     const cands = single.filter(id => kind.fits(unitOf(id)));
     const id = (cands.length ? cands : single.length ? single : u.pool).reduce((a, b) => (unitOf(b).hp > unitOf(a).hp ? b : a));
-    u.queue.push({ at: 1.2, unit: unitsOf(id)[0], x: BRIDGES[n / STAGE % 2 | 0], y: 5, lvl: Math.max(lvl, floorOf(g, id)) + 1, pts: 150 * stage, boss: { kind: kind.id, name: kind.name, stage, card: id }, card: id });
+    u.queue.push({ at: 1.2, unit: unitsOf(id)[0], x: RIFTS[2][0], y: RIFTS[2][1] + 1.2, lvl: Math.max(lvl, floorOf(g, id)) + 1, pts: 150 * stage, boss: { kind: kind.id, name: kind.name, stage, card: id }, card: id });
     bossName = kind.name;
   }
   u.queue.sort((a, b) => a.at - b.at);
@@ -245,7 +359,9 @@ function endWave(g, u, cleared) {
     emit(g, { t: 'surv', k: 'clear', n, pts, fast, flawless });
   }
   u.phase = 'pause'; u.t = cleared ? 3.5 : 0.4;
+  if (isBoss(n)) u.powerDue = true;   // nach dem Segen folgt die Kartenkraft
   if (n % 2 === 0 || isBoss(n)) offer(g, isBoss(n));
+  if (!u.choice && u.powerDue) { u.powerDue = false; offerPower(g); }
 }
 
 // ---- Segen anbieten und wählen ---------------------------------------------------------------------------------------
@@ -274,6 +390,11 @@ export function pick(g, k) {
   const u = g.waves && g.waves.u, ch = u && u.choice, o = ch && ch.options[k];
   if (!o) return null;
   u.choice = null;
+  if (o.id === 'kk') {   // Kartenkraft: gilt ab jetzt für jede Einheit dieser Karte
+    u.powers[o.card] = o.power; u.powerList.push({ card: o.card, power: o.power });
+    emit(g, { t: 'surv', k: 'kraft', card: o.card, power: o.power });
+    return o;
+  }
   if (o.id === 'pakt') {
     u.pacts++; u.foeLvl++; u.mult += 0.25; u.extra = 2;
   } else {
@@ -282,12 +403,13 @@ export function pick(g, k) {
   }
   emit(g, { t: 'surv', k: 'segen', id: o.id });
   if (u.extra > 0) { u.extra--; offer(g, true); if (u.choice) u.choice.options = u.choice.options.filter(x => x.id !== 'pakt'); }
+  if (!u.choice && u.powerDue) { u.powerDue = false; offerPower(g); }
   return o;
 }
 // Einmal je Lauf: drei neue Angebote
 export function reroll(g) {
   const u = g.waves && g.waves.u;
-  if (!u || !u.choice || u.rerolls < 1) return false;
+  if (!u || !u.choice || u.choice.kind === 'kraft' || u.rerolls < 1) return false;
   u.rerolls--;
   const { big, first } = u.choice, pact = u.choice.options.some(o => o.id === 'pakt');
   offer(g, big, first);
@@ -310,6 +432,8 @@ function tick(g, dt) {
   u.time += dt;
   // neue eigene Truppen: Schutzbann
   if (u.boons.schutzbann) for (const e of g.ents) if (e.id >= u.seen && e.side === 0 && e.kind === 'unit' && !e.maxShield) e.shield = e.maxShield = Math.round(e.maxHp * 0.25);
+  powerTick(g, u, dt);
+  moodTick(g, u, dt);
   u.seen = g.nextId;
   // gefallene Gegner: Punkte, Beute, Brut der Elite
   for (const [id, m] of u.foes) {
@@ -383,6 +507,7 @@ export function hud(g) {
     boons: Object.entries(u.boons).map(([id, n]) => ({ id, n, name: BOONS[id].name })), rerolls: u.rerolls,
     quest: q ? { name: QUESTS[q.id].name, text: QUESTS[q.id].text(q.need), have: q.have, need: q.need, done: q.done } : null,
     boss: u.boss ? { name: u.boss.name, hp: u.boss.hp, maxHp: u.boss.maxHp, rage: u.boss.rage } : null,
+    mood: u.mood ? MOODS[u.mood].name : '', powers: u.powerList.map(p => ({ card: p.card, name: POWERS[p.power].name })), kind: u.choice ? u.choice.kind || '' : '',
   };
 }
 export function summary(g) {

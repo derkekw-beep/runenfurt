@@ -10,6 +10,7 @@ import { sfx, unlock, setSound, setVolume } from './audio.js';
 import { STORY, explain } from './lore.js';
 import { createStage } from './arenabild.js';
 import { createPreview } from './vorschau.js';
+import { PROJECTILES, MELEE } from './engine/registry.js';
 import * as U from './ueberleben.js';
 import { createSurvUi } from './ueberleben-ui.js';
 import * as Modi from './modi.js';
@@ -1367,6 +1368,7 @@ function renderMore() {
   item('So geht’s', 'Regeln in Kürze', () => showHelp());
   item('Spielstand sichern', 'Auf ein anderes Gerät übertragen', showTransfer);
   item('Für unterwegs laden', 'Alle Figuren speichern – dann läuft alles auch ohne Netz', showOffline);
+  item('Alles freischalten', 'Alle Karten, Formen und Arenen – alles auf Höchststufe', showUnlockAll);
   item('Über Runenfurt', 'Version und Hinweise', showAbout);
   body.append(list);
 }
@@ -1414,6 +1416,19 @@ function showSettings() {
   });
   body.append(reset);
   simpleSheet('Einstellungen', body);
+}
+
+// Alles freischalten und auf Höchststufe setzen (zum Ausprobieren) – mit Rückfrage, weil es sich nicht zurücknehmen lässt
+function showUnlockAll() {
+  const d = el('div', '', `<h3>Alles freischalten?</h3><p class="center">Du bekommst die letzte Arena, <b>alle Karten und Türme auf Stufe ${P.MAX_LEVEL}</b>, alle Runen- und Heldenformen, alle Gefahrenstufen des Überlebens, dazu reichlich Gold, Runensplitter und Heldenmünzen.</p><p class="center small">Das lässt sich nicht zurücknehmen. Wer den jetzigen Stand behalten will, sichert ihn vorher unter „Spielstand sichern“.</p>`);
+  const row = el('div', 'btns'), yes = el('button', 'btn primary', 'Ja, alles freischalten');
+  yes.addEventListener('click', () => {
+    const n = P.unlockAll(profile);
+    save(); sfx('upgrade'); closeSheet(); sheetDismiss = null; render(); show('cards');
+    toast(`Alles freigeschaltet: ${n} Karten auf Stufe ${P.MAX_LEVEL}`, 2600);
+  });
+  row.append(closeBtn('Abbrechen'), yes); d.append(row);
+  sheetDismiss = null; openSheet(d, true);
 }
 
 function showTransfer() {
@@ -1659,21 +1674,46 @@ async function wakeLock(on) {
   } catch { /* nicht überall verfügbar */ }
 }
 
+// ---- Welcher Klang zu welchem Ereignis (audio.js) ---------------------------------------------------------------
+// Aufstellen klingt nach dem Gewicht der Karte, Treffer und Schüsse nach der Waffe, das Fallen nach der Größe.
+const MELEE_SOUND = { slash: 'klinge', bite: 'biss', slam: 'wucht', punch: 'hit' };
+const SHOT_SOUND = { arrow: 'bogen', orb: 'magie', rock: 'wurf', blade: 'klinge' }, SHOT_HIT = { arrow: 'pfeil_treffer', orb: 'magie_treffer' };
+const shotOf = from => (from !== '_' && Object.hasOwn(PROJECTILES, from) ? PROJECTILES[from] : null);
+function deploySound(ev) {
+  const c = CARDS[ev.card], u = c && c.type !== 'spell' ? UNITS[c.mix ? c.mix[0][0] : c.unit] : null;
+  if (!u) return 'deploy';
+  const n = c.mix ? c.mix.reduce((s, m) => s + m[1], 0) : c.count || 1;
+  return c.type === 'building' ? 'deploy_bau' : u.air ? 'deploy_luft' : u.hp + (u.shield || 0) >= 2500 || (u.mass || 0) >= 15 ? 'deploy_schwer' : n >= 3 ? 'deploy_schwarm' : u.hp < 900 ? 'deploy_leicht' : 'deploy';
+}
+function hitSound(ev) {
+  if (ev.heavy || ev.splash) return MELEE[ev.from] === 'slam' ? 'wucht' : 'heavy';
+  const p = shotOf(ev.from);
+  return p ? SHOT_HIT[p.kind] || 'hit' : MELEE_SOUND[MELEE[ev.from]] || 'hit';
+}
+function shootSound(ev) {
+  const u = UNITS[ev.from], p = shotOf(ev.from);
+  if (u && u.tower) return p && p.kind === 'rock' ? 'kanone' : 'tower';
+  if (u && u.building && p && p.kind === 'rock') return 'kanone';
+  return (p && SHOT_SOUND[p.kind]) || 'shoot';
+}
+const dieSound = ev => { const u = UNITS[ev.type] || UNITS[ev.model]; return ev.kind === 'building' ? 'einsturz' : u && u.hp + (u.shield || 0) >= 2000 ? 'sturz' : 'pop'; };
+
 function handleEvents() {
   const g = B.g;
   for (const ev of g.events) {
     renderer.onEvent(ev);
     if (survUi.onEvent(ev)) continue;   // Überleben: Ansagen und Klänge des Laufs
-    if (ev.t === 'deploy') sfx(ev.rune || ev.hero ? 'rune' : 'deploy');
+    const at = ev.x != null ? { x: ev.x } : null;   // woher der Klang kommt: links klingt links
+    if (ev.t === 'deploy') { sfx(deploySound(ev), 'deploy', at); if (ev.rune) sfx('rune_auf', 'rune', at); else if (ev.hero) sfx('held_auf', 'rune', at); }
     else if (ev.t === 'ability') sfx(ev.id, 'ability');
-    else if (ev.t === 'burst' || ev.t === 'impact') sfx('heavy');
+    else if (ev.t === 'burst' || ev.t === 'impact') sfx('heavy', null, at);
     else if (ev.t === 'cast') sfx(ev.fx != null ? 'launch' : 'cast');
     else if (ev.t === 'aura') sfx('aura');
     else if (ev.t === 'banner') sfx('rune');
-    else if (ev.t === 'die' && ev.kind !== 'tower') sfx('pop');
-    else if (ev.t === 'spell') sfx(ev.spell);
-    else if (ev.t === 'hit') sfx(ev.heavy || ev.splash ? 'heavy' : 'hit');
-    else if (ev.t === 'shoot') sfx(UNITS[ev.from] && UNITS[ev.from].tower ? 'tower' : 'shoot');
+    else if (ev.t === 'die' && ev.kind !== 'tower') { sfx(dieSound(ev), 'pop', at); if (ev.rune) sfx('rune_tod', null, at); else if (ev.hero) sfx('held_tod', null, at); }
+    else if (ev.t === 'spell') sfx(ev.spell, null, at);
+    else if (ev.t === 'hit') sfx(hitSound(ev), 'hit', at);
+    else if (ev.t === 'shoot') sfx(shootSound(ev), 'shoot', at);
     else if (ev.t === 'bless') sfx('bless');
     else if (ev.t === 'chain') sfx('funkenschlag');
     else if (ev.t === 'scatter') sfx('scatter');
@@ -1681,7 +1721,7 @@ function handleEvents() {
     else if (ev.t === 'pulse') sfx('pulse');
     else if (ev.t === 'morph' || ev.t === 'hatch' || ev.t === 'curse' || ev.t === 'clone') sfx('morph');
     else if (ev.t === 'ench') sfx('heavy');
-    else if (ev.t === 'die' && ev.kind === 'tower') { sfx('fall'); if (!ev.main && !g.over) banner(ev.side === 1 ? 'Turm zerstört!' : 'Turm verloren!'); flyCrown(ev); }
+    else if (ev.t === 'die' && ev.kind === 'tower') { sfx('fall', null, at); setTimeout(() => sfx('krone'), 850); if (!ev.main && !g.over) banner(ev.side === 1 ? 'Turm zerstört!' : 'Turm verloren!'); flyCrown(ev); }
     else if (ev.t === 'wake') sfx('wake');
     else if (ev.t === 'shield' || ev.t === 'fuse') sfx(ev.t);
     else if (ev.t === 'kraft') { if (ev.side === 0) sfx('kraft'); }
@@ -1692,7 +1732,7 @@ function handleEvents() {
   if (!B.flags.double && !g.kraftFixed && !g.kraftPlan && g.phase === 'main' && g.time >= g.duration - 60) { B.flags.double = true; banner('Doppelte Kraft!'); sfx('horn'); }
   if (!B.flags.triple && !g.kraftPlan && g.phase === 'over' && g.time >= g.duration + g.overtime - 60) { B.flags.triple = true; banner('Dreifache Kraft!'); sfx('horn'); }
   const left = Math.ceil(sim.timeLeft(g));
-  if (left <= 10 && left > 0 && left !== B.flags.tick && !g.over && !g.endless) { B.flags.tick = left; sfx('tick'); countdown(left); }
+  if (left <= 10 && left > 0 && left !== B.flags.tick && !g.over && !g.endless) { B.flags.tick = left; sfx(left <= 3 ? 'tick_hoch' : 'tick'); countdown(left); }
 }
 
 const fpsBox = $('#fps');
@@ -1745,7 +1785,7 @@ function updateHud(force) {
   if (force || B.flags.cr !== cr) { B.flags.cr = cr; $('#crownFoe').textContent = g.sides[1].crowns; $('#crownMe').textContent = S.crowns; }
   $('#kraftFill').style.width = `${S.kraft * 10}%`;
   const k = Math.floor(S.kraft + 1e-6);
-  if (force || B.flags.k !== k) { B.flags.k = k; $('#kraftNum').textContent = k; $('#kraft').classList.toggle('full', k >= sim.MAX_KRAFT); $('#hand').classList.toggle('full', k >= sim.MAX_KRAFT); }
+  if (force || B.flags.k !== k) { B.flags.k = k; $('#kraftNum').textContent = k; $('#kraft').classList.toggle('full', k >= sim.MAX_KRAFT); $('#hand').classList.toggle('full', k >= sim.MAX_KRAFT); if (k >= sim.MAX_KRAFT && !force && !g.over) sfx('voll'); }
   const hand = $('#hand');
   for (let i = 0; i < 4; i++) {
     const id = S.hand[i];
@@ -1759,6 +1799,7 @@ function updateHud(force) {
     const key = R ? `${id}|${Math.min(R.cycles, S.cycle[id] || 0)}` : echo ? `${id}|${S.last || ''}` : id;
     if (force || B.hand[i] !== key) {
       const fresh = !B.hand[i] || B.hand[i].split('|')[0] !== id;
+      if (!force && R && (S.cycle[id] || 0) >= R.cycles && !g.over) sfx('rune_bereit');   // diese Karte kommt jetzt in Runenform
       B.hand[i] = key;
       const e = cardEl(id, { lvl: S.levels[id] || sim.STD_LEVEL, rune: null, pips: R ? { n: Math.min(R.cycles, S.cycle[id] || 0), of: R.cycles } : null, cost: echo ? (Number.isFinite(price) ? price : '?') : null, ability: CARDS[id].hero ? CARDS[id].ability : S.forms.has(id) ? HERO_FORMS[id].ability : null });
       if (S.forms.has(id)) e.classList.add('hero');

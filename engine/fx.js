@@ -98,14 +98,14 @@ export function createFx(look) {
   // ---- Bodenringe und -scheiben (flach auf dem Boden, leuchtend) ----
   const flatGeo = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
   const ringMat = new THREE.ShaderMaterial({
-    uniforms: { uCol: { value: new THREE.Vector3(1, 1, 1) }, uA: { value: 1 }, uW: { value: 0.12 }, uFill: { value: 0 }, uDash: { value: 0 }, uSpin: { value: 0 } },
+    uniforms: { uCol: { value: new THREE.Vector3(1, 1, 1) }, uA: { value: 1 }, uW: { value: 0.12 }, uFill: { value: 0 }, uDash: { value: 0 }, uSpin: { value: 0 }, uBody: { value: 0 } },
     vertexShader: 'varying vec2 vP; void main(){ vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: `uniform vec3 uCol; uniform float uA, uW, uFill, uDash, uSpin; varying vec2 vP;
+    fragmentShader: `uniform vec3 uCol; uniform float uA, uW, uFill, uDash, uSpin, uBody; varying vec2 vP;
       void main(){ float d = length(vP); if (d > 1.0) discard;
         float ring = smoothstep(1.0 - uW, 1.0 - uW * 0.6, d) * (1.0 - smoothstep(0.96, 1.0, d));
         if (uDash > 0.5) { float a = atan(vP.y, vP.x) + uSpin; ring *= smoothstep(0.35, 0.5, abs(fract(a * uDash / 6.2832) - 0.5) * 2.0 + 0.2); }
         float a = max(ring, uFill * (0.35 + 0.65 * d * d) * (1.0 - smoothstep(0.96, 1.0, d))) * uA;
-        gl_FragColor = vec4(uCol * a, 0.0); }`,
+        gl_FragColor = vec4(uCol * a, a * uBody); }`,   // uBody 0: leuchtet nur (Licht kommt dazu) · 1: deckt wie Farbe (kann den Boden auch abdunkeln)
     transparent: true, premultipliedAlpha: true, depthWrite: false,
   });
   anchor(world, flatGeo, ringMat);   // der Ring-Shader bleibt übersetzt (engine/halten.js)
@@ -131,11 +131,12 @@ export function createFx(look) {
     m.scale.set(o.r, 1, o.r);
     live.push({ t: 0, d: o.dur || 0.6, update(k, dt, time) { u.uSpin.value = time * 1.6; u.uA.value = Math.min(1, k * 8) * (0.7 + 0.3 * Math.sin(time * 14)); const s = o.r * (1 + 0.06 * (1 - k)); m.scale.set(s, 1, s); }, end() { drop(m); } });
   }
-  // Pfütze: farbige Scheibe, die sich kurz ausbreitet und dann langsam verblasst (Tod einer Runenform: violett, eines Helden: gold)
+  // Pfütze: farbige Scheibe, die sich kurz ausbreitet und dann langsam verblasst (Tod einer Runenform: violett, eines Helden: gold).
+  // Mit body: deckende Bodenfläche eines Zaubers (Gift, Schlund), hold = Anteil der Dauer, in dem sie voll steht.
   function puddle(o) {
     const m = flat({ ...o, y: 0.03 }), u = m.material.uniforms, c = rgb(o.color || '#ffffff', o.hdr || 1.15);
-    u.uCol.value.set(c[0], c[1], c[2]); u.uW.value = 0.16; u.uFill.value = 0.9; m.renderOrder = 6;
-    live.push({ t: 0, d: o.dur || 2.8, update(k) { const g = Math.min(1, k * 10), r = (o.r || 0.9) * (0.3 + 0.7 * (1 - (1 - g) * (1 - g))); m.scale.set(r, 1, r * 0.9); u.uA.value = (o.alpha ?? 0.8) * (k < 0.5 ? 1 : 1 - (k - 0.5) / 0.5); }, end() { drop(m); } });
+    u.uCol.value.set(c[0], c[1], c[2]); u.uW.value = 0.16; u.uFill.value = 0.9; u.uBody.value = o.body ? 1 : 0; m.renderOrder = 6;
+    live.push({ t: 0, d: o.dur || 2.8, update(k) { const g = Math.min(1, k * 10), r = (o.r || 0.9) * (0.3 + 0.7 * (1 - (1 - g) * (1 - g))); m.scale.set(r, 1, r * 0.9); const h = o.hold ?? 0.5; u.uA.value = (o.alpha ?? 0.8) * (k < h ? 1 : 1 - (k - h) / (1 - h)); }, end() { drop(m); } });
   }
   // Brandfleck: dunkelt den Boden ab und verblasst langsam
   let scorchTex = null, scorchMat = null;
