@@ -27,18 +27,28 @@ export function rnd(g) { // mulberry32
 
 function emit(g, e) { if (g.events.length < 400) g.events.push(e); }
 
-export const cardMult = lvl => Math.pow(1.1, (lvl || 1) - 1);  // Karten: +10 % Leben und Schaden je Stufe
-export const towerMult = lvl => Math.pow(1.08, (lvl || 1) - 1); // Türme: +8 % je Stufe
+// Stufen wie im Vorbild: 1 bis 16. Die Werte in cards.js sind die der Stufe 11 (Turnierstufe); jede Stufe darunter oder darüber
+// ändert Leben und Schaden um den Faktor 1,1 (so rechnet auch das Wiki des Vorbilds: Wert der Stufe 11 × 1,1^(Stufe − 11)).
+// Ohne Angabe gilt die Turnierstufe – darauf stehen die Regeltests.
+export const STD_LEVEL = 11;
+export const cardMult = lvl => Math.pow(1.1, (lvl || STD_LEVEL) - STD_LEVEL);
+// Türme haben eigene Reihen (Wiki „Tower Princess“ und „King's Tower“, Stufen 1–16), hier im Verhältnis zur Stufe 11
+const T_HP = [1400, 1512, 1624, 1750, 1890, 2030, 2184, 2352, 2534, 2786, 3052, 3346, 3668, 4032, 4424, 4858];
+const T_HP_MAIN = [2400, 2568, 2736, 2904, 3096, 3312, 3528, 3768, 4008, 4392, 4824, 5304, 5832, 6408, 7032, 7704];
+const T_DMG = [50, 54, 58, 62, 67, 72, 78, 84, 90, 99, 109, 119, 131, 144, 158, 173];
+const tRow = (row, lvl) => { const l = Math.max(1, Math.round(lvl || STD_LEVEL)); return l <= 16 ? row[l - 1] / row[STD_LEVEL - 1] : (row[15] / row[STD_LEVEL - 1]) * Math.pow(1.1, l - 16); };
+export const towerMult = (lvl, main) => tRow(main ? T_HP_MAIN : T_HP, lvl);   // Leben
+export const towerDmg = lvl => tRow(T_DMG, lvl);                                // Schaden
 
-function spawn(g, type, side, x, y, extra, lvl = 1) {
+function spawn(g, type, side, x, y, extra, lvl = STD_LEVEL) {
   const d = UNITS[type];
-  const m = d.tower ? towerMult(lvl) : cardMult(lvl);
+  const m = d.tower ? towerMult(lvl, !!d.main) : cardMult(lvl), md = d.tower ? towerDmg(lvl) : m;
   const e = {
     id: g.nextId++, type, model: d.model || type, d, side, x, y, ox: x, oy: y,
     kind: d.tower ? 'tower' : d.building ? 'building' : 'unit',
     rune: !!d.rune, hero: !!d.hero,
     lvl, hp: Math.round(d.hp * m), maxHp: Math.round(d.hp * m), r: d.r, air: !!d.air, hitsAir: !!d.hitsAir,
-    dmg: Math.round((d.dmg || 0) * m), atk: d.atk || 1, range: d.range || 0, speed: (d.speed || 0) * ((g.sides[side] && g.sides[side].speedMult) || 1),
+    dmg: Math.round((d.dmg || 0) * md), atk: d.atk || 1, range: d.range || 0, speed: (d.speed || 0) * ((g.sides[side] && g.sides[side].speedMult) || 1),
     proj: d.proj || 0, splash: d.splash || 0, targets: d.targets || 'all',
     main: !!d.main, active: !d.main, life: d.life || 0,
     spawnT: d.spawn ? d.spawn.first : 0,
@@ -52,10 +62,15 @@ function spawn(g, type, side, x, y, extra, lvl = 1) {
     face: side === 0 ? -1 : 1, anim: 0, vx: 0, vy: 0,
     ...extra,
   };
+  if (g.rageAll) e.hasteT = 1e9;   // Modus „Raserei“: dauerhaft angetrieben
   g.ents.push(e);
   g.byId.set(e.id, e);
   return e;
 }
+// Eine Einheit ohne Karte aufs Feld stellen – für die Kartenvorschau (Ziel-Attrappen) und für Werkzeuge
+export const spawnUnit = (g, type, side, x, y, lvl = STD_LEVEL, extra = null) => spawn(g, type, side, x, y, extra, lvl);
+// Schaden von außerhalb der Karten (Segen im Überleben): läuft durch dieselbe Regel wie jeder Treffer
+export function hurt(g, e, amount, bySide) { damage(g, e, amount, bySide); }
 
 // levels[s] = { cards: { kartenId: Stufe }, tower: Stufe des Hauptturms, outer: Stufe der Außentürme (sonst wie tower),
 //              towerType: Turmkarte der Außentürme, runes: [kartenIds mit Runenform],
@@ -66,14 +81,22 @@ function spawn(g, type, side, x, y, extra, lvl = 1) {
 //   kraft, speed, towerHp: [Seite 0, Seite 1]   Faktoren für Kraftzufluss, Lauftempo und Turmleben
 //   runeAlways: [bool, bool]                    Runenkarten kommen jedes Mal in Runenform
 //   passive: [null, { unit, count, every }]     am Hauptturm erscheinen regelmäßig Einheiten
+//   kraftPlan: [f je Minute]                     Kraftzufluss nach Spielminute, der letzte Wert gilt weiter (Anschwellen: 1-2-3-4-5; Plötzliches Ende: 2-2-2-3-3)
+//   startKraft: n                               beide Seiten beginnen mit n Kraft statt 5 (doppelte und dreifache Kraft: 0)
+//   rage: true                                  Raserei über dem ganzen Feld: alles läuft und schlägt dauerhaft schneller, auch Türme
+//   mirror: true                                Spiegelkampf: Seite 1 bekommt Deck und Kartenfolge von Seite 0
+//   duration, overtime                          Spielzeit und Verlängerung in Sekunden statt 180 / 120
 //   waves: { pool: [kartenIds], lvl }           Seite 1 schickt wachsende Wellen (kein Kartenspiel nötig)
 //          dazu endless: true, goal: n          Überleben: keine Zeitgrenze, alle zehn Wellen eine Stufe stärker, jede fünfte mit Anführer;
 //                                              die Türme der Wellenseite sind unverwundbar, Schluss ist, wenn der eigene Hauptturm fällt;
 //                                              als Sieg zählt der Lauf ab Welle goal
+//          dazu director: fn(g, dt)            eigener Ablauf der Wellen statt des eingebauten (Überleben mit Themen, Bossen und Segen: ueberleben.js)
+//          dazu floor: fn(kartenId)            Mindeststufe einer Karte in den Wellen (ihre Startstufe: keine Karte tritt darunter an)
 export function createGame({ decks, levels, seed = 1, duration = 180, overtime = 120, rules = {} } = {}) {
+  duration = rules.duration ?? duration; overtime = rules.overtime ?? overtime;
   const g = {
-    sudden: !!rules.sudden, kraftFixed: rules.kraftFixed || 0,
-    waves: rules.waves ? { t: 6, n: 0, pool: rules.waves.pool, lvl: rules.waves.lvl || 1, endless: !!rules.waves.endless, goal: rules.waves.goal || 0 } : null,
+    sudden: !!rules.sudden, kraftFixed: rules.kraftFixed || 0, kraftPlan: Array.isArray(rules.kraftPlan) && rules.kraftPlan.length ? rules.kraftPlan : null, rageAll: !!rules.rage,
+    waves: rules.waves ? { t: 6, n: 0, pool: rules.waves.pool, lvl: rules.waves.lvl || STD_LEVEL, endless: !!rules.waves.endless, goal: rules.waves.goal || 0, director: rules.waves.director || null, floor: rules.waves.floor || null } : null,
     endless: !!(rules.waves && rules.waves.endless),
     seed: seed >>> 0, time: 0, duration, overtime, phase: 'main', over: false, winner: null,
     ents: [], projs: [], zones: [], events: [], dead: [], byId: new Map(), nextId: 1, sides: [], banners: [], whirls: [], arcs: [], gusts: [], nextGroup: 1,
@@ -86,9 +109,10 @@ export function createGame({ decks, levels, seed = 1, duration = 180, overtime =
     const forms = new Set((lv.forms || []).filter(id => HERO_FORMS[id] && CARDS[id])); // wer als Heldenform spielt, spielt nicht zugleich als Runenform
     g.sides.push({
       kraftMult: pick('kraft') || 1, speedMult: pick('speed') || 1, runeAlways: !!pick('runeAlways'), passive, passiveT: passive ? passive.every : 0,
-      levels: lv.cards || {}, tower: lv.tower || 1, runes: new Set((lv.runes || []).filter(id => !forms.has(id))), forms, formLast: {}, cycle: {}, away: [], blessT: 0,
-      kraft: 5, hand: deck.splice(0, 4), next: deck.shift(), queue: deck, crowns: 0, spent: 0,
+      levels: lv.cards || {}, tower: lv.tower || STD_LEVEL, runes: new Set((lv.runes || []).filter(id => !forms.has(id))), forms, formLast: {}, cycle: {}, away: [], blessT: 0,
+      kraft: rules.startKraft ?? 5, hand: deck.splice(0, 4), next: deck.shift(), queue: deck, refillT: 0, crowns: 0, spent: 0,
     });
+    if (s === 1 && rules.mirror) { const A = g.sides[0], B = g.sides[1]; B.hand = [...A.hand]; B.next = A.next; B.queue = [...A.queue]; }   // Spiegelkampf: gleiche Karten in gleicher Folge
     const my = y => (s === 0 ? H - y : y);
     const tc = CARDS[lv.towerType], outer = tc && tc.type === 'tower' ? tc.unit : 'aussenturm', outerLvl = lv.outer || lv.tower;
     spawn(g, outer, s, 3.5, my(OUTER_Y), { lane: 0 }, outerLvl);
@@ -105,7 +129,21 @@ export const towersOf = (g, side) => g.ents.filter(e => e.kind === 'tower' && e.
 export const outerTower = (g, side, lane) => g.ents.find(e => e.kind === 'tower' && e.side === side && e.lane === lane && e.hp > 0) || null;
 export const mainTower = (g, side) => g.ents.find(e => e.main && e.side === side) || null;
 // doppelt in der letzten Minute und in der Verlängerung, dreifach in deren letzter Minute
-export const kraftRate = g => KRAFT_RATE * (g.kraftFixed ? g.kraftFixed : g.time >= g.duration + g.overtime - 60 && g.phase !== 'main' ? 3 : g.phase === 'over' || g.time >= g.duration - 60 ? 2 : 1);
+// Nachziehen wie im Vorbild (crforge battle/match/Hand.java, Stand a8faf6f; Zeiten laut Wiki „Basics of Battle“): Eine gespielte
+// Karte wandert sofort ans Ende des Stapels, ihr Platz in der Hand wird leer. Ist die Nachzieh-Sperre abgelaufen, rückt die nächste
+// Karte auf den ersten leeren Platz und die Sperre beginnt neu – zwei Sekunden, bei doppelter (und dreifacher) Kraft eine. Wer also
+// zwei Karten kurz nacheinander spielt, hat für den Rest der Sperre einen leeren Platz.
+export const nextCardWait = g => (kraftRate(g) > KRAFT_RATE * 1.5 ? 1 : 2);
+function refillHand(g, S, dt) {
+  if (S.refillT > 0) S.refillT -= dt;
+  if (!S.next && S.queue.length) S.next = S.queue.shift();
+  if (S.refillT > 1e-9 || !S.next) return;
+  const k = S.hand.findIndex(id => !id);
+  if (k < 0) return;
+  S.hand[k] = S.next; S.next = S.queue.shift();
+  S.refillT = nextCardWait(g);
+}
+export const kraftRate = g => KRAFT_RATE * (g.kraftPlan ? g.kraftPlan[Math.min(g.kraftPlan.length - 1, Math.floor(g.time / 60))] : g.kraftFixed ? g.kraftFixed : g.time >= g.duration + g.overtime - 60 && g.phase !== 'main' ? 3 : g.phase === 'over' || g.time >= g.duration - 60 ? 2 : 1);
 export const timeLeft = g => (g.endless ? g.time : g.phase === 'main' ? g.duration - g.time : g.duration + g.overtime - g.time);   // Überleben: die Uhr zählt hoch
 
 // ---- Karten ausspielen -------------------------------------------------------------------------
@@ -329,7 +367,7 @@ export function playCard(g, side, handIdx, x, y) {
   const cost = cardCost(g, side, hid);
   if (S.kraft < cost || !canDeploy(g, side, hid, x, y)) return false;
   const id = hc.mirror ? S.last : hid, c = CARDS[id]; // Widerhall: die zuletzt gespielte Karte noch einmal
-  const lvl = hc.mirror ? (S.levels[hid] || 1) + 1 : S.levels[id] || 1; // … auf der Stufe des Widerhalls plus eins
+  const lvl = hc.mirror ? (S.levels[hid] || STD_LEVEL) + 1 : S.levels[id] || STD_LEVEL; // … auf der Stufe des Widerhalls plus eins
   const R = runeFor(g, side, hid), pack = g.nextGroup++;
   const plan = deployPlan(g, side, hid, x, y); // vor dem Weiterzählen des Runenzyklus: der Plan fragt selbst nach der Runenform
   const form = !hc.mirror && S.forms.has(id) ? { id, group: g.nextGroup++ } : null; // Heldenform: die Figuren dieser Ausspielung gehören zusammen
@@ -339,8 +377,7 @@ export function playCard(g, side, handIdx, x, y) {
   S.kraft -= cost;
   S.spent += cost;
   if (hc.hero) S.away.push(hid); else S.queue.push(hid); // ein Held kommt erst zurück in den Stapel, wenn er gefallen ist
-  S.hand[handIdx] = S.next;
-  S.next = S.queue.shift();
+  S.hand[handIdx] = null;   // der Platz bleibt leer, bis die Nachzieh-Sperre abgelaufen ist (refillHand)
   if (!hc.mirror && !hc.hero) S.last = hid;
   if (c.type === 'spell') {
     const rc = R && R.spell ? { ...c, ...R.spell } : null;   // Runenform eines Zaubers: die Karte mit geänderten Regeln
@@ -1258,15 +1295,25 @@ function avoid(g, u, dx, dy) {
 //   Stärke = min(Überlappung, 0,3) × Masse des Nachbarn / eigene Masse, höchstens 0,3 Felder.
 // Die Beiträge aller Nachbarn werden gemittelt, das Ergebnis auf 0,15 Felder je Takt begrenzt. Eine schwere Figur schiebt
 // eine leichte also fast allein weg; Gebäude und Türme schieben, werden aber nie geschoben.
+// Gebäude und Türme schieben nach derselben Formel. Ihre Masse rechnet das Vorbild aus dem Kollisionsradius (crforge
+// UnitRecords.loadedMass, Stand a8faf6f): ⌊⌊r² / 250⌋ · r / 62 500⌋ mit r in Tausendstel Feldern, mindestens 1, höchstens 20 –
+// ein Kronenturm (Radius 1) wiegt 20, ein Gebäude mit Radius 0,5 wiegt 8. In die Figur hinein reicht ein Gebäude höchstens ein
+// halbes Feld. Eine schwere Truppe drückt sich deshalb ein Stück weit in ein leichtes Gebäude, eine leichte prallt sofort ab.
+// Im Vorbild führt außerdem die Wegsuche um Gebäude herum; das ersetzt bei uns das seitliche Vorbeigleiten (unten).
+// Wer gerade springt oder stürmt, nimmt an der Kollision nicht teil – er schiebt niemanden und wird nicht geschoben (crforge
+// ContactRule: Zustände „dashing“ und „jumping“; ebenso ein Abbild, solange es aufmarschiert). Bei uns sind das der Sprung
+// und der Sturm auf ein Ziel (leap) und der Satz über den Fluss (ford).
 const PUSH_OVER = 0.3, PUSH_MAX = 0.15, PUSH_K = DT / 0.05;
+export const staticMass = r => { const R = Math.round(r * 1000); return Math.max(1, Math.min(20, Math.floor((Math.floor((R * R) / 250) * R) / 62500))); };
+export const noContact = e => e.kind === 'unit' && ((e.charging && !!e.d.leap) || (e.ford && !e.air && e.y > RIVER_TOP && e.y < RIVER_BOT && waterTile(Math.floor(e.x), Math.floor(e.y))) || (e.clone && e.deployT > 0));
 function separate(g) {
   const E = g.ents;
   for (let i = 0; i < E.length; i++) {
     const a = E[i];
-    if (a.hp <= 0 || a.digT > 0) continue;
+    if (a.hp <= 0 || a.digT > 0 || noContact(a)) continue;
     for (let j = i + 1; j < E.length; j++) {
       const b = E[j];
-      if (b.hp <= 0 || b.digT > 0 || a.air !== b.air) continue;
+      if (b.hp <= 0 || b.digT > 0 || a.air !== b.air || noContact(b)) continue;
       const aS = a.kind !== 'unit', bS = b.kind !== 'unit';
       if (aS && bS) continue;
       let dx = b.x - a.x, dy = b.y - a.y;
@@ -1276,14 +1323,16 @@ function separate(g) {
       if (d < 1e-4) { dx = ((a.id * 7 + b.id) % 5) - 2 || 1; dy = ((a.id + b.id * 3) % 5) - 2; d = Math.hypot(dx, dy); }
       const nx = dx / d, ny = dy / d, over = min - d;
       if (aS || bS) {
-        // Einheit ganz aus dem Gebäude schieben und seitlich daran vorbeigleiten lassen
-        const u = aS ? b : a, s = aS ? 1 : -1;
-        u.x += nx * over * s; u.y += ny * over * s;
+        // Gebäude oder Turm: schiebt die Figur nach der Formel von sich weg …
+        const u = aS ? b : a, st = aS ? a : b, s = aS ? 1 : -1;
+        const sp = Math.min((Math.min(over, PUSH_OVER) * staticMass(st.r)) / (u.d.mass || 1), PUSH_OVER - 0.001) + 0.001;
+        u.psx = (u.psx || 0) + nx * sp * s; u.psy = (u.psy || 0) + ny * sp * s; u.psn = (u.psn || 0) + 1;
+        // … und die Figur gleitet seitlich daran vorbei (steht für die Wegsuche des Vorbilds um Gebäude), höchstens so schnell, wie sie läuft
         if (!u.inRange) {
           let tx = -ny, ty = nx;
-          const dot = tx * u.vx + ty * u.vy;
+          const dot = tx * u.vx + ty * u.vy, sl = Math.min(over, (u.speed || 1) * DT) * 0.6;
           if (dot < -0.05 || (Math.abs(dot) <= 0.05 && u.id % 2)) { tx = -tx; ty = -ty; }
-          u.x += tx * over * 0.6; u.y += ty * over * 0.6;
+          u.x += tx * sl; u.y += ty * sl;
         }
       } else {
         const ma = a.d.mass || 1, mb = b.d.mass || 1, o = Math.min(over, PUSH_OVER);
@@ -1515,7 +1564,7 @@ export function step(g, dt = DT) {
   if (g.over) return;
   g.time += dt;
   const rate = kraftRate(g);
-  for (const S of g.sides) S.kraft = Math.min(MAX_KRAFT, S.kraft + rate * dt * S.kraftMult);
+  for (const S of g.sides) { refillHand(g, S, dt); S.kraft = Math.min(MAX_KRAFT, S.kraft + rate * dt * S.kraftMult); }   // wie im Vorbild: erst die Hand auffüllen, dann Kraft
   g.sides.forEach((S, side) => { // Boss-Verstärkung: am Hauptturm erscheinen regelmäßig Einheiten
     if (!S.passive) return;
     S.passiveT -= dt;
@@ -1541,7 +1590,8 @@ export function step(g, dt = DT) {
     u.maxHp = Math.round(u.maxHp * 1.1); u.hp = Math.round(u.hp * 1.1); u.dmg = Math.round(u.dmg * 1.1);
     emit(g, { t: 'bless', side, x: u.x, y: u.y, fx: ts[0].x, fy: ts[0].y });
   });
-  if (g.waves) { // Ansturm: Seite 1 schickt immer stärkere Wellen über eine oder beide Brücken
+  if (g.waves && g.waves.director) g.waves.director(g, dt);   // Überleben: der Ablauf steht in ueberleben.js
+  else if (g.waves) { // Ansturm: Seite 1 schickt immer stärkere Wellen über eine oder beide Brücken
     const wv = g.waves;
     wv.t -= dt;
     if (wv.t <= 0) {

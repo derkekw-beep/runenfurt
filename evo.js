@@ -171,7 +171,7 @@ export function evoShot(u) {
 }
 // Beim Einschlag eines Geschosses (t: das Ziel, falls es noch lebt)
 export function evoImpact(api, g, p, t) {
-  const E = p.evo, lvl = p.lvl || 1;
+  const E = p.evo, lvl = p.lvl || 11;   // ohne Angabe die Turnierstufe (sim.STD_LEVEL)
   if (E.spark) { // Knallfrosch: am Zerplatzen ein großes Funkenfeld, am Ende jeder Kernbahn ein kleines
     const s = E.spark, bx = p.tx - p.sx, by = p.ty - p.sy, a0 = Math.atan2(by, bx), nb = p.burst.n || 1;
     field(api, g, p.side, p.tx, p.ty, { ...s.zone, radius: s.big.r, dur: s.big.dur }, lvl);

@@ -3,6 +3,7 @@
 import { THREE, TEAM, CARDS, UNITS } from './deps.js';
 import { propMaterial } from './meshes.js';
 import { CELL } from './fx.js';
+import { figScale } from './sprites.js';
 import { PROJECTILES, MELEE, HITS, EVENTS, SPELLS } from './registry.js';
 import './rezepte.js';   // ergänzt die Rezepte um alle übrigen Karten
 
@@ -155,7 +156,7 @@ export function createActors(look, fx) {
       m = new THREE.Mesh(orbGeo, new THREE.MeshBasicMaterial({ color: c })); m.scale.setScalar(d.size || 0.18);
     }
     m.renderOrder = 5200; look.world.add(m);
-    const src = (UNITS[p.from] && UNITS[p.from].model) || p.from, y0 = d.y0 * (BUILDINGS[src] ? sizeOf(src) : 1);   // größer gezeichnete Gebäude schießen von entsprechend höher
+    const src = (UNITS[p.from] && UNITS[p.from].model) || p.from, y0 = d.y0 * (BUILDINGS[src] ? sizeOf(src) : figScale(src));   // größer gezeichnete Gebäude und Figuren schießen von entsprechend höher
     return { m, d, y0, d0: Math.max(0.01, Math.hypot(p.tx - p.sx, p.ty - p.sy)), acc: 0, last: new THREE.Vector3(p.sx, y0, p.sy) };
   }
   const pv = new THREE.Vector3();

@@ -112,6 +112,9 @@ export const EVENTS = {
     for (let i = 0; i < 9; i++) { const a = i / 9 * 6.283; fx.burst({ x: ev.x + Math.cos(a) * r * 0.5, y: 0.12, z: ev.y + Math.sin(a) * r * 0.5, n: 1, cell: CELL.dust, add: 0, color: '#efe6cf', alpha: 0.6, size: [0.3, 0.42], size2: [0.7, 0.95], life: [0.35, 0.55], dir: [Math.cos(a), 0.12, Math.sin(a)], cone: 0.2, speed: [1.6, 2.6], drag: 4.5 }); }
     fx.ring({ x: ev.x, z: ev.y, r0: r * 0.5, r: r * 2.6, dur: 0.3, color: C.team.light, hdr: 1.3, width: 0.22, alpha: 0.8 });
     fx.burst({ x: ev.x, y: 0.1, z: ev.y, n: 5, cell: CELL.shard, add: 0, color: '#6fc24a', size: [0.06, 0.1], life: [0.3, 0.5], speed: [1, 2.6], up: [2, 4], gravity: -15, spin: [5, 12], spread: r });
+    // wie im Vorbild: braune Erdbrocken spritzen etwa ein Feld weit nach allen Seiten (bei großen Figuren mehr)
+    const n = r >= 0.7 ? 12 : 7;
+    for (let i = 0; i < n; i++) { const a = (i / n) * 6.283 + Math.random() * 0.5; fx.burst({ x: ev.x + Math.cos(a) * r * 0.4, y: 0.1, z: ev.y + Math.sin(a) * r * 0.4, n: 1, cell: CELL.shard, add: 0, color: i % 3 ? '#6b4a2e' : '#8a6238', size: [0.08, 0.15], life: [0.35, 0.55], dir: [Math.cos(a), 1.1, Math.sin(a)], cone: 0.2, speed: [2.2, 3.6], gravity: -15, spin: [4, 10], floor: true }); }
   },
   // Figur fällt: Rauchwolke, Funken in Teamfarbe steigen auf
   die_unit(fx, ev, C) {
@@ -183,7 +186,12 @@ export const SPELLS = {
       fx.ring({ x, z, r0: r * 0.3, r: r * 1.5, dur: 0.4, color: '#fff3c4', hdr: 2.6, width: 0.14 });
       fx.ring({ x, z, r0: r * 0.2, r: r * 1.05, dur: 0.6, color: '#ffb347', hdr: 1.8, width: 0.35, delay: 0.05 });
       fx.burst({ x, y: 0.5, z, n: 26, cell: CELL.spark, color: '#fff3a8', color2: '#ff7a1a', hdr: 3.2, size: [0.12, 0.28], life: [0.4, 0.85], speed: [3, 8.5], up: [2, 7], gravity: -16, drag: 1.3, floor: true });
-      fx.burst({ x, y: 0.4, z, n: 14, cell: CELL.smoke, add: 0, color: '#ffd9a0', color2: '#7d7f8c', alpha: 0.8, size: [0.6, 0.9], size2: [1.4, 2.0], life: [0.6, 1.1], speed: [1, 3], up: [0.6, 2.4], drag: 2.4, spin: [0.4, 1.5], spread: r * 0.6 });
+      fx.burst({ x, y: 0.4, z, n: 10, cell: CELL.smoke, add: 0, color: '#ffd9a0', color2: '#7d7f8c', alpha: 0.8, size: [0.6, 0.9], size2: [1.4, 2.0], life: [0.6, 1.1], speed: [1, 3], up: [0.6, 2.4], drag: 2.4, spin: [0.4, 1.5], spread: r * 0.6 });
+      // wie im Vorbild: eine große dunkle Wolke über der ganzen Fläche, die die Figuren kurz verdeckt, darin der glühende Kern
+      fx.burst({ x, y: 0.7, z, n: 16, cell: CELL.smoke, add: 0, color: '#5a4534', color2: '#231d19', alpha: 0.88, size: [r * 0.45, r * 0.65], size2: [r * 0.8, r * 1.1], life: [0.7, 1.2], speed: [0.4, 1.6], up: [0.5, 1.8], drag: 2.2, spin: [0.3, 1.2], spread: r * 0.55 });
+      fx.burst({ x, y: 0.9, z, n: 5, cell: CELL.glow, color: '#ffb347', color2: '#ff5a1a', hdr: 2.4, size: [r * 0.5, r * 0.7], size2: r * 0.15, life: [0.3, 0.5], spread: r * 0.25 });
+      // Steinsplitter fliegen strahlenförmig davon
+      for (let i = 0; i < 12; i++) { const a = (i / 12) * 6.283 + Math.random() * 0.3; fx.burst({ x: x + Math.cos(a) * r * 0.25, y: 0.4, z: z + Math.sin(a) * r * 0.25, n: 1, cell: CELL.shard, add: 0, color: i % 2 ? '#3a3330' : '#8a6a44', size: [0.12, 0.22], life: [0.5, 0.9], dir: [Math.cos(a), 0.9, Math.sin(a)], cone: 0.25, speed: [4, 8], gravity: -17, spin: [5, 12], floor: true }); }
       fx.burst({ x, y: 0.3, z, n: 12, cell: CELL.star, color: '#fff3a8', hdr: 2.6, size: [0.14, 0.26], size2: 0.02, life: [0.5, 1.0], speed: [1, 3.5], up: [2.5, 5.5], gravity: -6, drag: 1.2, spin: [3, 8], spread: r * 0.5 });
       fx.debris({ x, z, n: 7, color: '#8a6a44', power: 0.8, size: 0.7 });
       fx.decal({ x, z, r: r * 1.15, dur: 9 });

@@ -1,13 +1,26 @@
 // 2D-Figuren: lädt die in Blender gerenderten Bildfolgen und zeigt sie als Tafeln, die zur Kamera stehen.
 // Teamfarbe kommt aus einer Maske (ein Sammelbild für beide Seiten), der Schatten ist dasselbe Bild flach auf den
 // Boden gelegt. Die Bewegung folgt allein dem Zustand der Spielregeln (laufen, ausholen, zuschlagen, stehen).
-import { THREE, TEAM, ASSETS, RIVER_TOP, RIVER_BOT } from './deps.js';
+import { THREE, TEAM, ASSETS, RIVER_TOP, RIVER_BOT, UNITS } from './deps.js';
 import { anchor } from './halten.js';
 import { PITCH, SUN } from './look.js';
 
 const TAU = Math.PI * 2;
 const BAKE_EL = 38 * Math.PI / 180;      // Blickwinkel, unter dem die Bilder gerendert wurden (tools/blender/rf_kit.py)
 export const SCALE = 0.8;                 // Größe der Figuren im Feld: ein Schläger ist damit rund anderthalb Felder hoch
+// Größe je Figur im Verhältnis zum Vorbild (recherche/vorbild/BERICHT.md, Abschnitt 3.2 – gemessen in Spielbildern, ein Feld = 82,5
+// Bildpunkte): Giant 2,6 breit und 2,8 hoch, P.E.K.K.A 2,8 hoch, Musketeer 1,0 × 1,35, Archers 0,7 × 1,2. Unsere Bildfolgen waren bei
+// den schweren Truppen rund 12 % kleiner (Steinhüter 2,28 × 2,50), bei den kleinen Bodentruppen rund 10 % größer (Bolzenschützin
+// 1,14 × 1,53). Gemessen sind nur diese vier; alle anderen Bodentruppen folgen ihrer Klasse (Kollisionsradius wie im Vorbild:
+// ab 0,75 schwer, bis 0,5 klein). Flieger und die Klasse dazwischen bleiben, wie sie sind – dafür gibt es keine Messung.
+export const FIG_BIG = 1.12, FIG_SMALL = 0.9;
+const figMap = new Map();
+for (const [id, u] of Object.entries(UNITS)) {
+  const n = u.model || id;
+  if (figMap.has(n) && n !== id) continue;   // die Figur gehört zuerst der Einheit, die so heißt wie sie
+  figMap.set(n, u.tower || u.building || u.air ? 1 : u.r >= 0.75 ? FIG_BIG : u.r <= 0.5 ? FIG_SMALL : 1);
+}
+export const figScale = name => figMap.get(name) || 1;
 const BIAS = 0.3;                         // Tafel für die Tiefe ein Stück zur Kamera rücken: steht sicher vor Nachbarn
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
 
@@ -49,8 +62,8 @@ export function loadUnit(name) {
     const tex = fit(raw[0], mode.scale), mask = fit(raw[1], mode.mask);
     tex.colorSpace = THREE.SRGBColorSpace; tex.premultiplyAlpha = true;   // vormultipliziert: keine dunklen Säume an den Rändern, auch verkleinert
     for (const t of [tex, mask]) { t.generateMipmaps = mode.mips; t.minFilter = mode.mips ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = mode.mips ? 2 : 1; }
-    const [AW, AH] = info.size, k = SCALE / info.ppu;
-    info.h *= SCALE; info.stride = (info.stride || 0.85) * SCALE;
+    const S = SCALE * figScale(name), [AW, AH] = info.size, k = S / info.ppu;
+    info.h *= S; info.stride = (info.stride || 0.85) * S;
     info.rect = info.frames.map(f => [f[0] / AW, 1 - (f[1] + f[3]) / AH, (f[0] + f[2]) / AW, 1 - f[1] / AH]);
     info.quad = info.frames.map(f => [f[4] * k, f[5] * k, (f[4] + f[2]) * k, (f[5] + f[3]) * k]);
     const def = { name, info, tex, mask, h: info.h, kind: 'sprite' };
@@ -60,6 +73,7 @@ export function loadUnit(name) {
   return defs.get(name);
 }
 export const getUnit = name => ready.get(name) || null;
+export const loadedUnits = () => [...ready.keys()];   // Namen aller Bildfolgen, die gerade auf der Grafikkarte liegen
 // Füllt den Offline-Speicher nach und nach mit allen Bildfolgen (eine nach der anderen; nur mit Service Worker).
 // Von selbst läuft das nur, wenn das Gerät WLAN oder Kabel meldet und kein Datensparmodus an ist – zusammen sind es rund
 // 72 MB, die niemand ungefragt über Mobilfunk laden soll (iPhones melden die Verbindungsart nicht: dort nur mit force).

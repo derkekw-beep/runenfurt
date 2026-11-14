@@ -99,10 +99,12 @@ export function createLook(canvas, opt = {}) {
 
   // ---- Kamera: das ganze Feld passt ins Bild ----------------------------------------------------------
   const v3 = new THREE.Vector3(), base = new THREE.Vector3();
+  let view = null;   // null = das ganze Feld; sonst ein Ausschnitt { x0, x1, y0, y1 } in Feldmaßen (setView)
   function fitCamera() {
     camera.aspect = width / height;
     const dir = new THREE.Vector3(0, -Math.sin(PITCH), -Math.cos(PITCH)), target = new THREE.Vector3(W / 2, 0, H / 2);
-    const pts = [[-0.45, 0, -0.5], [W + 0.45, 0, -0.5], [-0.45, 0, H + 0.45], [W + 0.45, 0, H + 0.45], [W / 2 - 1.6, 4.9, MAIN_Y], [W / 2 + 1.6, 4.9, MAIN_Y], [2, 3.6, OUTER_Y], [W - 2, 3.6, OUTER_Y]];
+    let pts = [[-0.45, 0, -0.5], [W + 0.45, 0, -0.5], [-0.45, 0, H + 0.45], [W + 0.45, 0, H + 0.45], [W / 2 - 1.6, 4.9, MAIN_Y], [W / 2 + 1.6, 4.9, MAIN_Y], [2, 3.6, OUTER_Y], [W - 2, 3.6, OUTER_Y]];
+    if (view) { target.set((view.x0 + view.x1) / 2, 0, (view.y0 + view.y1) / 2); pts = [[view.x0, 0, view.y0], [view.x1, 0, view.y0], [view.x0, 0, view.y1], [view.x1, 0, view.y1]]; }   // Ausschnitt (Kartenvorschau)
     let dist = 150;
     for (let it = 0; it < 14; it++) {
       camera.position.copy(target).addScaledVector(dir, -dist);
@@ -318,7 +320,7 @@ export function createLook(canvas, opt = {}) {
 
   function project(x, y, z) { v3.set(x, y, z).project(camera); return [(v3.x + 1) / 2 * width, (1 - v3.y) / 2 * height]; }
 
-  Object.assign(api, { renderer, scene, world, camera, sun, hemi, grade, hdr, ready, shadowTint, lightTint, resize, setArena, setQuality, update, render, project, fitCamera,
+  Object.assign(api, { renderer, scene, world, camera, sun, hemi, grade, hdr, ready, shadowTint, lightTint, resize, setArena, setQuality, update, render, project, fitCamera, setView: v => { view = v || null; fitCamera(); },
     size: () => ({ width, height, dpr }), theme: () => T, targets: () => ({ rtScene, chain }) });
   Object.defineProperty(api, 'props', { get: () => props });   // die 3D-Teile aus Blender, sobald sie geladen sind (vorher null)
   return api;

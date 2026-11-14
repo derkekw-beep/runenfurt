@@ -245,7 +245,7 @@ export const RUNES = {
 };
 // fly (an Zaubern): Wurfzauber fliegen wie im Vorbild vom eigenen Hauptturm zum Ziel – so viele Felder je Sekunde. Ihre Flugzeit hängt
 // damit von der Entfernung ab (sim.js: spellDelay); delay gilt nur noch, wenn kein Hauptturm steht.
-export const RUNE_LEVEL = 3; // ab dieser Kartenstufe ist die Runenform verfügbar
+export const RUNE_LEVEL = 3; // die wievielte Stufe einer Karte ihr Runenscherben bringt – gezählt ab ihrer Startstufe (progress.js: runeLevel)
 
 export const CARDS = {
   waldlaeufer:   { name: 'Waldläufer',    cost: 3, type: 'troop', unit: 'waldlaeufer', count: 2, role: 'Fernkampf',
@@ -497,7 +497,7 @@ export const CARDS = {
 };
 
 // Turmkarten: Sie stehen nie im Deck, sondern bestimmen die Art der beiden Außentürme. Gesammelt und aufgewertet
-// werden sie wie alle Karten; die Stufe des Hauptturms folgt dagegen der Spielerstufe.
+// werden sie wie alle Karten; die Stufe des Hauptturms folgt dagegen den Kartenstufen (progress.js: KT_NEED).
 Object.assign(CARDS, {
   wachturm:      { name: 'Wachturm',      cost: 4, type: 'tower', unit: 'aussenturm', count: 1, role: 'Turm',
                    desc: 'Der bewährte Außenturm: schnelle Schüsse und das meiste Leben. Ohne Schwächen, ohne Glanzstück.' },

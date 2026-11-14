@@ -9,6 +9,11 @@ import { createRenderer3D } from './render3d.js';
 import { sfx, unlock, setSound, setVolume } from './audio.js';
 import { STORY, explain } from './lore.js';
 import { createStage } from './arenabild.js';
+import { createPreview } from './vorschau.js';
+import * as U from './ueberleben.js';
+import { createSurvUi } from './ueberleben-ui.js';
+import * as Modi from './modi.js';
+import { createModiUi } from './modi-ui.js';
 
 const $ = s => document.querySelector(s);
 const KEY = 'runenfurt-v1';
@@ -199,10 +204,13 @@ function simpleSheet(title, body, center = true) {
 const canUpgradeAny = () => Object.keys(profile.cards).some(id => P.upgradeInfo(profile, id).can);
 const untilMidnight = () => { const n = new Date(), m = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1); const min = Math.max(1, Math.ceil((m - n) / 60000)); return `${Math.floor(min / 60)} Std. ${min % 60} Min.`; };
 
+// Was der Hauptturm für die nächste Stufe braucht (wie im Vorbild: so viele Karten auf mindestens dieser Stufe)
+const towerNext = () => { const t = P.towerInfo(profile); return t.max ? 'höchste Stufe erreicht' : `Stufe ${t.lvl + 1}: ${t.have} von ${t.need} Karten auf Stufe ${t.at} oder höher`; };
 function renderTop() {
-  const pl = P.playerLevel(profile.xp);
-  $('#lvlNum').textContent = pl.lvl;
-  $('#xpFill').style.width = pl.need ? `${100 * pl.xp / pl.need}%` : '100%';
+  const ti = P.towerInfo(profile);   // Stufe des Hauptturms; der Balken zeigt, wie viele Karten für die nächste schon hoch genug sind
+  $('#lvlNum').textContent = ti.lvl;
+  $('#xpFill').style.width = ti.max ? '100%' : `${100 * ti.have / ti.need}%`;
+  $('#lvlPill').setAttribute('aria-label', `Profil – Hauptturm Stufe ${ti.lvl}, ${towerNext()}`);
   $('#goldNum').textContent = fmt(profile.gold);
   $('#gemNum').textContent = fmt(profile.gems);
   const dots = { shop: !profile.shop.gift, cards: canUpgradeAny(), home: P.questsOpen(profile) > 0 || profile.stash.length > 0, road: wayOpen() > 0, more: false };
@@ -456,7 +464,7 @@ function renderHome() {
   const open = P.questsOpen(profile), left = profile.quests.filter(q => !q.claimed).length;
   $('#questInfo').textContent = open ? `${open} bereit` : left ? `${left} offen` : 'erledigt';
   $('#questDot').hidden = !open;
-  $('#modeDot').hidden = !(P.modeBonusOpen(profile) || P.bossNext(profile) >= 0);
+  $('#modeDot').hidden = !modiUi.dot();
   const n = profile.wins + profile.losses + profile.draws;
   $('#stats').textContent = n ? `${profile.wins} Siege · ${profile.losses} Niederlagen${profile.draws ? ` · ${profile.draws} Unentschieden` : ''}` : 'Zerstöre die Türme auf der anderen Seite der Furt.';
 }
@@ -610,8 +618,8 @@ function renderDeck() {
   if (!legend) { legend = el('p', 'slotLegend'); legend.id = 'slotLegend'; dg.after(legend); }
   legend.innerHTML = P.SPECIAL_SLOTS.map((sl, i) => `<span class="${P.slotOpen(profile, i) ? '' : 'off'}"><i class="k ${sl.kind}"></i>Platz ${i + 1}: ${sl.name}${P.slotOpen(profile, i) ? '' : ` (ab Arena ${sl.arena + 1})`}</span>`).join('')
     + '<small><b>Karte gedrückt halten und ziehen:</b> auf eine Deck-Karte gelegt, tauscht sie mit ihr den Platz oder ersetzt sie.<br>Goldene Krone an der Karte: Sie hat eine Heldenform. Violette Raute: Sie hat eine Runenform. Blass heißt: noch nicht freigeschaltet.<br>Die Runenform spielt nur auf dem Runenplatz und dem freien Platz, Helden und Heldenformen nur auf dem Heldenplatz und dem freien Platz.</small>';
-  // Türme: die gewählte Art gilt für beide Außentürme; der Hauptturm steigt mit der Spielerstufe
-  $('#towerInfo').textContent = `Hauptturm: Stufe ${P.playerLevel(profile.xp).lvl}`;
+  // Türme: die gewählte Art gilt für beide Außentürme; der Hauptturm steigt mit den Kartenstufen
+  { const t = P.towerInfo(profile); $('#towerInfo').textContent = t.max ? `Hauptturm: Stufe ${t.lvl}` : `Hauptturm: Stufe ${t.lvl} · nächste: ${t.have} / ${t.need} Karten ab Stufe ${t.at}`; }
   $('#towerGrid').replaceChildren(...TOWER_IDS.map(id => {
     if (!profile.cards[id]) return cardEl(id, { locked: P.unlockArena(id) });
     const e = cardEl(id, { lvl: profile.cards[id].lvl, meter: meter(id), wish: profile.wish === id });
@@ -770,11 +778,12 @@ function statRows(id, lvl) {
   const c = CARDS[id], m = sim.cardMult(lvl), up = lvl < P.MAX_LEVEL ? sim.cardMult(lvl + 1) : 0;
   const rows = [];
   const scaled = (label, base) => rows.push([label, fmt(Math.round(base * m)), up ? `+${fmt(Math.round(base * up) - Math.round(base * m))}` : '']);
-  if (c.type === 'tower') { // Türme wachsen mit 8 % je Stufe
-    const u = UNITS[c.unit], tm = sim.towerMult(lvl), tu = lvl < P.MAX_LEVEL ? sim.towerMult(lvl + 1) : 0;
-    const grow = (label, base) => rows.push([label, fmt(Math.round(base * tm)), tu ? `+${fmt(Math.round(base * tu) - Math.round(base * tm))}` : '']);
-    grow('Leben', u.hp); grow('Schaden', u.dmg);
-    rows.push(['Schlagtempo', `${dec(u.atk)} s`, '']); grow('Schaden je Sekunde', u.dmg / u.atk);
+  if (c.type === 'tower') { // Türme haben eigene Reihen für Leben und Schaden (sim.js: T_HP, T_DMG)
+    const u = UNITS[c.unit], next = lvl < P.MAX_LEVEL;
+    const grow = (label, base, f) => rows.push([label, fmt(Math.round(base * f(lvl))), next ? `+${fmt(Math.round(base * f(lvl + 1)) - Math.round(base * f(lvl)))}` : '']);
+    const hp = l => sim.towerMult(l), dm = l => sim.towerDmg(l);
+    grow('Leben', u.hp, hp); grow('Schaden', u.dmg, dm);
+    rows.push(['Schlagtempo', `${dec(u.atk)} s`, '']); grow('Schaden je Sekunde', u.dmg / u.atk, dm);
     if (u.ammo) { rows.push(['Klingenvorrat', `${u.ammo.max} · neu alle ${dec(u.ammo.reload)} s`, '']); rows.push(['Wenn leer', `ein Wurf alle ${dec(u.ammo.reload + u.atk)} s`, '']); }
     if (u.bless) { rows.push(['Segen', `alle ${u.bless.every}–38 s`, '']); rows.push(['Wirkung', 'zäheste Truppe +1 Stufe', '']); }
     rows.push(['Reichweite', `${dec(u.range)} Felder`, '']); rows.push(['Ziele', 'Luft & Boden', '']);
@@ -870,6 +879,9 @@ function statRows(id, lvl) {
   return rows;
 }
 
+// Kartenvorschau (vorschau.js): entsteht beim ersten Kartenblatt; sie benutzt den Kampf-Zeichner, solange kein Kampf läuft
+let preview = null;
+const cardPreview = () => preview || (preview = createPreview({ renderer, restore: layout, arena: () => profile.arena, calm }));
 function showCard(id) {
   const c = CARDS[id], own = profile.cards[id];
   const d = el('div');
@@ -879,6 +891,7 @@ function showCard(id) {
   const rar = P.rarity(id);
   top.append(el('div', '', `<h4>${c.name}</h4><div class="rword ${rar}">${P.RARITY_NAME[rar]}</div><div class="role">${c.type === 'tower' ? c.role : c.mirror ? `${c.role} · kostet 1 Kraft mehr als die wiederholte Karte` : `${c.role} · ${c.cost} Kraft`}</div><p>${c.desc}</p>`));
   d.append(top);
+  const pv = cardPreview().mount(id, { lvl }); if (pv) d.append(pv);   // laufende Vorschau: so spielt die Karte
   // Drei Ansichten: Werte, genaue Erklärung, Geschichte
   const seg = el('div', 'seg small infoSeg'), panes = { werte: el('div', 'pane'), wirkung: el('div', 'pane how'), story: el('div', 'pane story') };
   for (const [k, label] of [['werte', 'Werte'], ['wirkung', 'Erklärung'], ['story', 'Geschichte']]) { const b = el('button', k === cardView ? 'on' : '', label); b.dataset.view = k; seg.append(b); panes[k].hidden = k !== cardView; }
@@ -910,7 +923,7 @@ function showCard(id) {
           save(); sfx('rune'); render();
           if (P.hasRune(profile, id)) playRune(id, () => showCard(id)); else showCard(id);
         });
-        rb.append(wb, el('small', 'src', `Scherben: Runenkisten, Runenform der Saison auf dem Runenpfad, Schicksalstruhe mit fünf Funken, Modus des Tages, Stufe ${RUNE_LEVEL} der Karte. Wanderscherben: Runenpfad, Schicksalstruhe mit vier Funken, Trophäenweg, Bosse, Laden, Saisonmarkt.`));
+        rb.append(wb, el('small', 'src', `Scherben: Runenkisten, Runenform der Saison auf dem Runenpfad, Schicksalstruhe mit fünf Funken, Modus des Tages, Stufe ${P.runeLevel(id)} der Karte. Wanderscherben: Runenpfad, Schicksalstruhe mit vier Funken, Trophäenweg, Bosse, Laden, Saisonmarkt.`));
       }
     }
     panes.werte.append(rb);
@@ -934,7 +947,7 @@ function showCard(id) {
     if (m.can) { const b = el('button', 'btn primary', `Abholen <span class="ico coin"></span>${m.next.gold}`); b.addEventListener('click', () => { const r = P.claimMastery(profile, id); if (!r) return; save(); collectFx(b, r); render(); showCard(id); }); mb.append(b); }
     panes.werte.append(mb);
     // Stärkungstrank: drei Stunden lang zählt die Karte im Kampf mit der Stufe des Hauptturms
-    const now = Date.now(), on = P.boosted(profile, id, now), tl = P.playerLevel(profile.xp).lvl;
+    const now = Date.now(), on = P.boosted(profile, id, now), tl = P.towerLevel(profile);
     if (on || profile.potions > 0) {
       const pb = el('div', `extra potionBox${on ? ' on' : ''}`, `<b><span class="ico trank"></span>Stärkungstrank</b><small>${on ? `wirkt noch ${Math.max(1, Math.ceil((profile.boosts[id] - now) / 60000))} Min. · die Karte kämpft auf Stufe ${P.boostLevel(profile, id, now)}` : tl > lvl ? `hebt die Karte ${P.POTION_HOURS} Stunden lang auf Stufe ${tl} (Stufe deines Hauptturms)` : `wirkt erst, wenn dein Hauptturm (Stufe ${tl}) über der Karte liegt`}</small>`);
       if (!on) { const b = el('button', 'btn', `Trank einsetzen <em>${profile.potions}</em>`); b.disabled = tl <= lvl; b.addEventListener('click', () => { if (!P.usePotion(profile, id, Date.now())) { sfx('error'); return; } save(); sfx('rune'); render(); showCard(id); }); pb.append(b); }
@@ -977,7 +990,7 @@ function showCard(id) {
       b.disabled = on;
       b.addEventListener('click', () => { P.setTower(profile, id); save(); sfx('deploy'); render(); showCard(id); });
       btns.append(b);
-      d.insertBefore(el('p', 'center small', `Gilt für beide Außentürme. Der Hauptturm steigt mit deiner Spielerstufe (jetzt Stufe ${P.playerLevel(profile.xp).lvl}).`), d.querySelector('.upline, .notice') || null);
+      d.insertBefore(el('p', 'center small', `Gilt für beide Außentürme. Der Hauptturm steigt mit deinen Karten: jetzt Stufe ${P.towerLevel(profile)}, ${towerNext()}.`), d.querySelector('.upline, .notice') || null);
     } else if (!profile.deck.includes(id)) {
       const b = el('button', 'btn', 'Ins Deck');
       b.addEventListener('click', () => { sfx('click'); swap = id; closeSheet(); show('cards'); $('#tabCards .scroll').scrollTop = 0; });
@@ -1013,7 +1026,7 @@ function doUpgrade(id, reopen) {
   const changes = before.map((a, i) => [a[0], a[1], after[i] ? after[i][1] : a[1]]).filter(c => c[1] !== c[2]).slice(0, 4);
   const notes = [];
   if (r.shards) notes.push(P.hasRune(profile, id) ? ['rune', 'Runenform erweckt!'] : ['shard', `+${r.shards} Runenscherben · ${P.runeInfo(profile, id).have} / ${P.RUNE_SHARDS}`]);
-  if (r.levelUp) notes.push(['lvl', `Spielerstufe ${P.playerLevel(profile.xp).lvl} – stärkere Türme, +5 Runensplitter`]);
+  if (r.tower) notes.push(['turm', `Hauptturm Stufe ${r.tower.lvl} – dazu ${fmt(r.tower.cards)} Karten für den Wachturm und ${fmt(r.tower.gold)} Gold`]);   // nicht „lvl“: so heißt schon die Raute der Kopfzeile
   playUpgrade(id, from, r.lvl, changes, notes, () => { render(); if (reopen) showCard(id); });
 }
 // Runenform erweckt: dieselbe Bühne in Violett
@@ -1187,7 +1200,7 @@ function renderShop() {
     market.append(b);
   }
   body.append(market);
-  body.append(el('p', 'fine', 'Runensplitter und Furtmarken bekommst du nur im Spiel: auf dem Runenpfad, dem Trophäenweg, für Sammlungsstufen, Aufgaben, neue Arenen und Spielerstufen. Übrige Furtmarken werden am Saisonende zu Gold. Echtes Geld gibt es hier nicht.'));
+  body.append(el('p', 'fine', 'Runensplitter und Furtmarken bekommst du nur im Spiel: auf dem Runenpfad, dem Trophäenweg, für Sammlungsstufen, Aufgaben und neue Arenen. Übrige Furtmarken werden am Saisonende zu Gold. Echtes Geld gibt es hier nicht.'));
 }
 function flash(node) { node.classList.remove('shake'); void node.offsetWidth; node.classList.add('shake'); }
 
@@ -1336,7 +1349,7 @@ $('#roadBody').addEventListener('click', e => { const c = e.target.closest('.thu
 // ---- Reiter „Mehr“: Profil, Statistik, Einstellungen ---------------------------------------------
 function renderMore() {
   const body = $('#moreBody'); body.replaceChildren();
-  const pl = P.playerLevel(profile.xp), st = profile.stats, n = profile.wins + profile.losses + profile.draws;
+  const pl = P.towerInfo(profile), st = profile.stats, n = profile.wins + profile.losses + profile.draws;
   const fav = Object.entries(st.played).sort((a, b) => b[1] - a[1])[0];
   const card = el('div', 'profile');
   card.append(el('div', 'ph', `<span class="lvl big"><b>${pl.lvl}</b></span><div><b>${esc(profile.name)}</b><small>Arena ${profile.arena + 1} · ${P.ARENAS[profile.arena].name}</small></div>`));
@@ -1344,6 +1357,7 @@ function renderMore() {
     ['Trophäen', fmt(profile.trophies)], ['Bestmarke', fmt(profile.best)], ['Kämpfe', fmt(n)], ['Siegquote', n ? `${Math.round(100 * profile.wins / n)} %` : '–'],
     ['Siege', fmt(profile.wins)], ['Drei-Kronen-Siege', fmt(st.three)], ['Längste Siegesserie', fmt(st.bestStreak)], ['Kronen gesamt', fmt(st.crowns)],
     ['Karten gespielt', fmt(st.cards)], ['Lieblingskarte', fav ? CARDS[fav[0]].name : '–'],
+    ['Hauptturm', `Stufe ${pl.lvl}`], ['Nächste Turmstufe', pl.max ? 'erreicht' : `${pl.have} / ${pl.need} Karten ab Stufe ${pl.at}`],
   ].map(([k, v]) => `<div>${k}<b>${v}</b></div>`).join('')));
   body.append(card);
   const list = el('div', 'list');
@@ -1471,45 +1485,11 @@ function showAbout() {
 }
 
 // ---- Spielmodi und Bosskämpfe ------------------------------------------------------------------
-function showModes() {
-  const d = el('div', 'modes');
-  d.append(el('h3', '', 'Spielmodi'), el('p', 'center small', `Herausforderungen ohne Trophäen. Siege zählen als Tagessiege und bringen ${P.MARKS.mode} Furtmarken (die ersten ${P.MARKS.modeWins} am Tag).`));
-  const today = P.modeOfDay(profile.day), list = el('div', 'list');
-  const row = (key, name, text, badge) => { const b = el('button', 'btn item modeRow', `<span><b>${name}${badge ? `<em>${badge}</em>` : ''}</b><small>${text}</small></span><i></i>`); b.dataset.mode = key; list.append(b); };
-  const ids = [today, ...P.MODE_IDS.filter(id => id !== today)];
-  for (const id of ids) row(id, P.MODES[id].name, P.MODES[id].text, id === today ? (P.modeBonusOpen(profile) ? `Heute +${P.MODE_BONUS} <span class="ico gem"></span>` : 'Modus des Tages') : '');
-  row('uebung', 'Übungskampf', 'Ein normaler Kampf, der nicht zählt – zum Ausprobieren neuer Decks.', '');
-  d.append(list);
-  // Überleben: Bestleistung und Meilensteine (einmalige Belohnungen, abzuholen sobald die Welle erreicht ist)
-  d.append(el('div', 'sub', `<b>Überleben</b><span>Bestleistung: Welle ${profile.surv.best}</span>`));
-  const miles = el('div', 'survList');
-  const shown = P.SURV.filter((m, i) => profile.surv.best >= m.at || i < 4 || P.SURV[i - 2].at <= profile.surv.best);   // erreichte und die nächsten zwei, mindestens vier
-  for (const m of shown) miles.append(mileRow(`Welle ${m.at}`, m, profile.surv.best >= m.at, profile.surv.got.includes(m.at), profile.arena, b => collected(b, P.claimSurv(profile, m.at), 'Meilenstein')));
-  d.append(miles);
-  d.append(el('div', 'sub', `<b>Bosskämpfe</b><span>${profile.bosses.length} von ${P.BOSSES.length} besiegt</span>`));
-  const bosses = el('div', 'list');
-  P.BOSSES.forEach((b, i) => {
-    if (i > profile.arena + 1) return;
-    const open = P.bossOpen(profile, i), won = profile.bosses.includes(i);
-    const r = el('button', `btn item bossRow${won ? ' won' : ''}${open ? '' : ' shut'}`, `<span><b>${b.name}${won ? '<em class="ok">besiegt</em>' : open ? `<em>+${P.BOSS_REWARD.gems} <span class="ico gem"></span></em>` : ''}</b><small>${open ? `Arena ${i + 1} · ${P.ARENAS[i].name} – ${b.text}` : `Wartet in Arena ${i + 1} (${P.ARENAS[i].name}, ${P.ARENAS[i].at} Trophäen).`}</small></span><i></i>`);
-    r.dataset.boss = i; r.disabled = !open;
-    bosses.append(r);
-  });
-  d.append(bosses);
-  const btns = el('div', 'btns one'); btns.append(closeBtn()); d.append(btns);
-  d.addEventListener('click', e => {
-    const m = e.target.closest('.modeRow'), b = e.target.closest('.bossRow');
-    if (!m && !b) return;
-    sfx('click');
-    const go = () => { if (b) startBattle({ boss: Number(b.dataset.boss) }); else if (m.dataset.mode === 'uebung') startBattle({ training: true }); else if (m.dataset.mode === 'wahl') startDraft(); else startBattle({ mode: m.dataset.mode }); };
-    if (!profile.seenHelp) showHelp(go); else go();
-  });
-  sheetDismiss = () => { closeSheet(); sheetDismiss = null; };
-  openSheet(d, false);
-}
+// Auswahlseite der Spielmodi: Ereignisse, Serien, Rangliste, Bosse (modi-ui.js)
+function showModes(tab) { modiUi.sheet(tab); }
 
 // Kartenwahl: vier Runden, je zwei Karten – eine für mich, die andere für den Gegner
-function startDraft() {
+function startDraft(extra = {}) {   // extra: weitere Angaben für startBattle (Kartenwahl als Wochenereignis)
   let s = ((Number(params.get('seed')) || Date.now()) >>> 0) || 1;
   const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
   const pairs = P.draftPairs(rnd), picks = [];
@@ -1521,7 +1501,7 @@ function startDraft() {
       d.append(el('h3', '', 'Dein Deck'), el('p', 'center small', 'Vier gewählt, vier vom Gegner bekommen. Beide Seiten spielen auf gleicher Stufe.'));
       const grid = el('div', 'grid'); for (const id of mine) grid.append(cardEl(id, { tag: 'div' })); d.append(grid);
       const row = el('div', 'btns'), go = el('button', 'btn primary', 'Los geht’s');
-      go.addEventListener('click', () => { sfx('click'); startBattle({ mode: 'wahl', decks: [mine, foe] }); });
+      go.addEventListener('click', () => { sfx('click'); startBattle({ mode: 'wahl', ...extra, decks: [mine, foe] }); });
       row.append(closeBtn('Abbrechen'), go); d.append(row);
     } else {
       d.append(el('h3', '', 'Kartenwahl'), el('p', 'center', `Runde ${i + 1} von 4 – welche Karte nimmst du? Die andere bekommt dein Gegner.`));
@@ -1543,6 +1523,12 @@ function startDraft() {
 
 // ---- Kampf -------------------------------------------------------------------------------------
 const B = { arena: null, g: null, ai: null, auto: null, acc: 0, last: 0, sel: null, ghost: null, paused: false, running: false, endAt: 0, drag: null, flags: {}, hand: [], next: null };
+// Überleben: Anzeige, Segen-Wahl, Startblatt und Abrechnung stehen in ueberleben-ui.js
+const survUi = createSurvUi({ el, fmt, sfx, B, P, banner: t => banner(t), toast: (t, ms) => toast(t, ms), openSheet, closeSheet, setDismiss: fn => { sheetDismiss = fn; }, profile: () => profile, save, today, start: o => startBattle(o), auto: () => !!B.auto || SPEED > 1,
+  mileRow, rewardParts, collected: (b, loot, title) => { collected(b, loot, title); if (loot && !loot.box) survUi.sheet(); }, askHelp: go => { if (!profile.seenHelp) showHelp(go); else go(); }, back: () => showModes() });
+const modiUi = createModiUi({ el, fmt, sfx, P, profile: () => profile, save, today, start: o => startBattle(o), draft: o => startDraft(o), surv: () => survUi.sheet(), survOpen: () => survUi.open(), openSheet, closeSheet, setDismiss: fn => { sheetDismiss = fn; }, cardEl, art,
+  rewardParts, mileRow, collected: (b, loot, title) => collected(b, loot, title), askHelp: go => { if (!profile.seenHelp) showHelp(go); else go(); }, untilMidnight, render: () => render(), home: () => { closeSheet(); B.running = false; show('home'); }, fast: () => SPEED > 1,
+  rnd: () => { let q = ((Number(params.get('seed')) || Date.now()) >>> 0) || 1; return () => ((q = (q * 1664525 + 1013904223) >>> 0) / 4294967296); } });
 
 function layout() {
   const cs = getComputedStyle($('#probe'));
@@ -1559,24 +1545,31 @@ window.addEventListener('orientationchange', () => setTimeout(layout, 300));
 function startBattle(opts) {
   opts = opts === true ? { training: true } : opts || {};
   closeSheet(); sheetDismiss = null;
+  if (preview) preview.stop();   // die Kartenvorschau gibt den Zeichner frei
   unlock();
-  const seed = (Number(params.get('seed')) || Date.now()) >>> 0;
+  const seed = opts.daily ? U.dailyConfig(opts.daily).seed : (Number(params.get('seed')) || Date.now()) >>> 0;   // Tagesherausforderung: fester Keim
   let s = seed || 1;
   const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
   const mode = opts.mode || null, boss = opts.boss ?? null;
-  let decks = [profile.deck, P.opponentDeck(profile, rnd)], levels = [P.playerLevels(profile, Date.now()), P.opponentLevels(profile, profile.level)], rules = {}, aiLevel = profile.level;
+  let ms = null, decks = [profile.deck, P.opponentDeck(profile, rnd)], levels = [P.playerLevels(profile, Date.now()), P.opponentLevels(profile, profile.level)], rules = {}, aiLevel = profile.level;
   B.foe = P.opponentName(rnd); B.label = '';
   const foeTower = P.opponentTower(profile, rnd);
-  levels[1].towerType = foeTower;
+  levels[1].towerType = foeTower; levels[1].outer = Math.max(P.startLevel(foeTower), levels[1].tower);   // keine Turmkarte steht unter der Startstufe ihrer Seltenheit
   if (boss != null) {
     const set = P.bossSetup(profile, boss);
     decks[1] = set.deck; levels[1] = set.levels; rules = set.rules; aiLevel = 'schwer'; B.foe = P.BOSSES[boss].name; B.label = 'Bosskampf';
   } else if (mode) {
-    rules = P.modeRules(profile, mode); B.label = mode === 'dreifach' ? '3× Kraft' : P.MODES[mode].name;
     const even = () => [P.evenLevels(profile, profile.towerSel), P.evenLevels(profile, mode === 'spiegel' ? profile.towerSel : foeTower)];
-    if (mode === 'spiegel') { decks[1] = [...profile.deck]; levels = even(); }
-    if (mode === 'wahl') { decks = opts.decks; levels = even(); }
-    if (mode === 'ansturm') B.foe = 'Überleben';
+    ms = Modi.battle(profile, opts, today(), rnd);   // Regeln, Decks und Gegner des Modus (modi.js)
+    if (ms) {
+      rules = ms.rules || {}; B.label = ms.label;
+      if (ms.decks) decks = ms.decks;
+      if (ms.even) levels = even();
+      if (ms.levels) levels[1] = { ...ms.levels, towerType: foeTower, outer: Math.max(P.startLevel(foeTower), ms.levels.tower) };
+      if (ms.ai) aiLevel = ms.ai;
+      if (opts.ranked) B.foe = `${B.foe} · ${ms.label}`;
+    } else { rules = P.modeRules(profile, mode); B.label = P.MODES[mode] ? P.MODES[mode].name : ''; }
+    if (mode === 'ansturm') { B.foe = opts.daily ? 'Tagesherausforderung' : opts.danger ? `Überleben · Gefahr ${opts.danger}` : 'Überleben'; rules.waves = U.setup(rules.waves, { seed, danger: opts.danger || 0, daily: opts.daily || '' }); }
   }
   // Deck-Plätze gelten für beide Seiten: Helden und Runenformen nur auf ihren Plätzen. Das eigene Deck ist schon geordnet,
   // gewürfelte und gewählte Decks werden es hier. Bosse sind ausgenommen.
@@ -1585,8 +1578,8 @@ function startBattle(opts) {
     const forms = P.slotForms(decks[s], levels[s].forms || [], profile.arena);
     levels[s] = { ...levels[s], forms, runes: P.slotRunes(decks[s], levels[s].runes || [], profile.arena).filter(id => !forms.includes(id)) };
   };
-  slotted(0, mode === 'wahl');
-  if (boss == null) slotted(1, mode !== 'spiegel');
+  slotted(0, !!(ms && ms.order));
+  if (boss == null) slotted(1, !(ms && ms.decks && !ms.order));   // Spiegelkampf: beide Decks bleiben, wie sie sind
   for (const id of decks[0]) art(id); // Kartenbilder vor dem Kampf erzeugen
   const opp = levels[1];
   B.g = sim.createGame({ seed, decks, levels, rules });
@@ -1603,11 +1596,13 @@ function startBattle(opts) {
   show('battle');
   layout();
   updateHud(true);
+  survUi.start();
   // Erst laden, dann kämpfen: Die Uhr läuft los, wenn alle Figuren beider Decks auf der Grafikkarte liegen (sonst ruckelt jede bei ihrem ersten Auftritt).
   const g0 = B.g, go = () => {
     if (B.g !== g0 || !B.loading) return;
     B.loading = false; B.last = performance.now(); B.fps = null;
     banner(boss != null ? `Boss: ${B.foe}` : opts.training ? 'Übungskampf' : B.label || 'Kampf!');
+    if (mode === 'ansturm') { $('#toast').hidden = true; sfx('horn'); return; }   // Überleben beginnt mit der Wahl des Startsegens
     toast(boss != null ? P.BOSSES[boss].text : mode === 'ansturm' ? `Überlebe so viele Wellen wie möglich – Bestleistung: Welle ${profile.surv.best}` : `${B.foe} · Kartenstufe ${opp.lvl}`, boss != null ? 4500 : 2600);
     sfx('horn');
   };
@@ -1640,6 +1635,9 @@ function confetti() {
   overlay.prepend(box);
 }
 let bannerT = 0;
+// Die letzten zehn Sekunden (der Spielzeit und der Verlängerung): jede Sekunde springt als große Zahl in die Bildmitte, wie im Vorbild
+let countT = 0;
+function countdown(n) { const c = $('#count'); c.hidden = true; void c.offsetWidth; c.textContent = n; c.classList.toggle('last', n <= 3); c.hidden = false; clearTimeout(countT); countT = setTimeout(() => { c.hidden = true; }, 940); }
 function banner(text) { const b = $('#banner'); b.hidden = true; void b.offsetWidth; b.textContent = text; b.hidden = false; clearTimeout(bannerT); bannerT = setTimeout(() => { b.hidden = true; }, 2000); }
 let toastT = 0;
 // Hinweisstreifen: im Kampf der Streifen über der Kartenleiste, im Menü ein eigener über der Reiterleiste (der Streifen des Kampfs liegt im Kampfbildschirm und wäre dort unsichtbar)
@@ -1664,6 +1662,7 @@ function handleEvents() {
   const g = B.g;
   for (const ev of g.events) {
     renderer.onEvent(ev);
+    if (survUi.onEvent(ev)) continue;   // Überleben: Ansagen und Klänge des Laufs
     if (ev.t === 'deploy') sfx(ev.rune || ev.hero ? 'rune' : 'deploy');
     else if (ev.t === 'ability') sfx(ev.id, 'ability');
     else if (ev.t === 'burst' || ev.t === 'impact') sfx('heavy');
@@ -1689,10 +1688,10 @@ function handleEvents() {
     else if (ev.t === 'wave') { sfx('wake'); banner(ev.boss ? `Welle ${ev.n} · Anführer` : `Welle ${ev.n}`); if (B.g.endless) $('#foeName').textContent = `Welle ${ev.n} · Stufe ${ev.lvl}`; }
   }
   g.events.length = 0;
-  if (!B.flags.double && !g.kraftFixed && g.phase === 'main' && g.time >= g.duration - 60) { B.flags.double = true; banner('Doppelte Kraft!'); sfx('horn'); }
-  if (!B.flags.triple && g.phase === 'over' && g.time >= g.duration + g.overtime - 60) { B.flags.triple = true; banner('Dreifache Kraft!'); sfx('horn'); }
+  if (!B.flags.double && !g.kraftFixed && !g.kraftPlan && g.phase === 'main' && g.time >= g.duration - 60) { B.flags.double = true; banner('Doppelte Kraft!'); sfx('horn'); }
+  if (!B.flags.triple && !g.kraftPlan && g.phase === 'over' && g.time >= g.duration + g.overtime - 60) { B.flags.triple = true; banner('Dreifache Kraft!'); sfx('horn'); }
   const left = Math.ceil(sim.timeLeft(g));
-  if (left <= 10 && left > 0 && left !== B.flags.tick && !g.over && !g.endless) { B.flags.tick = left; sfx('tick'); }
+  if (left <= 10 && left > 0 && left !== B.flags.tick && !g.over && !g.endless) { B.flags.tick = left; sfx('tick'); countdown(left); }
 }
 
 const fpsBox = $('#fps');
@@ -1726,6 +1725,7 @@ function frame(now) {
   }
   renderer.draw(g, g.over || B.paused ? 1 : Math.min(1, B.acc / sim.DT), B, now);
   updateHud(false);
+  survUi.update(now);
   if (profile.set.fps) { fpsN++; if (now - fpsT >= 500) { fpsBox.textContent = `${Math.round(fpsN * 1000 / (now - fpsT))} Bilder/s`; fpsN = 0; fpsT = now; } }
   if (g.over && !B.endAt) { B.endAt = now + 1700; B.sel = null; B.ghost = null; }
   if (g.over && B.endAt && now >= B.endAt && !B.booked) finishBattle();
@@ -1738,7 +1738,7 @@ function updateHud(force) {
   const txt = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
   if (force || B.flags.time !== txt) { B.flags.time = txt; $('#time').textContent = txt; }
   const rate = Math.round(sim.kraftRate(g) / sim.KRAFT_RATE);
-  const ph = g.phase === 'over' ? `Verlängerung${rate > 2 ? ' · 3×' : ' · 2×'}` : g.waves && g.waves.n ? `Welle ${g.waves.n}` : rate > 1 && !g.kraftFixed ? '2× Kraft' : B.label || '';
+  const ph = g.phase === 'over' ? `Verlängerung${rate > 2 ? ' · 3×' : ' · 2×'}` : g.waves && g.waves.n ? `Welle ${g.waves.n}` : g.kraftPlan ? `${B.label} · ${rate}×` : rate > 1 && !g.kraftFixed ? '2× Kraft' : B.label || '';
   if (force || B.flags.ph !== ph) { B.flags.ph = ph; $('#phase').textContent = ph; $('#clock').classList.toggle('hot', g.phase === 'over' || left <= 10); }
   const cr = `${g.sides[1].crowns}:${S.crowns}`;
   if (force || B.flags.cr !== cr) { B.flags.cr = cr; $('#crownFoe').textContent = g.sides[1].crowns; $('#crownMe').textContent = S.crowns; }
@@ -1747,13 +1747,19 @@ function updateHud(force) {
   if (force || B.flags.k !== k) { B.flags.k = k; $('#kraftNum').textContent = k; $('#kraft').classList.toggle('full', k >= sim.MAX_KRAFT); $('#hand').classList.toggle('full', k >= sim.MAX_KRAFT); }
   const hand = $('#hand');
   for (let i = 0; i < 4; i++) {
-    const id = S.hand[i], R = S.runes.has(id) ? RUNES[id] : null;
+    const id = S.hand[i];
+    if (!id) {   // leerer Platz: die nächste Karte rückt nach, sobald die Nachzieh-Sperre abgelaufen ist
+      if (force || B.hand[i] !== '') { B.hand[i] = ''; const e = el('button', 'card gone', '<i></i>'); e.dataset.i = i; e.disabled = true; if (hand.children[i]) hand.replaceChild(e, hand.children[i]); else hand.append(e); if (B.sel === i) B.sel = null; }
+      hand.children[i].style.setProperty('--left', Math.max(0, Math.min(1, S.refillT / sim.nextCardWait(g))).toFixed(2));
+      continue;
+    }
+    const R = S.runes.has(id) ? RUNES[id] : null;
     const echo = CARDS[id].mirror, price = sim.cardCost(g, 0, id);
     const key = R ? `${id}|${Math.min(R.cycles, S.cycle[id] || 0)}` : echo ? `${id}|${S.last || ''}` : id;
     if (force || B.hand[i] !== key) {
       const fresh = !B.hand[i] || B.hand[i].split('|')[0] !== id;
       B.hand[i] = key;
-      const e = cardEl(id, { lvl: S.levels[id] || 1, rune: null, pips: R ? { n: Math.min(R.cycles, S.cycle[id] || 0), of: R.cycles } : null, cost: echo ? (Number.isFinite(price) ? price : '?') : null, ability: CARDS[id].hero ? CARDS[id].ability : S.forms.has(id) ? HERO_FORMS[id].ability : null });
+      const e = cardEl(id, { lvl: S.levels[id] || sim.STD_LEVEL, rune: null, pips: R ? { n: Math.min(R.cycles, S.cycle[id] || 0), of: R.cycles } : null, cost: echo ? (Number.isFinite(price) ? price : '?') : null, ability: CARDS[id].hero ? CARDS[id].ability : S.forms.has(id) ? HERO_FORMS[id].ability : null });
       if (S.forms.has(id)) e.classList.add('hero');
       if (echo && S.last) e.querySelector('.name').textContent = `↺ ${CARDS[S.last].name}`;
       e.dataset.i = i;
@@ -1764,7 +1770,7 @@ function updateHud(force) {
     e.classList.toggle('poor', price > S.kraft);
     e.classList.toggle('sel', B.sel === i);
   }
-  if (force || B.next !== S.next) { B.next = S.next; $('#nextCard').replaceChildren(cardEl(S.next, { tag: 'div', rune: null })); }
+  if (force || B.next !== S.next) { B.next = S.next; if (S.next) $('#nextCard').replaceChildren(cardEl(S.next, { tag: 'div', rune: null })); else $('#nextCard').replaceChildren(); }
   // Heldenfähigkeiten
   const abl = g.over ? [] : sim.abilities(g, 0), akey = abl.map(a => a.cardId).join();
   const box = $('#abilities');
@@ -1809,6 +1815,7 @@ $('#hand').addEventListener('pointerdown', e => {
   const c = e.target.closest('.card'); if (!c || B.g.over || B.paused) return;
   e.preventDefault(); unlock();
   const i = Number(c.dataset.i);
+  if (!B.g.sides[0].hand[i]) return;   // leerer Platz
   B.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false, was: B.sel === i };
   B.sel = i; B.ghost = null;
   sfx('click');
@@ -1881,8 +1888,11 @@ function finishBattle() {
   const timeout = !B.gaveUp && w !== 'draw' && g.sides[0].crowns === g.sides[1].crowns;
   const questsBefore = P.questsOpen(profile);
   const special = B.opts.mode || B.opts.boss != null;
-  const res = P.applyResult(profile, { winner: w, level: B.level, crowns: g.sides[0].crowns, foeCrowns: g.sides[1].crowns, foe: B.foe, when: Date.now(), training: B.training, mode: B.opts.mode, boss: B.opts.boss, wave: g.waves ? g.waves.n : undefined, ...B.count });
+  const res = P.applyResult(profile, { winner: w, level: B.level, crowns: g.sides[0].crowns, foeCrowns: g.sides[1].crowns, foe: B.foe, when: Date.now(), training: B.training, mode: B.opts.mode, dayMode: !!B.opts.mode && !B.opts.series && !B.opts.ranked && B.opts.mode === Modi.eventOfDay(today()), boss: B.opts.boss, wave: g.waves ? g.waves.n : undefined, ...B.count });
   B.gaveUp = false;
+  const survSum = U.summary(g), survBook = survSum ? U.bookRun(profile, survSum, Date.now(), today()) : null;   // Überleben: Punkte, Bestenliste, Gefahrenstufe, Tagesherausforderung
+  survUi.stop();
+  const modiRes = B.training ? null : modiUi.book(B.opts, w);   // Serie oder Rangliste: Stand fortschreiben
   save();
   sfx(w === 0 ? 'win' : w === 1 ? 'lose' : 'draw');
   const d = el('div');
@@ -1895,9 +1905,11 @@ function finishBattle() {
   if (timeout) d.append(el('p', 'center', 'Entschieden über den am stärksten beschädigten Turm.'));
   if (B.training) d.append(el('p', 'center', 'Übungskampf – Trophäen, Kronen und Truhen bleiben unberührt.'));
   else if (special) {
-    d.append(el('p', 'center', `${B.opts.boss != null ? `Bosskampf gegen ${B.foe}` : `Herausforderung „${P.MODES[B.opts.mode].name}“`} – ohne Trophäen.`));
+    d.append(el('p', 'center', `${B.opts.boss != null ? `Bosskampf gegen ${B.foe}` : `${B.opts.ranked ? 'Ranglistenkampf' : `Modus „${Modi.eventName(B.opts.series || B.opts.mode)}“`}`} – ohne Trophäen.`));
+    modiUi.result(d, modiRes);
     if (res.surv) { // Überleben: erreichte Welle, Bestleistung, neu erreichte Meilensteine
       d.append(el('p', 'center', `<b>Welle ${res.surv.wave}</b> erreicht${res.surv.record ? ' – neue Bestleistung!' : ` · Bestleistung: Welle ${res.surv.best}`}${res.surv.wave < P.SURV_GOAL ? `<br><small>Ab Welle ${P.SURV_GOAL} zählt der Lauf als Sieg.</small>` : ''}`));
+      if (survSum) survUi.result(d, survSum, survBook);
       if (res.surv.fresh.length) d.append(el('div', 'notice', `${res.surv.fresh.length === 1 ? 'Meilenstein' : 'Meilensteine'} erreicht: Welle ${res.surv.fresh.join(', ')}. Die Belohnung wartet unter „Modi“.`));
     }
     if (res.bossFirst) d.append(el('div', 'notice', `Boss besiegt! +${P.BOSS_REWARD.gems} Runensplitter, ${P.BOSS_REWARD.wild} Wanderscherben und eine große Truhe`));
@@ -1910,6 +1922,7 @@ function finishBattle() {
     requestAnimationFrame(tick);
   }
   if (res.arenaUp) d.append(el('div', 'notice', `Neue Arena: ${res.arenaUp}! +${res.gems} Runensplitter`));
+  if (res.tower) d.append(el('div', 'notice', `Hauptturm Stufe ${res.tower.lvl}! +${fmt(res.tower.cards)} Karten für den Wachturm, +${fmt(res.tower.gold)} Gold`));
   if (res.newCards.length) {
     const box = el('div', 'chest'); box.append(el('b', 't', 'Neue Karten freigeschaltet'));
     const loot = el('div', 'loot');
@@ -1943,7 +1956,7 @@ function finishBattle() {
   const row = el('div', 'btns');
   const menu = el('button', 'btn', 'Menü'), again = el('button', 'btn primary', 'Nochmal');
   menu.addEventListener('click', () => { sfx('click'); closeSheet(); B.running = false; show('home'); });
-  again.addEventListener('click', () => { sfx('click'); if (B.opts.mode === 'wahl') { closeSheet(); B.running = false; show('home'); startDraft(); } else startBattle(B.opts); });
+  again.addEventListener('click', () => { sfx('click'); if (B.opts.mode && B.opts.boss == null && !B.training) modiUi.again(B.opts); else startBattle(B.opts); });
   row.append(menu, again); d.append(row);
   sheetDismiss = null;
   openSheet(d, true);
@@ -1957,7 +1970,7 @@ const artQueue = [...profile.deck, ...Object.keys(CARDS)];
 (function pump() { if (screen !== 'battle') for (let i = 0; i < 5 && artQueue.length; i++) art(artQueue.shift()); if (artQueue.length) setTimeout(pump, 25); })();
 document.addEventListener('pointerdown', unlock, { once: true });
 show('home');
-window.__runenfurt = { B, sim, renderer, stage, P, save, get profile() { return profile; }, start: startBattle, show };
+window.__runenfurt = { B, sim, renderer, stage, P, save, get profile() { return profile; }, get preview() { return preview; }, U, survUi, Modi, modiUi, start: startBattle, show };
 
 // Offline-Betrieb: Service Worker anmelden; eine neue Version lädt die Seite neu, aber nie mitten im Kampf.
 if ('serviceWorker' in navigator && location.protocol !== 'file:' && !params.has('nosw')) {

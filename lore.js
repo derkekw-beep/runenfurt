@@ -1,7 +1,7 @@
 // Zu jeder Karte: eine kleine Geschichte aus der Welt von Runenfurt (STORY) und eine genaue Erklärung, was sie
 // im Kampf tut (explain). Die Erklärung wird aus den Kartenwerten erzeugt und stimmt deshalb immer mit dem Spiel überein.
 import { CARDS, UNITS, RUNES, RUNE_LEVEL, TOWER_SPELL_FACTOR, UNIT_NAMES } from './cards.js';
-import { cardMult, towerMult } from './sim.js';
+import { cardMult, towerMult, towerDmg } from './sim.js';
 
 export const STORY = {
   waldlaeufer: 'Zwei Geschwister aus dem Moosgrund, die seit Kindertagen um die Wette schießen. Wer zuerst trifft, muss abends nicht abwaschen.',
@@ -138,12 +138,12 @@ const F = v => (v === 1 ? '1 Feld' : `${d(v)} Feldern`); // „im Umkreis von 1 
 const TEMPO = v => (v <= 1.0 ? 'langsam' : v <= 1.4 ? 'mittelschnell' : v <= 2.0 ? 'schnell' : 'sehr schnell'); // 0,9 · 1,2 · 1,8 · 2,4 Felder je Sekunde
 
 // Was die Karte auf Stufe lvl genau tut – als Liste kurzer Sätze.
-export function explain(id, lvl = 1) {
+export function explain(id, lvl = 11) {   // ohne Angabe die Turnierstufe (sim.STD_LEVEL)
   const c = CARDS[id], out = [];
   if (c.type === 'tower') {
-    const u = UNITS[c.unit], m = towerMult(lvl);
-    out.push('Die Turmkarte bestimmt die Art deiner beiden Außentürme. Ihre Stufe gilt für beide; der Hauptturm in der Mitte hat stattdessen deine Spielerstufe.');
-    out.push(`Jeder Außenturm hat ${n(u.hp * m)} Leben und schießt alle ${d(u.atk)} s für ${n(u.dmg * m)} Schaden auf das nächste Ziel im Umkreis von ${d(u.range)} Feldern – am Boden und in der Luft.`);
+    const u = UNITS[c.unit], m = towerMult(lvl), md = towerDmg(lvl);
+    out.push('Die Turmkarte bestimmt die Art deiner beiden Außentürme. Ihre Stufe gilt für beide; der Hauptturm in der Mitte steigt stattdessen mit deinen Karten – sobald genug von ihnen eine Stufe erreicht haben.');
+    out.push(`Jeder Außenturm hat ${n(u.hp * m)} Leben und schießt alle ${d(u.atk)} s für ${n(u.dmg * md)} Schaden auf das nächste Ziel im Umkreis von ${d(u.range)} Feldern – am Boden und in der Luft.`);
     out.push('Wer noch auf der Brücke steht, ist außer Reichweite; erst ein Stück dahinter beginnt der Turm zu schießen.');
     if (u.ammo) out.push(`Er hält ${u.ammo.max} Klingen vorrätig und wirft sie in diesem Takt. Ohne Ziel kommt alle ${d(u.ammo.reload)} s eine Klinge nach; ist der Vorrat im Gefecht leer, wirft er nur noch alle ${d(u.ammo.reload + u.atk)} s.`);
     if (u.bless) out.push(`Segen: Etwa alle ${u.bless.every} Sekunden (im Gefecht und nach dem Verlust eines Turms langsamer, bis zu 38 s) steigt deine zäheste Truppe auf dem Feld um eine Stufe – 10 % mehr Leben und Schaden. Jede Truppe nur einmal; wer weniger als ein Drittel Leben hat, wird übergangen. Sind beide Außentürme gefallen, endet der Segen.`);

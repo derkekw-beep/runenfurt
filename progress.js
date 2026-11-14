@@ -7,7 +7,8 @@
 // Trophäen öffnen Arenen, Arenen schalten Karten frei, doppelte Karten + Gold heben die Kartenstufe.
 import * as C from './cards.js';
 import { HERO_FORMS, HERO_FORM_IDS } from './helden.js';
-import { CARDS, UNITS, RUNES, RUNE_LEVEL, CARD_IDS, TOWER_IDS, DEFAULT_TOWER, DEFAULT_DECK, GONE, MAX_HEROES, heroCount, sanitizeDeck } from './cards.js';
+import { CARDS, UNITS, RUNES, CARD_IDS, TOWER_IDS, DEFAULT_TOWER, DEFAULT_DECK, GONE, MAX_HEROES, heroCount, sanitizeDeck } from './cards.js';
+import { survLoad } from './ueberleben.js';   // Bestenliste, Gefahrenstufen und Tagesherausforderung des Überlebens liegen mit in profile.surv
 
 // ---- Seltenheit --------------------------------------------------------------------------------
 // Jede Karte hat eine Seltenheit (Zuordnung in cards.js). Seltenere Karten brauchen weniger Kopien je Stufe, liegen dafür
@@ -15,17 +16,28 @@ import { CARDS, UNITS, RUNES, RUNE_LEVEL, CARD_IDS, TOWER_IDS, DEFAULT_TOWER, DE
 export const RARITIES = ['gewoehnlich', 'selten', 'episch', 'legendaer', 'held'];
 export const RARITY_NAME = { gewoehnlich: 'Gewöhnlich', selten: 'Selten', episch: 'Episch', legendaer: 'Legendär', held: 'Held' };
 export const rarity = id => (C.RARITY && C.RARITY[id]) || (CARDS[id] && CARDS[id].hero ? 'held' : 'gewoehnlich');
-// Kopien für die Aufwertung von Stufe n auf n+1 (Index n-1) – die Reihen des Genres, jeweils ab der ersten Stufe der Seltenheit
-export const UP_COPIES_BY = {
-  gewoehnlich: [2, 4, 10, 20, 50, 100, 200, 400],
-  selten:      [1, 2, 4, 10, 20, 50, 100, 200],
-  episch:      [1, 2, 4, 10, 20, 30, 50, 70],
-  legendaer:   [1, 2, 4, 6, 9, 12, 14, 20],
-  held:        [1, 2, 4, 6, 9, 12, 14, 20],
+// ---- Kartenstufen wie im Vorbild (Stand November 2026; Tabellen und Quellen: recherche/vorbild/wirtschaft, Wiki „Cards“) ----
+// Stufen 1 bis 16. Eine Karte beginnt je nach Seltenheit auf Stufe 1, 3, 6, 9 oder 11.
+export const MAX_LEVEL = 16;
+export const START_LEVEL = { gewoehnlich: 1, selten: 3, episch: 6, legendaer: 9, held: 11 };
+export const startLevel = id => START_LEVEL[rarity(id)];
+const Z = n => Array(n).fill(0);
+// Kopien für die Aufwertung AUF Stufe n (Index n); 0 = die Stufe gibt es für diese Seltenheit nicht
+export const UP_CARDS = {
+  gewoehnlich: [0, 0, 2, 4, 10, 20, 50, 100, 200, 400, 800, 1000, 1500, 2500, 3500, 5500, 7500],
+  selten:      [...Z(4), 2, 4, 10, 20, 50, 100, 200, 300, 400, 550, 750, 1000, 1400],
+  episch:      [...Z(7), 2, 4, 10, 20, 30, 50, 70, 100, 130, 180],
+  legendaer:   [...Z(10), 2, 4, 6, 9, 12, 14, 20],
+  held:        [...Z(12), 1, 5, 8, 11, 15],
 };
+// Gold für die Aufwertung AUF Stufe n (Index n); die erste Aufwertung einer epischen und einer legendären Karte ist billiger
+export const UP_GOLD = [0, 0, 5, 20, 50, 150, 400, 1000, 2000, 4000, 8000, 15000, 25000, 40000, 60000, 90000, 120000];
+const FIRST_GOLD = { episch: 400, legendaer: 5000 };
+export const goldFor = (id, to) => { const r = rarity(id); return to === START_LEVEL[r] + 1 && FIRST_GOLD[r] ? FIRST_GOLD[r] : UP_GOLD[to] || 0; };
 export const COPY_VALUE = { gewoehnlich: 1, selten: 2, episch: 4, legendaer: 10, held: 10 };     // so viele gewöhnliche Kopien (und Joker) ist eine Kopie wert
 export const CHEST_WEIGHT = { gewoehnlich: 1, selten: 0.8, episch: 0.55, legendaer: 0.3, held: 0.3 }; // Gewicht beim Auswürfeln eines Stapels
-export const copiesFor = (id, lvl) => UP_COPIES_BY[rarity(id)][lvl - 1] || 0;
+export const copiesFor = (id, lvl) => UP_CARDS[rarity(id)][lvl + 1] || 0;   // Kopien für die Aufwertung von Stufe lvl auf lvl + 1
+export const runeLevel = id => startLevel(id) + 2;                             // auf dieser Stufe bringt die Karte zwei Runenscherben mit
 
 // ---- Runenformen verdienen -----------------------------------------------------------------------
 // Eine Runenform wird aus sechs Runenscherben ihrer Karte erweckt. Scherben liegen in größeren Truhen (für eine zufällige
@@ -34,7 +46,7 @@ export const RUNE_SHARDS = 6;
 export const SHARD_CHANCE = { sieg: 0.06, eisen: 0.2, riesen: 1, runen: 1, kronen: 0.25, holz: 0.1, frei: 0 }; // Chance je alter Truhe (Runentruhe: zwei Scherben)
 export const WILD_PRICE = 30;       // Runensplitter für eine Wanderscherbe im Laden (eine am Tag)
 export const WILD_CAP = 6;          // mehr Wanderscherben lassen sich nicht kaufen (geschenkte gehen darüber hinaus)
-export const RUNE_LEVEL_SHARDS = 2; // Scherben, wenn die Karte Stufe RUNE_LEVEL erreicht
+export const RUNE_LEVEL_SHARDS = 2; // Scherben, wenn die Karte ihre dritte Stufe erreicht (runeLevel)
 // Joker gibt es je Seltenheit: einer ersetzt eine fehlende Kopie einer Karte dieser Seltenheit. Ist der Vorrat schon voll,
 // wird ein neuer Joker zu einer Kopie einer zufälligen eigenen Karte dieser Seltenheit (oder zu Gold).
 export const JOKER_CAP = { gewoehnlich: 100, selten: 40, episch: 15, legendaer: 4, held: 2 }; // in Arena 1; wächst mit der Arena wie die Beute
@@ -59,12 +71,32 @@ export const ARENAS = [
   { name: 'Aschenfeld',     at: 4200, unlock: ['fasstraeger', 'trommelschlaeger', 'kegler', 'felssturz', 'wurzelkoenig', 'aschenschwinge', 'glutfalke', 'stelzenkessel', 'kraftkloss', 'stollenmeister'] },
   { name: 'Himmelsbrücke',  at: 4600, unlock: ['panzerbaer', 'basaltriese', 'brockenwerfer', 'windlaeufer', 'rankenreiterin', 'flussmoench'] },
 ];
-export const MAX_LEVEL = 9;
-// Aufwertung von Stufe n auf n+1: Index n-1
-export const UP_COPIES = [2, 4, 10, 20, 50, 100, 200, 400];
-export const UP_GOLD = [5, 20, 50, 150, 400, 1000, 2000, 4000];
-export const UP_XP = [4, 5, 6, 10, 25, 50, 100, 200];
-export const LEVEL_XP = [20, 50, 100, 200, 400, 800, 1600, 3200]; // Erfahrung für Spielerstufe 2, 3, …
+// Turmstufe (Hauptturm) wie im Vorbild seit Mai 2026: keine Erfahrung mehr, sondern „so viele Karten auf mindestens dieser Stufe“
+// (offizielle Tabelle „New King Tower Upgrade Requirements“). Index = Turmstufe: [Karten, Mindeststufe]. Turmkarten zählen nicht mit;
+// die Turmstufe sinkt nie. Steigt sie, gibt es Karten und Gold für eine volle Aufwertung des Wachturms dazu.
+export const KT_NEED = [null, null, [9, 1], [9, 2], [10, 3], [10, 4], [10, 5], [10, 6], [10, 7], [10, 8], [10, 9], [10, 10], [11, 11], [11, 12], [12, 13], [13, 14], [14, 15]];
+const atLeast = (p, lvl) => Object.entries(p.cards).filter(([id, c]) => CARDS[id].type !== 'tower' && c.lvl >= lvl).length;
+export function towerCalc(p) { let kt = 1; for (let n = 2; n <= MAX_LEVEL; n++) { if (atLeast(p, KT_NEED[n][1]) >= KT_NEED[n][0]) kt = n; else break; } return kt; }
+export const towerLevel = p => Math.max(p.kt || 1, towerCalc(p));
+export function towerInfo(p) {
+  const lvl = towerLevel(p);
+  if (lvl >= MAX_LEVEL) return { lvl, max: true, have: 0, need: 0, at: 0 };
+  const [need, at] = KT_NEED[lvl + 1];
+  return { lvl, max: false, need, at, have: Math.min(need, atLeast(p, at)) };
+}
+// Turmstufe nachziehen und gutschreiben, was das Vorbild dazu schenkt. Gibt null zurück oder { lvl, cards, gold }.
+export function syncTower(p) {
+  const want = towerCalc(p);
+  let got = null;
+  while ((p.kt || 1) < want) {
+    p.kt = (p.kt || 1) + 1;
+    const n = UP_CARDS.gewoehnlich[p.kt] || 0, gold = UP_GOLD[p.kt] || 0;
+    if (p.cards[DEFAULT_TOWER]) p.cards[DEFAULT_TOWER].n += n;
+    p.gold += gold;
+    got = got || { lvl: 0, cards: 0, gold: 0 }; got.lvl = p.kt; got.cards += n; got.gold += gold;
+  }
+  return got;
+}
 export const TROPHY = { leicht: [24, -16], mittel: [30, -22], schwer: [36, -28] };
 export const DECK_SLOTS = 3;
 const MIN = 60000;
@@ -111,13 +143,13 @@ const newSeason = (id = '') => ({ id, crowns: 0, free: [], rune: [], open: false
 
 export function newProfile() {
   const cards = {};
-  for (const id of ARENAS[0].unlock) cards[id] = { lvl: 1, n: 0 };
+  for (const id of ARENAS[0].unlock) cards[id] = { lvl: startLevel(id), n: 0 };
   const decks = Array.from({ length: DECK_SLOTS }, () => [...DEFAULT_DECK]);
   return {
     v: 2, trophies: 0, best: 0, arena: 0, gold: 0, gems: 0, xp: 0, cards, decks, slot: 0, deck: decks[0], level: 'leicht', sound: true,
     wins: 0, losses: 0, draws: 0, seenHelp: false, name: 'Runenwächter', set: newSet(), stats: newStats(), log: [],
     runes: {}, wild: 0, road: [], day: '', quests: [], shop: { bought: [], gift: false }, wish: '', bosses: [], modeDay: '', towerSel: DEFAULT_TOWER,
-    jk: newJokers(), potions: 0, boosts: {}, stash: [], dayWins: 0, modeWins: 0, season: newSeason(), coll: [], mast: {}, note: null, gone: null, slots: 1, heroCoins: 0, forms: {}, surv: { best: 0, got: [], runs: 0 }, sim: { spent: 0, n: 0, once: [] }, names: Array.from({ length: DECK_SLOTS }, (_, i) => `Deck ${i + 1}`),
+    jk: newJokers(), potions: 0, boosts: {}, stash: [], dayWins: 0, modeWins: 0, season: newSeason(), coll: [], mast: {}, note: null, gone: null, eco: 2, kt: 2, slots: 1, heroCoins: 0, forms: {}, surv: { best: 0, got: [], runs: 0 }, sim: { spent: 0, n: 0, once: [] }, names: Array.from({ length: DECK_SLOTS }, (_, i) => `Deck ${i + 1}`),
   };
 }
 
@@ -142,7 +174,9 @@ export function loadProfile(raw) {
   let d = null, refundShards = 0;
   try { d = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { d = null; }
   if (!d || typeof d !== 'object') return p;
-  p.trophies = num(d.trophies, 0); p.best = Math.max(num(d.best, 0), p.trophies); p.gold = num(d.gold, 0); p.gems = num(d.gems, 0); p.xp = num(d.xp, 0);
+  p.trophies = num(d.trophies, 0); p.best = Math.max(num(d.best, 0), p.trophies); p.gold = num(d.gold, 0); p.gems = num(d.gems, 0);
+  const old = num(d.eco, 1) < 2;   // Spielstand von vor der Umstellung (Stufen 1–9 für alle Seltenheiten, Erfahrung statt Turmstufe)
+  const oldLvl = xp => { let l = 1, r = xp; for (const n of [20, 50, 100, 200, 400, 800, 1600, 3200]) { if (r < n) break; r -= n; l++; } return l; };
   p.wins = num(d.wins, 0); p.losses = num(d.losses, 0); p.draws = num(d.draws, 0);
   p.arena = Math.min(ARENAS.length - 1, Math.max(num(d.arena, 0), arenaIndex(p.best)));
   if (TROPHY[d.level]) p.level = d.level;
@@ -150,15 +184,17 @@ export function loadProfile(raw) {
   if (typeof d.name === 'string' && d.name.trim()) p.name = d.name.trim().slice(0, 16);
   for (const id of unlockedIds(p)) {
     const c = d.cards && d.cards[id];
-    p.cards[id] = { lvl: Math.min(MAX_LEVEL, Math.max(1, num(c && c.lvl, 1))), n: num(c && c.n, 0) };
+    const s0 = startLevel(id), raw = c ? num(c.lvl, old ? 1 : s0) : (old ? 1 : s0);
+    // alt: jede Aufwertung bleibt eine Aufwertung – die Stufe verschiebt sich um die Startstufe der Seltenheit (selten +2, episch +5, legendär +8, Held +10)
+    p.cards[id] = { lvl: Math.min(MAX_LEVEL, Math.max(s0, old ? raw + s0 - 1 : raw)), n: num(c && c.n, 0) };
   }
   // Karten ohne Vorbild gibt es nicht mehr (GONE): Das Gold ihrer Aufwertungen kommt zurück, dazu je übrige Karte ein kleiner Betrag.
   // Geschieht genau einmal – danach stehen sie nicht mehr im Spielstand. p.gone merkt es für den Hinweis im Menü.
   if (d.gone && typeof d.gone === 'object' && Array.isArray(d.gone.ids)) p.gone = { ids: d.gone.ids.filter(id => GONE[id]), gold: num(d.gone.gold, 0), shards: num(d.gone.shards, 0) };
   for (const id of Object.keys(GONE)) {
     const c = d.cards && d.cards[id]; if (!c || typeof c !== 'object') continue;
-    const lvl = Math.min(MAX_LEVEL, Math.max(1, num(c.lvl, 1))), per = { gewoehnlich: 2, selten: 10, episch: 60, legendaer: 400, held: 400 }[GONE[id]];
-    let gold = num(c.n, 0) * per; for (let k = 1; k < lvl; k++) gold += UP_GOLD[k - 1];
+    const lvl = Math.min(9, Math.max(1, num(c.lvl, 1))), per = { gewoehnlich: 2, selten: 10, episch: 60, legendaer: 400, held: 400 }[GONE[id]];
+    let gold = num(c.n, 0) * per; for (let k = 1; k < Math.min(lvl, 9); k++) gold += UP_GOLD[k + 1];   // die alten Kosten waren die der Stufen 2 bis 9
     const shards = d.runes && typeof d.runes === 'object' ? Math.min(RUNE_SHARDS, num(d.runes[id], 0)) : 0;
     if (!p.gone) p.gone = { ids: [], gold: 0, shards: 0 };
     p.gone.ids.push(id); p.gone.gold += gold; p.gone.shards += shards;
@@ -186,7 +222,9 @@ export function loadProfile(raw) {
   else if (num(d.jokers, 0)) p.jk = splitJokers(p, num(d.jokers, 0));
   // Runenformen: alte Spielstände kennen keine Scherben – wer die Form über die Kartenstufe schon hatte, behält sie
   if (d.runes && typeof d.runes === 'object') { for (const id of Object.keys(RUNES)) if (p.cards[id] && num(d.runes[id], 0)) p.runes[id] = Math.min(RUNE_SHARDS, num(d.runes[id], 0)); }
-  else for (const id of Object.keys(RUNES)) if (p.cards[id] && p.cards[id].lvl >= RUNE_LEVEL) p.runes[id] = RUNE_SHARDS;
+  else for (const id of Object.keys(RUNES)) if (p.cards[id] && p.cards[id].lvl >= runeLevel(id)) p.runes[id] = RUNE_SHARDS;
+  p.kt = Math.max(1, Math.min(MAX_LEVEL, Math.max(num(d.kt, 1), old ? oldLvl(num(d.xp, 0)) : 1, towerCalc(p))));   // sinkt nie; ein alter Spielstand behält mindestens seine Spielerstufe
+  p.eco = 2;
   p.wild = num(d.wild, 0) + refundShards;   // Scherben einer entfernten Karte werden freie Scherben
   // Truhenlager: Truhen, die ein alter Spielstand noch auf Truhenplätzen liegen hatte, lassen sich sofort öffnen. Dazu
   // als Ersatz für die freie Truhe zwei Stück und für eine volle Kronentruhe eine; angefangene Kronen zählen für den Runenpfad.
@@ -216,7 +254,8 @@ export function loadProfile(raw) {
   if (Array.isArray(d.road)) p.road = [...new Set(d.road.filter(a => ROAD.some(r => r.at === a)))];
   if (Array.isArray(d.names)) p.names = p.names.map((n, i) => (typeof d.names[i] === 'string' && d.names[i].trim() ? d.names[i].trim().slice(0, 14) : n));
   if (d.sim && typeof d.sim === 'object') p.sim = { spent: Math.max(0, Math.round(num(d.sim.spent, 0))), n: num(d.sim.n, 0), once: Array.isArray(d.sim.once) ? d.sim.once.filter(x => STORE.some(o => o.id === x && o.once)) : [] };
-  if (d.surv && typeof d.surv === 'object') p.surv = { best: Math.max(0, Math.floor(num(d.surv.best, 0))), got: Array.isArray(d.surv.got) ? [...new Set(d.surv.got.filter(a => SURV.some(m => m.at === a)))] : [], runs: num(d.surv.runs, 0) };
+  if (d.modi && typeof d.modi === 'object') p.modi = JSON.parse(JSON.stringify(d.modi));   // Serien und Rangliste (modi.js prüft den Inhalt beim ersten Zugriff)
+  if (d.surv && typeof d.surv === 'object') p.surv = { ...(d.surv.top || d.surv.daily ? survLoad(d.surv) : {}), best: Math.max(0, Math.floor(num(d.surv.best, 0))), got: Array.isArray(d.surv.got) ? [...new Set(d.surv.got.filter(a => SURV.some(m => m.at === a)))] : [], runs: num(d.surv.runs, 0) };
   if (typeof d.day === 'string') p.day = d.day.slice(0, 10);
   if (Array.isArray(d.quests)) p.quests = d.quests.filter(q => q && QUESTS[q.id]).slice(0, 3).map(q => ({ id: q.id, need: Math.max(1, num(q.need, 1)), have: num(q.have, 0), claimed: !!q.claimed }));
   if (d.shop && typeof d.shop === 'object') p.shop = { bought: Array.isArray(d.shop.bought) ? d.shop.bought.filter(i => Number.isInteger(i) && i >= 0 && i < 8) : [], gift: !!d.shop.gift, ...(d.shop.wild ? { wild: true } : {}) };
@@ -235,30 +274,23 @@ export const arenaIndex = trophies => { let i = 0; while (i + 1 < ARENAS.length 
 export const unlockedIds = p => ARENAS.slice(0, p.arena + 1).flatMap(a => a.unlock);
 export const unlockArena = id => ARENAS.findIndex(a => a.unlock.includes(id));
 
-export function playerLevel(xp) {
-  let lvl = 1, rest = xp;
-  while (lvl - 1 < LEVEL_XP.length && rest >= LEVEL_XP[lvl - 1]) { rest -= LEVEL_XP[lvl - 1]; lvl++; }
-  return { lvl, xp: rest, need: LEVEL_XP[lvl - 1] || 0 };
-}
-
 export function upgradeInfo(p, id) {
   const c = p.cards[id];
   if (!c) return null;
   if (c.lvl >= MAX_LEVEL) return { max: true, can: false, copies: 0, gold: 0 };
-  const copies = copiesFor(id, c.lvl), gold = UP_GOLD[c.lvl - 1];
+  const copies = copiesFor(id, c.lvl), gold = goldFor(id, c.lvl + 1);
   return { max: false, copies, gold, can: c.n >= copies && p.gold >= gold };
 }
 
 export function upgrade(p, id) {
   const info = upgradeInfo(p, id);
   if (!info || !info.can) return false;
-  const c = p.cards[id], before = playerLevel(p.xp).lvl;
-  c.n -= info.copies; p.gold -= info.gold; p.xp += UP_XP[c.lvl - 1]; c.lvl++;
+  const c = p.cards[id];
+  c.n -= info.copies; p.gold -= info.gold; c.lvl++;
   questProgress(p, 'aufwerten', 1);
-  const levelUp = playerLevel(p.xp).lvl > before;
-  if (levelUp) p.gems += 5;
-  const shards = c.lvl === RUNE_LEVEL && RUNES[id] ? addShards(p, id, RUNE_LEVEL_SHARDS) : 0; // die Karte reift: zwei Runenscherben
-  return shards ? { lvl: c.lvl, levelUp, shards } : { lvl: c.lvl, levelUp };
+  const tower = syncTower(p), levelUp = !!tower;   // die Turmstufe hängt an den Kartenstufen
+  const shards = c.lvl === runeLevel(id) && RUNES[id] ? addShards(p, id, RUNE_LEVEL_SHARDS) : 0; // die Karte reift: zwei Runenscherben
+  return { lvl: c.lvl, levelUp, ...(tower ? { tower } : {}), ...(shards ? { shards } : {}) };
 }
 
 // Joker ersetzen fehlende Kopien beim Aufwerten – bei jeder Karte ihrer Seltenheit, einer je Kopie.
@@ -378,7 +410,7 @@ export function rollShards(p, n, rnd) {
 
 // Stärkungstrank: hebt eine Karte (keine Turmkarte) für drei Stunden auf die Stufe des Hauptturms. now = Uhrzeit in Millisekunden.
 export const boosted = (p, id, now) => !!(now > 0 && p.boosts[id] > now && p.boosts[id] - now <= POTION_HOURS * 60 * MIN);
-export const boostLevel = (p, id, now) => (p.cards[id] ? (boosted(p, id, now) ? Math.max(p.cards[id].lvl, Math.min(MAX_LEVEL, playerLevel(p.xp).lvl)) : p.cards[id].lvl) : 0);
+export const boostLevel = (p, id, now) => (p.cards[id] ? (boosted(p, id, now) ? Math.max(p.cards[id].lvl, Math.min(MAX_LEVEL, towerLevel(p))) : p.cards[id].lvl) : 0);
 export function usePotion(p, id, now) {
   if (p.potions < 1 || !p.cards[id] || CARDS[id].type === 'tower' || !(now > 0) || boosted(p, id, now)) return false;
   for (const k of Object.keys(p.boosts)) if (!boosted(p, k, now)) delete p.boosts[k]; // abgelaufene aufräumen
@@ -391,20 +423,24 @@ export function addPotions(p, n) {
   return gold ? (add ? { potions: add, gold } : { gold }) : { potions: add };
 }
 
-// Stufen für createGame: eigene Karten (mit Stärkungstrank, wenn die Uhrzeit mitkommt), Hauptturm (= Spielerstufe),
+// Stufen für createGame: eigene Karten (mit Stärkungstrank, wenn die Uhrzeit mitkommt), Hauptturm (Turmstufe aus den Kartenstufen),
 // Art und Stufe der Außentürme, Runenformen
 export const playerLevels = (p, now = 0) => ({
   cards: Object.fromEntries(Object.entries(p.cards).map(([id, c]) => [id, now ? boostLevel(p, id, now) : c.lvl])),
-  tower: playerLevel(p.xp).lvl, towerType: p.towerSel, outer: p.cards[p.towerSel].lvl,
+  tower: towerLevel(p), towerType: p.towerSel, outer: p.cards[p.towerSel].lvl,
   runes: deckRunes(p), // nur die Karten auf dem Runenplatz und dem freien Platz
   forms: deckForms(p), // Heldenformen: nur auf dem Heldenplatz und dem freien Platz
 });
 
-// Der Computergegner wächst mit der Arena, auf Leicht eine Stufe darunter.
+// Der Computergegner wächst mit der Arena, auf Leicht eine Stufe darunter. Runenformen spielt er ab der vierten Arena (auf Leicht ab der
+// sechsten), Heldenformen ab der sechsten (auf Leicht ab der siebten) – so wie vor der Umstellung auf 16 Stufen.
+export const foeRunes = (arena, level) => arena >= (level === 'leicht' ? 5 : 3);
+export const foeForms = (arena, level) => arena >= (level === 'leicht' ? 6 : 5);
 export function opponentLevels(p, level) {
-  const base = 1 + Math.round((p.arena * (MAX_LEVEL - 1)) / (ARENAS.length - 1));
+  const base = 1 + Math.round((p.arena * 12) / (ARENAS.length - 1));   // Arena 1: Stufe 1 … letzte Arena: Stufe 13
   const lvl = Math.max(1, Math.min(MAX_LEVEL, base - (level === 'leicht' ? 1 : 0)));
-  return { cards: Object.fromEntries(CARD_IDS.map(id => [id, lvl])), tower: lvl, lvl, runes: lvl >= RUNE_LEVEL ? Object.keys(RUNES) : [], forms: lvl >= RUNE_LEVEL + 1 ? [...HERO_FORM_IDS] : [] };
+  // keine Karte steht unter der Startstufe ihrer Seltenheit
+  return { cards: Object.fromEntries(CARD_IDS.map(id => [id, Math.max(startLevel(id), lvl)])), tower: lvl, lvl, runes: foeRunes(p.arena, level) ? Object.keys(RUNES) : [], forms: foeForms(p.arena, level) ? [...HERO_FORM_IDS] : [] };
 }
 
 // Turmart wählen (nur freigeschaltete Turmkarten)
@@ -435,9 +471,9 @@ export const opponentName = rnd => FOES[Math.floor(rnd() * FOES.length)];
 // Truhe: Gold, Kartenstapel aus den freigeschalteten Karten und ein paar Joker. size streckt den Inhalt
 // (1 = Siegestruhe). Die Wunschkarte steckt in jeder Truhe und bekommt rund 40 % der Karten.
 export function rollChest(p, crowns, rnd, size = 1, { cardF = 1, goldF = 1, stacks: nStacks = 0 } = {}) {
-  const gold = Math.round((30 + p.arena * 15 + crowns * 5 + Math.floor(rnd() * 11)) * size * goldF);
+  const gold = Math.round((30 + crowns * 5 + Math.floor(rnd() * 11)) * arenaF(p.arena) * size * goldF);
   const pool = unlockedIds(p).filter(id => p.cards[id] && p.cards[id].lvl < MAX_LEVEL);
-  let total = Math.round((8 + p.arena * 3) * size * cardF);
+  let total = Math.round(8 * arenaF(p.arena) * size * cardF);
   const jokers = Math.max(1, Math.round(total * 0.12));
   const stacks = {};
   const wish = p.wish && pool.includes(p.wish) ? p.wish : '';
@@ -515,11 +551,36 @@ export const LUCKY_LOOT = {
   4: [['c:gewoehnlich', 16.5], ['c:selten', 15.3], ['c:episch', 15.4], ['c:legendaer', 9.1], ['c:held', 2.7], ['j:gewoehnlich', 8], ['j:selten', 7.5], ['j:episch', 7], ['j:legendaer', 6.5], ['j:held', 6.5], ['wild', 5.5]],
   5: [['c:gewoehnlich', 16], ['c:selten', 14.9], ['c:episch', 15], ['c:legendaer', 8.9], ['c:held', 2.7], ['j:gewoehnlich', 9], ['j:selten', 8], ['j:episch', 6.5], ['j:legendaer', 5.5], ['j:held', 4], ['rune', 9.5]],
 };
-export const LUCKY_UNITS = [0, 6, 13, 28, 60, 120];  // Wert eines Kartenstapels in gewöhnlichen Kopien (Arena 1)
-export const LUCKY_GOLD = [0, 80, 170, 400, 0, 0];   // Gold (Arena 1)
+// Mengen je Truhenstufe 1–16 (Vorbild: „Magic Lucky Chest“, Wiki-Vorlagen MLC1 bis MLC5). c = Karten, j = Joker, wild = Wanderscherben,
+// rune = Scherben einer ganzen Runenform. 0 = gibt es auf dieser Truhenstufe nicht.
+const row = s => s.split(' ').map(Number);
+export const LUCKY_AMOUNT = {
+  1: { gold: row('50 75 100 125 150 200 250 325 400 500 600 700 800 900 1000 1100'),
+       c: { gewoehnlich: row('2 2 3 4 5 6 8 10 13 16 19 22 25 28 31 34'), selten: row('1 1 1 1 1 1 2 2 3 3 4 4 5 6 6 7') } },
+  2: { gold: row('200 300 400 500 600 800 1000 1300 1600 2000 2400 2800 3200 3600 4000 4400'),
+       c: { gewoehnlich: row('6 9 12 16 19 25 31 40 50 62 75 88 100 112 125 138'), selten: row('2 2 2 3 4 5 6 8 10 12 15 18 20 23 25 28'), episch: row('0 0 0 0 0 1 1 1 1 2 2 2 3 3 3 3') } },
+  3: { gold: row('800 1200 1600 2000 2400 3200 4000 5200 6400 8000 9600 11200 12800 14400 16000 17600'),
+       c: { gewoehnlich: row('25 38 50 63 75 100 125 163 200 250 300 350 400 450 500 550'), selten: row('5 8 10 13 15 20 25 33 40 50 60 70 80 90 100 110'), episch: row('0 0 0 0 0 2 3 4 5 6 8 9 10 11 13 14'),
+            legendaer: row('0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 2'), held: row('0 0 0 0 0 0 0 0 0 0 0 1 1 1 1 1') } },
+  4: { j: { gewoehnlich: row('0 50 67 83 100 135 165 215 265 335 400 465 535 600 665 735'), selten: row('0 10 13 17 20 27 33 43 53 67 80 93 107 120 133 147'), episch: row('0 0 0 0 0 3 4 5 7 8 10 12 13 15 17 18'),
+            legendaer: row('0 0 0 0 0 0 0 0 0 1 1 1 1 2 2 2'), held: row('0 0 0 0 0 0 0 0 0 0 0 1 1 1 1 1') },
+       c: { gewoehnlich: row('100 150 200 250 300 400 500 650 800 1000 1200 1400 1600 1800 2000 2200'), selten: row('20 30 40 50 60 80 100 130 160 200 240 280 320 360 400 440'), episch: row('0 0 0 0 0 10 13 16 20 25 30 35 40 45 50 55'),
+            legendaer: row('0 0 0 0 0 0 0 0 0 3 3 4 4 5 5 6'), held: row('0 0 0 0 0 0 0 0 0 0 0 3 3 4 4 4') },
+       wild: row('0 0 2 2 2 2 2 2 2 2 2 2 2 2 2 2') },
+  5: { j: { gewoehnlich: row('0 150 200 250 300 400 500 650 800 1000 1200 1500 2500 3500 5500 7500'), selten: row('0 30 40 50 60 80 100 130 160 200 300 400 550 750 1000 1400'), episch: row('0 0 0 0 0 10 13 16 20 25 30 50 70 100 130 180'),
+            legendaer: row('0 0 0 0 0 0 0 0 0 3 4 6 9 12 14 20'), held: row('0 0 0 0 0 0 0 0 0 0 0 3 5 8 11 15') },
+       c: { gewoehnlich: row('300 450 600 750 900 1200 1500 1950 2400 3000 3600 4200 4800 5400 6000 7500'), selten: row('60 90 120 150 180 240 300 390 480 600 720 840 960 1080 1200 1400'), episch: row('0 0 0 0 0 30 38 48 60 75 90 105 120 135 150 180'),
+            legendaer: row('0 0 0 0 0 0 0 0 0 8 10 11 13 14 16 20'), held: row('0 0 0 0 0 0 0 0 0 0 0 8 10 11 12 15') },
+       rune: row('0 0 6 6 6 6 6 6 6 6 6 6 6 6 6 6') },
+};
 export const WISH_SHARE = 0.4;                        // so oft geht ein Kartenstapel an die Wunschkarte
 const RAR_F = { gewoehnlich: 1.4, selten: 1.2, episch: 1.1, legendaer: 1.2, held: 1.2 }; // Gewicht je Seltenheit: gleicht aus, dass gewöhnliche Karten die meisten Kopien brauchen
-export const arenaF = arena => 1 + 0.35 * arena;      // Truhen und Prämien wachsen mit der Arena
+// Truhen und Prämien wachsen mit der Arena wie im Vorbild: dort hat die Truhe 16 Stufen mit 100 % bis 2 200 % Beute.
+// Unsere 14 Arenen liegen auf den Truhenstufen 1–12, 14 und 16.
+export const CHEST_LEVEL = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16];
+const LOOT_PCT = [0, 100, 150, 200, 250, 300, 400, 500, 650, 800, 1000, 1200, 1400, 1600, 1800, 2000, 2200];
+export const chestLevel = arena => CHEST_LEVEL[Math.max(0, Math.min(CHEST_LEVEL.length - 1, arena | 0))];
+export const arenaF = arena => LOOT_PCT[chestLevel(arena)] / 100;
 const stackOf = (units, rar) => Math.max(1, Math.round((units * RAR_F[rar]) / COPY_VALUE[rar]));
 const poolOf = (p, rar) => Object.keys(p.cards).filter(id => rarity(id) === rar && p.cards[id].lvl < MAX_LEVEL);
 const draw = (table, rnd) => { const sum = table.reduce((s, e) => s + e[1], 0); let x = rnd() * sum; for (const e of table) { x -= e[1]; if (x < 0) return e[0]; } return table[table.length - 1][0]; };
@@ -529,6 +590,15 @@ function cardStack(p, rar, units, rnd) {
   let id = wish && rnd() < WISH_SHARE ? wish : '';
   if (!id) { const pool = poolOf(p, rar); if (!pool.length) return null; id = pool[Math.floor(rnd() * pool.length)]; }
   const n = stackOf(units, rarity(id));
+  p.cards[id].n += n;
+  return { id, n };
+}
+// Wie cardStack, aber mit fester Stückzahl dieser Seltenheit (Schicksalstruhe); geht der Stapel an die Wunschkarte einer anderen Seltenheit, wird nach Wert umgerechnet
+function cardCount(p, rar, count, rnd) {
+  const wish = p.wish && p.cards[p.wish] && p.cards[p.wish].lvl < MAX_LEVEL ? p.wish : '';
+  let id = wish && rnd() < WISH_SHARE ? wish : '';
+  if (!id) { const pool = poolOf(p, rar); if (!pool.length) return null; id = pool[Math.floor(rnd() * pool.length)]; }
+  const n = rarity(id) === rar ? count : Math.max(1, Math.round((count * COPY_VALUE[rar]) / COPY_VALUE[rarity(id)]));
   p.cards[id].n += n;
   return { id, n };
 }
@@ -555,15 +625,18 @@ function focusShards(p, n, rnd) {
 // Schicksalstruhe öffnen und gutschreiben. start = Funken zu Beginn. Gibt { box, start, stars, path, … Beute } zurück.
 export function luckyOpen(p, start = 1, rnd = Math.random, arena = p.arena) {
   start = Math.max(1, Math.min(5, start | 0));
-  const { stars, path } = luckyStars(start, rnd), units = LUCKY_UNITS[stars] * arenaF(arena);
-  const ok = e => { const [t, r] = e[0].split(':'); return t === 'c' || t === 'j' ? poolOf(p, r).length > 0 : true; }; // nur, was der Spieler schon gebrauchen kann
-  const [t, r] = draw(LUCKY_LOOT[stars].filter(ok), rnd).split(':');
+  const { stars, path } = luckyStars(start, rnd), L = chestLevel(arena) - 1, A = LUCKY_AMOUNT[stars];
+  const amount = (t, r) => (t === 'gold' ? A.gold && A.gold[L] : t === 'c' ? A.c && A.c[r] && A.c[r][L] : t === 'j' ? A.j && A.j[r] && A.j[r][L] : t === 'wild' ? A.wild && A.wild[L] : A.rune && A.rune[L]) || 0;
+  // nur, was es auf dieser Truhenstufe gibt und was der Spieler schon gebrauchen kann
+  const ok = e => { const [t, r] = e[0].split(':'); return amount(t, r) > 0 && (t === 'c' || t === 'j' ? poolOf(p, r).length > 0 : true); };
+  const table = LUCKY_LOOT[stars].filter(ok);
+  const [t, r] = (table.length ? draw(table, rnd) : stars <= 3 ? 'gold' : 'c:gewoehnlich').split(':');
   const loot = { box: 'los', start, stars, path, cards: [] };
-  if (t === 'gold') { loot.gold = Math.round((LUCKY_GOLD[stars] * arenaF(arena)) / 5) * 5; p.gold += loot.gold; }
-  else if (t === 'c') { const s = cardStack(p, r, units, rnd); if (s) loot.cards.push(s); }
-  else if (t === 'j') mergeLoot(loot, addJokers(p, r, stackOf(units * 0.8, r), rnd));
-  else if (t === 'wild') { p.wild++; loot.wild = 1; }
-  else { const sh = focusShards(p, RUNE_SHARDS, rnd); if (sh.shards.length) loot.shards = sh.shards; if (sh.wild) loot.wild = sh.wild; } // eine ganze Runenform
+  if (t === 'gold') { loot.gold = amount('gold'); p.gold += loot.gold; }
+  else if (t === 'c') { const s = cardCount(p, r, amount('c', r) || amount('c', 'gewoehnlich'), rnd); if (s) loot.cards.push(s); }
+  else if (t === 'j') mergeLoot(loot, addJokers(p, r, amount('j', r), rnd));
+  else if (t === 'wild') { const n = amount('wild'); p.wild += n; loot.wild = n; }
+  else { const sh = focusShards(p, amount('rune') || RUNE_SHARDS, rnd); if (sh.shards.length) loot.shards = sh.shards; if (sh.wild) loot.wild = sh.wild; } // eine ganze Runenform
   return loot;
 }
 // Runenkiste: beginnt mit drei Funken, enthält nur Runenscherben (1 / 2 / 6)
@@ -576,14 +649,14 @@ export function runeBoxOpen(p, rnd = Math.random) {
   if (sh.wild) loot.wild = sh.wild;
   return loot;
 }
-export const crateGold = (arena, big) => Math.round(((80 + 35 * arena) * (big ? 4 : 1)) / 5) * 5; // Goldkiste, volle Goldkiste
+export const crateGold = (arena, big) => Math.round((80 * arenaF(arena) * (big ? 4 : 1)) / 5) * 5; // Goldkiste, volle Goldkiste
 
 // Eine Belohnung gutschreiben (Runenpfad, Trophäenweg, Sammlungsstufe, Saisonmarkt). Arten: gold (n oder crate),
 // gems (n, dazu wild), lucky (s Funken), runebox, jk (r Seltenheit, n; grow = wächst mit der Arena), wild, potion,
 // rune (n Scherben für Karte id).
 export const jokerCount = (r, arena) => (r.grow ? Math.max(1, Math.round(r.n * arenaF(arena))) : r.n);
 export function grantReward(p, r, rnd = Math.random, arena = p.arena) {
-  if (r.t === 'gold') { const n = r.crate ? crateGold(arena, r.crate > 1) : r.n; p.gold += n; return { gold: n, cards: [] }; }
+  if (r.t === 'gold') { const n = r.crate ? crateGold(arena, r.crate > 1) : r.grow ? Math.round((r.n * arenaF(arena)) / 5) * 5 : r.n; p.gold += n; return { gold: n, cards: [] }; }   // grow: wächst mit der Arena
   if (r.t === 'gems') { p.gems += r.n; if (r.wild) p.wild += r.wild; return r.wild ? { gems: r.n, wild: r.wild, cards: [] } : { gems: r.n, cards: [] }; }
   if (r.t === 'lucky') return luckyOpen(p, r.s, rnd, arena);
   if (r.t === 'runebox') return runeBoxOpen(p, rnd);
@@ -764,9 +837,9 @@ export function applyResult(p, res, rnd = Math.random) {
         p.wild += BOSS_REWARD.wild; out.chest.wild = (out.chest.wild || 0) + BOSS_REWARD.wild;
         out.marks += MARKS.boss;
       }
-      if (res.mode) {
+      if (res.mode) {   // res.dayMode: der Aufrufer sagt, ob es der Modus des Tages war (modi.js kennt mehr Modi als MODES)
         if (++p.modeWins <= MARKS.modeWins) out.marks += MARKS.mode; // die ersten Modus-Siege des Tages bringen Furtmarken
-        if (res.mode === modeOfDay(p.day) && modeBonusOpen(p)) { p.modeDay = p.day; p.gems += MODE_BONUS; out.bonus = MODE_BONUS; out.shards = rollShards(p, 1, rnd); out.marks += MARKS.day; } // dazu eine Runenscherbe
+        if ((res.dayMode ?? res.mode === modeOfDay(p.day)) && modeBonusOpen(p)) { p.modeDay = p.day; p.gems += MODE_BONUS; out.bonus = MODE_BONUS; out.shards = rollShards(p, 1, rnd); out.marks += MARKS.day; } // dazu eine Runenscherbe
       }
       dayWin();
     }
@@ -784,7 +857,8 @@ export function applyResult(p, res, rnd = Math.random) {
   const a = arenaIndex(p.trophies);
   if (a > p.arena) {
     p.arena = a; out.arenaUp = ARENAS[a].name; out.gems = 10; p.gems += 10;
-    for (const ar of ARENAS.slice(0, a + 1)) for (const id of ar.unlock) if (!p.cards[id]) { p.cards[id] = { lvl: 1, n: 0 }; out.newCards.push(id); }
+    for (const ar of ARENAS.slice(0, a + 1)) for (const id of ar.unlock) if (!p.cards[id]) { p.cards[id] = { lvl: startLevel(id), n: 0 }; out.newCards.push(id); }
+    const tw = syncTower(p); if (tw) out.tower = tw;   // neue Karten bringen ihre Startstufe mit: das kann die Turmstufe heben
   }
   if (winner === 0) dayWin();
   return finish();
@@ -795,11 +869,11 @@ export function applyResult(p, res, rnd = Math.random) {
 // und als sechstes abwechselnd Runensplitter mit Wanderscherbe oder eine Runenkiste.
 export const ROAD = Array.from({ length: 50 }, (_, i) => {
   const at = (i + 1) * 100, a = arenaIndex(at), k = i % 6;
-  if (k === 0) return { at, t: 'gold', n: 80 + a * 30 };
-  if (k === 1) return { at, t: 'choice', units: 16 + a * 6 };
+  if (k === 0) return { at, t: 'gold', n: Math.round((80 * arenaF(a)) / 5) * 5 };
+  if (k === 1) return { at, t: 'choice', units: Math.round(16 * arenaF(a)) };
   if (k === 2) return { at, t: 'lucky', s: 2 };
   if (k === 3) return i % 12 === 9 ? { at, t: 'hero', n: 25 } : { at, t: 'gems', n: 10 };   // jeder zweite dieser Meilensteine bringt Heldenmünzen (1 000, 2 200, 3 400, 4 600)
-  if (k === 4) return i % 12 === 4 ? { at, t: 'jk', r: 'gewoehnlich', n: 10 + a * 4 } : { at, t: 'jk', r: 'selten', n: 4 + a * 2 };
+  if (k === 4) return i % 12 === 4 ? { at, t: 'jk', r: 'gewoehnlich', n: Math.round(10 * arenaF(a)) } : { at, t: 'jk', r: 'selten', n: Math.round(4 * arenaF(a)) };
   return i % 12 === 5 ? { at, t: 'gems', n: 10, wild: 1 } : { at, t: 'runebox' };
 });
 // Kartenwahl eines Meilensteins: zwei feste Karten seiner Arena mit ihrer Stückzahl
@@ -827,15 +901,16 @@ export function claimRoad(p, at, rnd = Math.random, pick = 0) {
 // ---- Sammlungsstufe ------------------------------------------------------------------------------
 // Jede Kartenstufe zählt eins, jede erweckte Runenform fünf. Alle zehn Stufen gibt es eine Belohnung.
 export const COLL_STEP = 10, COLL_FIRST = 20;
-export const COLL_MAX = (CARD_IDS.length + TOWER_IDS.length) * MAX_LEVEL + 5 * Object.keys(RUNES).length;
-export const collLevel = p => Object.values(p.cards).reduce((s, c) => s + c.lvl, 0) + 5 * Object.keys(RUNES).filter(id => hasRune(p, id)).length;
+// Sammlungsstufe wie im Vorbild (seit Mai 2026 der Ersatz für die Erfahrung): jede Kartenstufe zählt eins – eine neue Karte bringt
+// gleich ihre Startstufe mit –, jede erweckte Runenform und jede Heldenform fünf. Alle zehn Stufen eine Belohnung nach der Tabelle
+// des Vorbilds (Wiki „Collection Level“, dort bis 990 belegt; darüber setzt sich das Muster fort).
+export const COLL_MAX = (CARD_IDS.length + TOWER_IDS.length) * MAX_LEVEL + 5 * Object.keys(RUNES).length + 5 * HERO_FORM_IDS.length;
+export const collLevel = p => Object.values(p.cards).reduce((s, c) => s + c.lvl, 0) + 5 * Object.keys(RUNES).filter(id => hasRune(p, id)).length + 5 * HERO_FORM_IDS.filter(id => hasForm(p, id)).length;
+const COLL_TABLE = { 20: ['g', 50], 30: ['g', 50], 40: ['g', 50], 50: ['l', 4], 60: ['j', 'gewoehnlich', 20], 70: ['g', 30], 80: ['j', 'gewoehnlich', 20], 90: ['g', 30], 100: ['l', 5], 110: ['j', 'gewoehnlich', 20], 120: ['g', 40], 130: ['j', 'gewoehnlich', 20], 140: ['g', 40], 150: ['l', 5], 160: ['g', 40], 170: ['j', 'gewoehnlich', 20], 180: ['g', 50], 190: ['r'], 200: ['l', 5], 210: ['j', 'gewoehnlich', 20], 220: ['g', 50], 230: ['j', 'gewoehnlich', 20], 240: ['g', 60], 250: ['l', 5], 260: ['g', 60], 270: ['j', 'gewoehnlich', 20], 280: ['g', 60], 290: ['j', 'gewoehnlich', 20], 300: ['l', 5], 310: ['j', 'gewoehnlich', 20], 320: ['j', 'selten', 10], 330: ['j', 'gewoehnlich', 20], 340: ['g', 70], 350: ['l', 5], 360: ['j', 'gewoehnlich', 20], 370: ['r'], 380: ['j', 'gewoehnlich', 20], 390: ['g', 80], 400: ['l', 5], 410: ['j', 'selten', 20], 420: ['j', 'gewoehnlich', 60], 430: ['g', 90], 440: ['j', 'selten', 20], 450: ['l', 5], 460: ['g', 90], 470: ['j', 'selten', 20], 480: ['j', 'gewoehnlich', 60], 490: ['g', 90], 500: ['l', 5], 510: ['j', 'gewoehnlich', 60], 520: ['j', 'episch', 1], 530: ['g', 100], 540: ['j', 'gewoehnlich', 60], 550: ['r'], 560: ['j', 'gewoehnlich', 60], 570: ['g', 100], 580: ['j', 'selten', 20], 590: ['j', 'gewoehnlich', 60], 600: ['l', 5], 610: ['j', 'gewoehnlich', 250], 620: ['g', 100], 630: ['j', 'selten', 60], 640: ['j', 'episch', 6], 650: ['l', 5], 660: ['g', 125], 670: ['j', 'gewoehnlich', 250], 680: ['j', 'selten', 60], 690: ['g', 125], 700: ['l', 5], 710: ['j', 'episch', 6], 720: ['j', 'gewoehnlich', 250], 730: ['r'], 740: ['g', 125], 750: ['l', 5], 760: ['j', 'selten', 60], 770: ['j', 'gewoehnlich', 250], 780: ['g', 125], 790: ['j', 'episch', 6], 800: ['l', 5], 810: ['j', 'selten', 60], 820: ['j', 'gewoehnlich', 250], 830: ['g', 125], 840: ['j', 'gewoehnlich', 250], 850: ['g', 150], 860: ['j', 'selten', 60], 870: ['j', 'episch', 6], 880: ['g', 150], 890: ['j', 'gewoehnlich', 250], 900: ['l', 5], 910: ['r'], 920: ['j', 'episch', 6], 930: ['g', 150], 940: ['j', 'selten', 60], 950: ['g', 150], 960: ['j', 'episch', 6], 970: ['j', 'gewoehnlich', 250], 980: ['g', 150], 990: ['l', 5] };
 export function collReward(lvl) {
-  if (lvl % 100 === 0) return { t: 'lucky', s: 5 };
-  if (lvl % 50 === 0) return { t: 'lucky', s: 4 };
-  if (lvl % 90 === 0) return { t: 'runebox' };
-  const k = lvl / COLL_STEP;
-  if (k % 2 === 0) return { t: 'gems', n: 5 + Math.min(10, Math.floor(lvl / 100)) };
-  return k % 6 === 3 ? { t: 'jk', r: 'selten', n: 6 } : k % 6 === 5 && lvl >= 150 ? { t: 'jk', r: 'episch', n: 2 } : { t: 'jk', r: 'gewoehnlich', n: 12 };
+  let e = COLL_TABLE[lvl];
+  if (!e) { const k = lvl / COLL_STEP; e = lvl % 50 === 0 ? ['l', 5] : lvl % 180 === 10 ? ['r'] : k % 4 === 1 ? ['g', 150] : k % 4 === 2 ? ['j', 'gewoehnlich', 250] : k % 4 === 3 ? ['j', 'selten', 60] : ['j', 'episch', 6]; }
+  return e[0] === 'g' ? { t: 'gems', n: e[1] } : e[0] === 'j' ? { t: 'jk', r: e[1], n: e[2] } : e[0] === 'l' ? { t: 'lucky', s: e[1] } : { t: 'runebox' };
 }
 export function collOpen(p) {
   const lvl = collLevel(p), out = [];
@@ -850,9 +925,10 @@ export function claimColl(p, lvl, rnd = Math.random) {
 
 // ---- Kartenmeisterschaft -------------------------------------------------------------------------
 // Wer eine Karte oft ausspielt, meistert sie: drei Schritte je Karte, jeder bringt Gold.
-export const MASTERY = [{ need: 15, gold: 100 }, { need: 40, gold: 200 }, { need: 100, gold: 500 }];
+export const MASTERY = [{ need: 15, gold: 4000 }, { need: 40, gold: 6000 }, { need: 100, gold: 15000 }];   // Gold des Vorbilds; gilt in der letzten Arena, davor anteilig (masteryGold)
+export const masteryGold = (p, step) => Math.max(50, Math.round((MASTERY[step].gold * arenaF(p.arena)) / arenaF(ARENAS.length - 1) / 10) * 10);
 export function masteryInfo(p, id) {
-  const played = p.stats.played[id] || 0, step = p.mast[id] || 0, next = MASTERY[step] || null;
+  const played = p.stats.played[id] || 0, step = p.mast[id] || 0, next = MASTERY[step] ? { need: MASTERY[step].need, gold: masteryGold(p, step) } : null;
   return { played, step, next, can: !!(next && p.cards[id] && played >= next.need) };
 }
 export function claimMastery(p, id) {
@@ -898,7 +974,7 @@ export function claimQuest(p, i, rnd = Math.random) {
   const q = p.quests[i];
   if (!q || q.claimed || q.have < q.need) return null;
   q.claimed = true;
-  const d = QUESTS[q.id];
+  const d = { ...QUESTS[q.id], gold: Math.round((QUESTS[q.id].gold * arenaF(p.arena)) / 5) * 5 };   // Gold wächst mit der Arena
   p.gold += d.gold; p.gems += d.gems;
   if (p.quests.length >= 3 && p.quests.every(x => x.claimed) && p.questBonus !== p.day) {
     p.questBonus = p.day; p.season.marks += MARKS.quests;
@@ -917,7 +993,7 @@ export const STORE = [
   { id: 's2500', name: 'Fass Runensplitter', cents: 1999, give: [{ t: 'gems', n: 2500 }] },
   { id: 's6500', name: 'Wagen Runensplitter', cents: 4999, give: [{ t: 'gems', n: 6500 }] },
   { id: 's14000', name: 'Hort Runensplitter', cents: 9999, give: [{ t: 'gems', n: 14000 }], tag: 'bester Wert' },
-  { id: 'start', name: 'Starterpaket', cents: 299, give: [{ t: 'gems', n: 200 }, { t: 'gold', n: 1500 }, { t: 'lucky', s: 3 }], once: true, tag: 'einmalig', pack: true },
+  { id: 'start', name: 'Starterpaket', cents: 299, give: [{ t: 'gems', n: 200 }, { t: 'gold', n: 1500, grow: true }, { t: 'lucky', s: 3 }], once: true, tag: 'einmalig', pack: true },
   { id: 'rune', name: 'Runenpaket', cents: 799, give: [{ t: 'gems', n: 300, wild: 2 }, { t: 'runebox' }, { t: 'runebox' }], pack: true },
   { id: 'held', name: 'Heldenpaket', cents: 999, give: [{ t: 'gems', n: 300 }, { t: 'hero', n: 200 }, { t: 'lucky', s: 4 }], pack: true },
 ];
@@ -926,8 +1002,8 @@ export const PACKS = [
   { id: 'p1', name: 'Kartenpaket', gems: 40, give: [{ t: 'jk', r: 'gewoehnlich', n: 120 }] },
   { id: 'p2', name: 'Seltenes Paket', gems: 80, give: [{ t: 'jk', r: 'selten', n: 40 }] },
   { id: 'p3', name: 'Episches Paket', gems: 160, give: [{ t: 'jk', r: 'episch', n: 12 }] },
-  { id: 'p4', name: 'Goldsack', gems: 100, give: [{ t: 'gold', n: 1500 }] },
-  { id: 'p5', name: 'Großes Paket', gems: 400, give: [{ t: 'gold', n: 2000 }, { t: 'jk', r: 'legendaer', n: 2 }, { t: 'lucky', s: 5 }] },
+  { id: 'p4', name: 'Goldsack', gems: 100, give: [{ t: 'gold', n: 1500, grow: true }] },
+  { id: 'p5', name: 'Großes Paket', gems: 400, give: [{ t: 'gold', n: 2000, grow: true }, { t: 'jk', r: 'legendaer', n: 2 }, { t: 'lucky', s: 5 }] },
 ];
 export const euro = cents => `${(cents / 100).toFixed(2).replace('.', ',')} €`;
 // Mehrere Belohnungen gutschreiben: einfache Dinge (Gold, Splitter, Joker, Münzen, Scherben) zusammengezählt in sum, Truhen einzeln in boxes
@@ -1044,12 +1120,14 @@ export function modeRules(p, mode) {
   if (mode === 'tod') return { sudden: true };
   if (mode === 'ansturm') {
     const pool = unlockedIds(p).filter(id => CARDS[id].type === 'troop' && !CARDS[id].hero && !CARDS[id].anywhere);
-    return { waves: { pool, lvl: opponentLevels(p, 'mittel').lvl, endless: true, goal: SURV_GOAL } };
+    return { waves: { pool, lvl: opponentLevels(p, 'mittel').lvl, endless: true, goal: SURV_GOAL, floor: startLevel } };   // auch in den Wellen steht keine Karte unter der Startstufe ihrer Seltenheit
   }
   return {};
 }
 // Gleiche Stufen für beide Seiten (Kartenwahl, Spiegelkampf)
-export const evenLevels = (p, towerType = DEFAULT_TOWER) => { const l = opponentLevels(p, 'mittel'); return { cards: l.cards, tower: l.lvl, lvl: l.lvl, runes: l.runes, forms: l.forms, towerType }; };
+// Gleiche Stufe für beide Seiten: die Turnierstufe des Vorbilds – in Ereignissen und Herausforderungen stehen alle Karten und Türme auf Stufe 11
+export const TOURN_LEVEL = 11;
+export const evenLevels = (p, towerType = DEFAULT_TOWER) => { const l = opponentLevels(p, 'mittel'); return { cards: Object.fromEntries(CARD_IDS.map(id => [id, TOURN_LEVEL])), tower: TOURN_LEVEL, outer: TOURN_LEVEL, lvl: TOURN_LEVEL, runes: l.runes, forms: l.forms, towerType }; };
 
 // Kartenwahl: acht Paare gleicher Art (5 Truppen, 2 Zauber, 1 Gebäude) – so bekommt jede Seite ein spielbares Deck.
 export function draftPairs(rnd) {
@@ -1099,7 +1177,7 @@ export function bossSetup(p, i) {
   const b = BOSSES[i], r = b.rules, rules = {};
   for (const k of ['kraft', 'speed', 'towerHp', 'runeAlways', 'passive']) if (r[k]) rules[k] = [null, r[k]];
   const lvl = Math.max(1, Math.min(MAX_LEVEL, opponentLevels({ arena: i }, 'mittel').lvl + (b.adj || 0))); // einzelne Bosse eine Stufe höher oder niedriger
-  return { deck: [...b.deck], rules, levels: { cards: Object.fromEntries(CARD_IDS.map(id => [id, lvl])), tower: lvl, lvl, towerType: b.tower || DEFAULT_TOWER, runes: lvl >= RUNE_LEVEL || r.runeAlways ? Object.keys(RUNES) : [] } };
+  return { deck: [...b.deck], rules, levels: { cards: Object.fromEntries(CARD_IDS.map(id => [id, Math.max(startLevel(id), lvl)])), tower: lvl, outer: Math.max(startLevel(b.tower || DEFAULT_TOWER), lvl), lvl, towerType: b.tower || DEFAULT_TOWER, runes: foeRunes(i, 'mittel') || r.runeAlways ? Object.keys(RUNES) : [] } };
 }
 
 // Deck-Platz wechseln (p.deck zeigt immer auf das gewählte Deck)

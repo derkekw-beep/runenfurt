@@ -916,6 +916,7 @@ export function createRenderer3D(canvas, overlay) {
       }
       const bar = tower || e.kind === 'building' || e.hp < e.maxHp || e.maxShield;   // wie im Vorbild: Truppen zeigen bei vollem Leben nur das Stufenschild, Gebäude und Türme den Balken immer
       const inst = insts.get(e.id); if (!inst) continue;
+      if (tower) { const [tx, ty] = project(e._x, 0, e._y); if (tx < 0 || tx > width || ty < 0 || ty > height) continue; }   // Turm außerhalb des Bilds (Ausschnitt der Kartenvorschau): kein Balken am Bildrand
       if (inst.bar == null) inst.bar = e.hp;
       inst.bar += (e.hp - inst.bar) * Math.min(1, dt * 5);
       const top = inst.def.h * inst.scale + (e.air ? FLY[inst.model] || 1.5 : 0) + (tower ? 0.15 : 0.85);   // Stufenschild und Balken schweben wie beim Vorbild deutlich über dem Kopf der Figur
