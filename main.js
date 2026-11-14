@@ -1585,6 +1585,7 @@ function startBattle(opts) {
   B.g = sim.createGame({ seed, decks, levels, rules });
   B.ai = mode === 'ansturm' ? null : createAi(aiLevel);
   B.auto = AUTO ? createAi(AUTO) : null;
+  for (const a of [B.ai, B.auto]) if (a) a.capMs = 2.5;   // Vorausdenken des Gegners: höchstens 2,5 ms je Regeltakt, damit kein Bild ruckelt (denken.js)
   B.opts = opts;
   B.arena = boss != null ? boss : profile.arena; // ein Boss empfängt in seiner eigenen Arena
   B.level = profile.level; B.oppLvl = opp.lvl; B.training = !!opts.training;

@@ -1,18 +1,23 @@
 // Computergegner. Er spielt wie ein Mensch am Tisch: Er sieht nur das Feld und was der Gegner ausspielt, zählt
 // dessen Kraft und Kartenumlauf mit, tauscht Kraft günstig, baut Angriffe aus Rollen auf und hat eine Reaktionszeit.
-//   aiChoose  – die Entscheidung (nutzt nur den Spielzustand, das eigene Gedächtnis und den Zufallsgenerator des Spiels)
+//   aiChoose  – der erste Einfall nach Faustregeln (nutzt nur den Spielzustand, das eigene Gedächtnis und den Zufallsgenerator des Spiels)
 //   aiUpdate  – läuft im Regeltakt: beobachten, im Takt der Stufe entscheiden, Karte spielen, Heldenfähigkeit auslösen
+// Seit dem 2026-11-14 denkt er auf „Mittel“ und „Schwer“ voraus (denken.js): Den ersten Einfall, die anderen Züge, die er erwogen
+// hat, und das Abwarten spielt er in einer Kopie des Felds mit den echten Regeln durch und nimmt, was am meisten bringt.
 // Die KI liest nie Hand, Nachziehkarte, Stapel oder Kraft des Gegners; ihr Gedächtnis liegt in ai.mem.
 import { CARDS, UNITS, RUNES, TOWER_SPELL_FACTOR } from './cards.js';
 import { W, H, RIVER_TOP, RIVER_BOT, POCKET, MAX_KRAFT, KRAFT_RATE, playCard, clampDeploy, cardCost, rnd, kraftRate, timeLeft, abilities, useAbility, mainTower } from './sim.js';
+import { startThought, advanceThought, bestOf } from './denken.js';
 
 // think: Sekunden zwischen zwei Überlegungen · react: Reaktionszeit auf Neues · minAttack: Kraft für einen Angriff aus der Ruhe
 // defend/spells: Anteil der Gelegenheiten, die erkannt werden · smart: 0 reagiert nur, 0,5 plant, 1 zählt mit und bestraft
 // err: Anteil kopfloser Züge · noise: Fehleinschätzung beim Abwägen · aim: Streuung beim Setzen (Felder)
+// ahead: Vorausdenken – so viele Takte der Kopie rechnet er je echtem Takt (0 = gar nicht) · wide: so viele Züge wägt er neben dem
+// Abwarten ab · far: so viele Sekunden weit rechnet er · spots: zusätzliche Stellungsproben für die beste Abwehrkarte
 export const LEVELS = {
-  leicht: { name: 'Leicht', think: 2.4, react: 1.2, minAttack: 9, defend: 0.5, spells: 0.25, smart: 0, err: 0.3, noise: 1.6, aim: 1.6 },
-  mittel: { name: 'Mittel', think: 1.5, react: 0.85, minAttack: 8, defend: 0.8, spells: 0.7, smart: 0.5, err: 0.2, noise: 1.1, aim: 0.8 },
-  schwer: { name: 'Schwer', think: 0.45, react: 0.35, minAttack: 7, defend: 1, spells: 1, smart: 1, err: 0, noise: 0.06, aim: 0.15 },
+  leicht: { name: 'Leicht', think: 2.4, react: 1.2, minAttack: 9, defend: 0.5, spells: 0.25, smart: 0, err: 0.3, noise: 1.6, aim: 1.6, ahead: 0, wide: 0, far: 0, spots: 0 },
+  mittel: { name: 'Mittel', think: 1.5, react: 0.85, minAttack: 8, defend: 0.8, spells: 0.7, smart: 0.5, err: 0.2, noise: 1.1, aim: 0.8, ahead: 60, wide: 2, far: 5.5, spots: 0 },
+  schwer: { name: 'Schwer', think: 0.45, react: 0.2, minAttack: 7, defend: 1, spells: 1, smart: 1, err: 0, noise: 0.06, aim: 0.15, ahead: 130, wide: 8, far: 6, spots: 3 },
 };
 
 // Spielstile – aus dem Startwert gewählt, damit sich Gegner unterschiedlich anfühlen.
@@ -25,7 +30,7 @@ export const STYLES = {
 };
 const STYLE_IDS = Object.keys(STYLES);
 
-export const createAi = (level, style) => ({ level: LEVELS[level] ? level : 'mittel', style: STYLES[style] ? style : '', t: 2.5, lane: -1, laneT: 0, why: '', note: '', mem: null });
+export const createAi = (level, style) => ({ level: LEVELS[level] ? level : 'mittel', style: STYLES[style] ? style : '', t: 2.5, lane: -1, laneT: 0, why: '', note: '', mem: null, thought: null, cands: null, force: -1, said: '', capMs: 0 });
 
 // ---- Kartenkunde: Rollen aus den Eigenschaften der Einheiten (nie aus Kartennamen) -------------------------------
 
@@ -473,6 +478,7 @@ export function aiChoose(g, side, ai) {
           act = I.spell ? { idx: h.idx, x, y: side === 1 ? mm : H - mm } : place(h.idx, x, mm);
         }
         if (L.noise) net += (rnd(g) - 0.5) * L.noise * 4;
+        if (ai.cands && act && net > -2) ai.cands.push({ net, act, card: h.id, spell: I.spell && I.kind !== 'summon', lead: [a.lead.x, a.lead.y], tw: [a.tw.x, a.tw.y] });   // erwogen: beim Vorausdenken noch einmal mit den echten Regeln prüfen
         if (net > 0.35 && (!best || net > best.net)) best = { net, act };
       }
     }
@@ -591,6 +597,7 @@ export function aiChoose(g, side, ai) {
 
   // Bahnwahl mit Begründung (ai.why)
   const pickLane = () => {
+    if (ai.force >= 0 && foeTw[ai.force]) { ai.why = 'Gegenprobe: andere Bahn'; return ai.force; }
     if (finish >= 0) { ai.why = 'Turm zu Ende bringen'; return finish; }
     if (swap) { ai.why = 'Bahnwechsel: dort steht seine Abwehr'; ai.laneT = g.time + 10; return 1 - pushLane; }
     if (front && smart > 0) { ai.why = 'hinter die eigene Spitze'; return pushLane; }
@@ -764,16 +771,86 @@ export function aiAbility(g, side, ai) {
   return null;
 }
 
+// ---- Vorausdenken (denken.js) -----------------------------------------------------------------------------------
+// Züge, die ohne Abwägen gespielt werden: der Zauber, der einen Turm fällt, der Patzer der schwächeren Stufen, der Kraftquell.
+const AT_ONCE = new Set(['todesstoss', 'patzer', 'kraftquell']);
+const ATTACK = new Set(['aufbauen', 'nachsetzen', 'bestrafen', 'absichern', 'alles-riskieren']);
+const samePlay = (a, b) => a.idx === b.idx && Math.hypot(a.x - b.x, a.y - b.y) < 1.3;
+
+// Stellt zusammen, was er abwägt: den ersten Einfall, die übrigen erwogenen Abwehrzüge, die Gegenprobe auf der anderen Bahn
+// und das Abwarten. Gibt { now } zurück (sofort spielen), { cands, … } (darüber nachdenken) oder null (nichts zu tun).
+function consider(g, side, ai, L) {
+  const S = g.sides[side];
+  ai.cands = []; ai.force = -1;
+  const first = aiChoose(g, side, ai), note = ai.note, col = ai.cands;
+  ai.cands = null;
+  if (first && AT_ONCE.has(note)) return { now: first };
+  const cands = [];
+  const add = (act, bias, tag) => {
+    if (!act || cands.length >= L.wide) return;
+    const p = clampDeploy(g, side, S.hand[act.idx], act.x, act.y), a = { idx: act.idx, x: p.x, y: p.y };
+    if (!cands.some(c => samePlay(c.act, a))) cands.push({ act: a, bias, tag });
+  };
+  if (first) add(first, 0.3, note);   // bei Gleichstand gilt der erste Einfall
+  col.sort((a, b) => b.net - a.net);
+  // Stellungsproben für die beste Abwehrkarte: direkt auf die Spitze, zwischen Spitze und Turm, zur Mitte gelockt – welche
+  // Stelle wirklich am meisten bringt, zeigt erst das Durchspielen
+  const top = col.find(c => !c.spell);
+  if (top && L.spots) {
+    const [lx, ly] = top.lead, [tx, ty] = top.tw, back = side === 1 ? -1 : 1, n0 = cands.length;
+    add(top.act, 0, 'abwehr');
+    const spots = [[lx, ly + back * 0.7], [(lx + tx) / 2, (ly + ty) / 2], [W / 2 + (lx < W / 2 ? -0.6 : 0.6), side === 1 ? 9 : H - 9]];
+    for (const [x, y] of spots) if (cands.length - n0 <= L.spots) add({ idx: top.act.idx, x, y }, 0, 'abwehr');
+  }
+  for (const c of col) add(c.act, 0, 'abwehr');
+  // Gegenprobe: derselbe Angriff auf der anderen Bahn (nur, wer weit genug denkt und frei wählen kann)
+  if (first && ATTACK.has(note) && L.wide >= 4 && cands.length < L.wide && ai.lane >= 0) {
+    const keep = [ai.lane, ai.laneT, ai.why];
+    ai.force = 1 - ai.lane;
+    const alt = aiChoose(g, side, ai);
+    if (alt && ATTACK.has(ai.note) && ai.lane === ai.force) add(alt, 0, 'andere Bahn');
+    ai.force = -1; [ai.lane, ai.laneT, ai.why] = keep; ai.note = note;
+  }
+  if (!cands.length) return null;
+  cands.push({ act: null, bias: 0, tag: 'warten' });
+  return { cands, note };
+}
+
+function play(g, side, act) {
+  const p = clampDeploy(g, side, g.sides[side].hand[act.idx], act.x, act.y);
+  return playCard(g, side, act.idx, p.x, p.y);
+}
+
 export function aiUpdate(g, side, ai, dt) {
   if (g.over) return false;
   observe(g, side, ai, true); // jeden Takt hinsehen (billig), nur im Takt der Stufe nachdenken
-  ai.t -= dt;
-  if (ai.t > 0) return false;
   const L = LEVELS[ai.level] || LEVELS.mittel;
+  ai.t -= dt;
+  if (ai.thought) {   // ein Gedanke läuft: weiterrechnen, am Ende den besten Zug spielen
+    const th = ai.thought;
+    if (!advanceThought(th, L.ahead, ai.capMs || 0)) return false;
+    ai.thought = null;
+    const best = bestOf(th);
+    ai.said = best ? best.tag : '';
+    if (!best || !best.act) { ai.note = 'warten'; return false; }
+    ai.note = best.tag === 'andere Bahn' ? th.note : best.tag;
+    if (best.tag === 'andere Bahn') { ai.lane = 1 - ai.lane; ai.laneT = g.time + 10; ai.why = 'durchgerechnet: die andere Bahn bringt mehr'; }
+    const S = g.sides[side], id = S.hand[best.act.idx];
+    if (id !== th.hand[best.act.idx] || cardCost(g, side, id) > S.kraft) return false;   // die Hand hat sich inzwischen geändert
+    return play(g, side, best.act);
+  }
+  if (ai.t > 0) return false;
   ai.t = L.think * (0.7 + rnd(g) * 0.6);
   if (rnd(g) < 0.4 + L.smart * 0.6) { const id = aiAbility(g, side, ai); if (id && useAbility(g, side, id)) return true; }
-  const act = aiChoose(g, side, ai);
-  if (!act) return false;
-  const p = clampDeploy(g, side, g.sides[side].hand[act.idx], act.x, act.y);
-  return playCard(g, side, act.idx, p.x, p.y);
+  if (!L.ahead) {   // ohne Vorausdenken: der erste Einfall gilt
+    const act = aiChoose(g, side, ai);
+    return act ? play(g, side, act) : false;
+  }
+  const c = consider(g, side, ai, L);
+  if (!c) return false;
+  if (c.now) return play(g, side, c.now);
+  const byHp = g.sudden || g.phase === 'over';
+  ai.thought = startThought(g, side, c.cands, { horizon: c.note === 'zauber' ? Math.min(L.far, 4.5) : L.far, byHp, own: L.own ?? 1, noise: L.noise > 0.5 ? L.noise * 0.8 : 0, rnd: () => rnd(g) });
+  ai.thought.note = c.note; ai.thought.hand = [...g.sides[side].hand];
+  return false;
 }
