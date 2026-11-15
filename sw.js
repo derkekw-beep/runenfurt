@@ -1,7 +1,7 @@
 // Offline-Cache für den Spiel-Code. Spielstände liegen NICHT hier, sondern im localStorage.
 // Das Spiel kommt immer komplett aus dem Cache EINER Version – nie halb alt, halb neu.
 // Bei jeder Änderung die Versionsnummer erhöhen (macht tools/deploy.mjs).
-const VERSION = 'runenfurt-v18';
+const VERSION = 'runenfurt-v19';
 // Die großen Bildfolgen der Figuren liegen in einem eigenen Speicher, der Versionen überdauert: Sie werden beim ersten
 // Gebrauch gespeichert (und vom Spiel im Hintergrund nachgeladen). Ihre Adresse trägt ?v=<Stand der Figur> – ändert sich
 // eine Figur, ändert sich die Adresse, und nur sie wird neu geholt. Die Liste unten pflegt tools/engine_dateien.mjs.
@@ -37,7 +37,7 @@ const FILES = [
   './ui/arena-14.webp',
   './cards.js',
   './sim.js',
-  './ai.js', './denken.js',
+  './ai.js', './denken.js', './deckwuerfel.js', './metadecks.js',
   './progress.js',
   './render.js',
   './render3d.js',
@@ -55,6 +55,31 @@ const FILES = [
   './engine/rezepte.js',
   './engine/sprites.js',
   './engine/assets/props.json',
+  './ui/truhen/eisen.webp',
+  './ui/truhen/eisen_o.webp',
+  './ui/truhen/goldkiste.webp',
+  './ui/truhen/holz.webp',
+  './ui/truhen/holz_o.webp',
+  './ui/truhen/kronen.webp',
+  './ui/truhen/kronen_o.webp',
+  './ui/truhen/los1.webp',
+  './ui/truhen/los1_o.webp',
+  './ui/truhen/los2.webp',
+  './ui/truhen/los2_o.webp',
+  './ui/truhen/los3.webp',
+  './ui/truhen/los3_o.webp',
+  './ui/truhen/los4.webp',
+  './ui/truhen/los4_o.webp',
+  './ui/truhen/los5.webp',
+  './ui/truhen/los5_o.webp',
+  './ui/truhen/riesen.webp',
+  './ui/truhen/riesen_o.webp',
+  './ui/truhen/runen.webp',
+  './ui/truhen/runen_o.webp',
+  './ui/truhen/runenkiste.webp',
+  './ui/truhen/runenkiste_o.webp',
+  './ui/truhen/sieg.webp',
+  './ui/truhen/sieg_o.webp',
   './ton/klang.json',
   './ton/klang.mp3',
   './engine/assets/fx/fx.json',

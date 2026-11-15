@@ -9,8 +9,8 @@ import * as sim from './sim.js';
 
 const SEED = 4711;
 // Ausschnitt des Felds, den die Vorschau zeigt (eigene Hälfte direkt unter dem Fluss), und die festen Orte darin
-export const VIEW = { x0: 3.6, x1: 14.4, y0: 16.1, y1: 24.5 };
-const VIEW_TOWER = { x0: 0.2, x1: 11, y0: 18.4, y1: 26.4 };   // Turmkarten: der linke Außenturm steht mit im Bild
+export const VIEW = { x0: 5.1, x1: 12.9, y0: 16.7, y1: 23.9 };   // seit 2026-11-15 enger gefasst: die Figuren sind rund ein Drittel größer zu sehen
+const VIEW_TOWER = { x0: 0.6, x1: 9.8, y0: 19.0, y1: 26.2 };   // Turmkarten: der linke Außenturm steht mit im Bild
 const ME = { x: 9, y: 22.5 }, FOE = { x: 9, y: 18.9 }, MID = { x: 9, y: 20.4 };
 
 // Was eine Einheit alles aufs Feld bringen kann (für das Vorladen der Bildfolgen)

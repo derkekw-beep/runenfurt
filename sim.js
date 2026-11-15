@@ -188,7 +188,7 @@ function deployMask(g, side, P) {
   };
   for (const e of g.ents) {
     if (e.kind === 'unit' || e.hp <= 0 || e.digT > 0) continue;
-    if (e.kind === 'tower' && e.side !== side && !P.enemyOk) close(e.x, e.y, e.main ? 18 : 11, e.main ? 16 : 21);
+    if (e.kind === 'tower' && e.side !== side && !P.enemyOk) close(e.x, e.y, e.main ? 18 : 11, e.stub ? 6 : e.main ? 16 : 21);   // Riss-Arena (stub): nur der Streifen der Risse am oberen Rand ist gesperrt
     else if (!P.onBuildings) { const fp = footprint(e.d); close(e.x, e.y, fp, fp); }
   }
   if (P.lane) for (let r = 0; r < H; r++) { let whole = 1; for (let c = 0; c < W; c++) whole &= open[r * W + c]; if (!whole) open.fill(0, r * W, (r + 1) * W); }
@@ -864,6 +864,12 @@ export function pickTarget(g, u) {
     if (d < bd) { bd = d; best = e; }
   }
   if (best || isStatic) return best;
+  // Überleben in der Riss-Arena: Es gibt keine Türme, auf die man marschieren könnte – die eigenen Truppen gehen auf den nächsten Gegner
+  // los, wo immer er steht (bis 2026-11-15 blieben sie stehen, bis einer in Sicht kam, und warteten so hinten am Turm).
+  if (g.rifts && u.side === 0) {
+    for (const e of g.ents) { if (e.kind === 'tower' || !canHit(u, e)) continue; const d = dist(u, e); if (min && d < min + u.r + e.r) continue; if (d < bd) { bd = d; best = e; } }
+    return best;
+  }
   // Nichts in Sicht: zum Außenturm der eigenen Bahn (dem in der Breite näheren), wenn er näher liegt als der Hauptturm – sonst zum Hauptturm.
   // Gesetzte Gebäude sind kein Marschziel; sie locken erst, wenn sie in Sicht kommen.
   let main = null, lane = null, ld = Infinity;
@@ -1214,7 +1220,9 @@ function updateEnt(g, u, dt) {
     t = pickTarget(g, u);
     u.scan = 0.05; // ohne Ziel in Reichweite praktisch jeden Takt neu wählen
     u.targetId = t ? t.id : 0;
-    if (!t) { u.inRange = false; u.runT = 0; u.charging = false; if (!(d.rampKeep && u.rampIdle < d.rampKeep)) u.rampT = 0; u.idleT += dt; if (d.frenzy && d.frenzy.reset && u.idleT > (d.frenzy.keep || 0)) u.stacks = 0; return; }
+    if (!t) { u.inRange = false; u.runT = 0; u.charging = false; if (!(d.rampKeep && u.rampIdle < d.rampKeep)) u.rampT = 0; u.idleT += dt; if (d.frenzy && d.frenzy.reset && u.idleT > (d.frenzy.keep || 0)) u.stacks = 0;
+      if (g.rifts && u.side === 0 && u.kind === 'unit' && u.rootT <= 0 && !d.burrow) rally(g, u, dt, rate);
+      return; }
   }
   if (d.ramp && u.rampId !== t.id) { u.rampId = t.id; if (!(d.rampKeep && u.rampIdle < d.rampKeep)) u.rampT = 0; }   // rampKeep: die Stufe bleibt so viele Sekunden ohne Treffer erhalten
   const dd = reachDist(u, t);
@@ -1270,6 +1278,28 @@ function updateEnt(g, u, dt) {
       if (Math.abs(dx) > 0.05) u.face = dx > 0 ? 1 : -1;
     } else { u.runT = 0; u.charging = false; }
   }
+}
+
+// Überleben in der Riss-Arena, kein Gegner auf dem Feld: Die Truppe geht zum Sammelplatz ihrer Bahn – gleich hinter der Brücke auf der
+// Seite der Risse – und wartet dort auf die nächste Welle. Schützen und Flieger stehen eine Reihe dahinter; jede Truppe hat ihren
+// eigenen Platz (aus ihrer Nummer), damit sich keine Traube bildet.
+export function rallyPoint(u) {
+  const lane = Math.abs(u.x - BRIDGES[0]) <= Math.abs(u.x - BRIDGES[1]) ? 0 : 1, far = u.range > 2.5 || u.air;
+  return [BRIDGES[lane] + ((u.id * 7) % 5 - 2) * 0.62, RIVER_TOP - (far ? 1.2 : 2.6) - ((u.id * 3) % 3) * 0.55];
+}
+function rally(g, u, dt, rate) {
+  const [rx, ry] = rallyPoint(u);
+  if (Math.hypot(rx - u.x, ry - u.y) < 0.3) { u.vx = 0; u.vy = 0; return; }
+  const keep = u.range; u.range = 0;   // der Weg soll bis zum Platz führen, nicht eine Schussweite davor enden
+  const [wx, wy] = routePoint(g, u, { id: -7 - (rx < W / 2 ? 0 : 1), x: rx, y: ry, r: 0.3 });
+  u.range = keep;
+  const dx = wx - u.x, dy = wy - u.y, len = Math.hypot(dx, dy) || 1, stepLen = Math.min(u.speed * rate * (u.snareT > 0 ? u.snareF : 1) * dt, len);
+  u.vx = dx / len; u.vy = dy / len;
+  avoid(g, u, u.vx, u.vy);
+  let mx = u.vx, my = u.vy;
+  if (u.av) { const b = u.av, f = 256 - Math.abs(b), qx = f * mx + b * my, qy = f * my - b * mx, L = Math.hypot(qx, qy) || 1; mx = qx / L; my = qy / L; const dec = AV_DECAY * dt; u.av = Math.abs(b) <= dec ? 0 : b - Math.sign(b) * dec; }
+  u.x += mx * stepLen; u.y += my * stepLen;
+  if (Math.abs(dx) > 0.05) u.face = dx > 0 ? 1 : -1;
 }
 
 // ---- Ausweichen und Schieben wie im Vorbild --------------------------------------------------------------------

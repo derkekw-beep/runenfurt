@@ -7,6 +7,7 @@ import { HERO_FORMS } from './helden.js';
 import { createRenderer, drawCardArt } from './render.js';
 import { createRenderer3D } from './render3d.js';
 import { sfx, unlock, setSound, setVolume, SOUND_NAMES, samplesReady } from './audio.js';
+import { rollDeck, applyDeck, avgCost as deckAvg } from './deckwuerfel.js';
 import { STORY, explain } from './lore.js';
 import { createStage } from './arenabild.js';
 import { createPreview } from './vorschau.js';
@@ -1419,6 +1420,28 @@ function showSettings() {
   body.append(reset);
   simpleSheet('Einstellungen', body);
 }
+
+// Deck-Würfel: schlägt ein bewährtes Deck vor (deckwuerfel.js) – ansehen, noch einmal würfeln oder in den gewählten Deck-Platz übernehmen
+const rolled = [];
+function showRoll() {
+  const r = rollDeck(profile, Math.random, { avoid: rolled.slice(-5) });
+  if (!r) { toast('Dafür brauchst du mindestens acht Karten.', 2200); return; }
+  rolled.push(r.deck);
+  const miss = r.swaps.length, far = miss > 4;
+  const note = r.full ? 'Ein bewährtes Deck – alle acht Karten hast du.'
+    : far ? `Für „${r.name}“ fehlen dir noch ${miss} Karten – das Deck ist aus deinen ähnlichsten Karten gebaut.`
+    : `Ein bewährtes Deck. ${miss === 1 ? 'Eine Karte fehlt dir noch' : `${miss} Karten fehlen dir noch`} – an ihrer Stelle: ${r.swaps.map(([a, b]) => `<b>${CARDS[b].name}</b> statt ${CARDS[a].name}`).join(', ')}.`;
+  const d = el('div', 'rollSheet', `<h3>${far ? 'Gemischtes Deck' : r.name}</h3><p class="center small">${note}</p>`);
+  const grid = el('div', 'grid rollGrid');
+  for (const id of r.deck) grid.append(cardEl(id, { lvl: profile.cards[id].lvl, tag: 'div' }));
+  d.append(grid, el('p', 'center rollAvg', `Ø ${deckAvg(r.deck).toFixed(1).replace('.', ',')} Kraft · kommt in „${profile.names[profile.slot]}“`));
+  const row = el('div', 'btns three'), again = el('button', 'btn', 'Noch eins'), ok = el('button', 'btn primary', 'Übernehmen');
+  again.addEventListener('click', () => { sfx('flip'); showRoll(); });
+  ok.addEventListener('click', () => { if (!applyDeck(profile, r.deck)) return; swap = null; save(); sfx('upgrade'); closeSheet(); renderDeck(); toast(`„${r.name}“ liegt jetzt in ${profile.names[profile.slot]}`, 2200); });
+  row.append(closeBtn('Abbrechen'), again, ok); d.append(row);
+  openSheet(d, true);
+}
+$('#rollBtn').addEventListener('click', () => { sfx('click'); showRoll(); });
 
 // Klangprobe: jeder Klang als Knopf – so lässt sich sagen, welcher nicht gefällt (der Name steht auf dem Knopf)
 function showSoundTest() {

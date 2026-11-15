@@ -55,6 +55,7 @@ const spawnDps = d => (d.spawn ? rawDps(UNITS[d.spawn.unit]) * (d.spawn.count ||
 const spellDmg = c => (c.freeze ? 0 : (c.dmg || 0) * (c.waves ? c.waves.n : 1)) || (c.vines ? c.vines.dmg * c.vines.hits : 0) || (c.dot ? c.dot * (c.dur / c.tick) * 0.55 : 0) || (c.pulses ? c.pulses.dmg[1] * c.pulses.n * 0.6 : 0);
 
 const INFO = new Map();
+export const cardInfo = id => info(id);   // Aufgaben einer Karte (roles) – auch der Deck-Würfel fragt danach
 function info(id) {
   let I = INFO.get(id);
   if (I) return I;

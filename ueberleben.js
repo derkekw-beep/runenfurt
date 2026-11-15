@@ -16,7 +16,9 @@ export const STAGE = 5;        // Wellen je Etappe; die letzte ist die Bosswelle
 // Die Risse: Seit dem 2026-11-14 hat die Wellenseite keine Türme mehr. Die Gegner steigen aus drei Rissen am oberen Feldrand –
 // linke Bahn, rechte Bahn, in der Mitte der Boss. Sie liegen genau auf den Sockeln, auf denen sonst die gegnerischen Türme stehen.
 // [x, y] in Feldmaßen; der Zeichner malt sie an dieselben Stellen (render3d.js).
-export const RIFTS = [[BRIDGES[0], OUTER_Y], [BRIDGES[1], OUTER_Y], [W / 2, MAIN_Y]];
+// Seit 2026-11-15 liegen die Risse ganz am oberen Feldrand (vorher auf den Turmplätzen): das ganze Feld ist Kampfplatz, die Wellen haben
+// einen längeren Weg, und aufstellen darf man bis kurz vor die Risse.
+export const RIFTS = [[BRIDGES[0], 2.4], [BRIDGES[1], 2.4], [W / 2, 1.5]];
 export const TOP_RUNS = 8;     // so viele Läufe behält die Bestenliste
 export const DAILY_GOAL = 10;  // Tagesherausforderung: ab dieser Welle gibt es die Tagesbelohnung
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -246,9 +248,12 @@ function init(g, cfg) {
 
 // ---- Wellen ---------------------------------------------------------------------------------------------------------
 const isBoss = n => n % STAGE === 0;
-export const TUNE = { base: 5, lin: 1.5, quad: 0.18 };   // seit der Riss-Arena (2026-11-14) deutlich steiler: eigene Truppen halten die Stellung und sammeln sich an
+// Seit 2026-11-15 rücken die eigenen Truppen von selbst vor und gehen auf jeden Gegner los: Wer die ersten zehn Wellen übersteht, hätte
+// sonst ein Heer, das alles Weitere am Riss abfängt (gemessen: Mitte Welle 33). Darum wächst die Wellenstärke ab Welle 9 zusätzlich
+// im Quadrat (late, from).
+export const TUNE = { base: 5, lin: 1.5, quad: 0.21, late: 1.6, from: 9 };
 const floorOf = (g, id) => (g.waves.floor ? g.waves.floor(id) : 0);   // Mindeststufe einer Karte (ihre Startstufe, progress.js) – wie beim Computergegner
-const budget = n => TUNE.base + n * TUNE.lin + n * n * TUNE.quad;   // Kraftwert einer Welle: wächst erst gemächlich, dann immer steiler – kein Lauf geht ewig
+const budget = n => TUNE.base + n * TUNE.lin + n * n * TUNE.quad + TUNE.late * Math.max(0, n - TUNE.from) ** 2;   // Kraftwert einer Welle: wächst erst gemächlich, dann immer steiler – kein Lauf geht ewig
 // Türme wachsen im Vorbild langsamer als Karten: auf niedrigen Stufen sind sie im Verhältnis stärker (Stufe 2: gut ein Viertel).
 // Im Überleben tragen die Türme den Lauf – die Wellen gleichen diesen Vorsprung in ganzen Stufen aus (Turmstufe 1: drei, 2–4: zwei, 5–7: eine, ab 8: keine).
 export const towerEdge = lvl => Math.max(0, Math.round(Math.log(towerMult(lvl, true) / cardMult(lvl)) / Math.log(1.1)));

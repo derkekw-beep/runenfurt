@@ -21,6 +21,7 @@ export function createPreview({ renderer, restore, arena, calm = () => false }) 
     cancelAnimationFrame(c.raf);
     if (c.io) c.io.disconnect();
     renderer.reset();
+    if (renderer.setPlain) renderer.setPlain(false);
     look.setView(null);
     const keep = new Set(loadedUnits().filter(n => !c.mine.has(n)));   // nur freigeben, was die Vorschau selbst geladen hat
     releaseUnits(keep);
@@ -44,6 +45,7 @@ export function createPreview({ renderer, restore, arena, calm = () => false }) 
     const sc = scene(c.id, { form: c.form, lvl: c.lvl });
     c.sc = sc; c.acc = 0; c.last = 0; c.fade = 1; c.ready = false; c.loops = 0;
     renderer.reset();
+    if (renderer.setPlain) renderer.setPlain(true);
     look.setView(sc.view);
     const r = c.cv.getBoundingClientRect(), w = Math.max(120, Math.round(r.width)), h = Math.max(80, Math.round(r.height)), dpr = Math.min(2, window.devicePixelRatio || 1);
     c.cv.width = Math.round(w * dpr); c.cv.height = Math.round(h * dpr);

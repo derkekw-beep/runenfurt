@@ -924,7 +924,7 @@ export function createRenderer3D(canvas, overlay) {
     for (const e of opt.bars === false ? [] : g.ents) {
       if (e.stub) continue;
       const tower = e.kind === 'tower';
-      if (e.deployT > 0 && e.kind === 'unit') { // Aufstell-Uhr wie im Vorbild: Stoppuhr am Fuß, der Kreissektor in Teamfarbe zeigt die Restzeit; eine Uhr je Gruppe
+      if (!opt.plain && e.deployT > 0 && e.kind === 'unit') { // Aufstell-Uhr wie im Vorbild: Stoppuhr am Fuß, der Kreissektor in Teamfarbe zeigt die Restzeit; eine Uhr je Gruppe
         let lead = true;
         for (const c of clocks) if (c[0] === e.side && Math.abs(c[1] - e._x) + Math.abs(c[2] - e._y) < 2.6) { lead = false; break; }
         if (lead) {
@@ -951,7 +951,7 @@ export function createRenderer3D(canvas, overlay) {
       if (e.ench) { o2.fillStyle = RUNE_COLOR; o2.strokeStyle = 'rgba(15,20,26,.9)'; o2.lineWidth = 1.5; const q = Math.max(3, ppt * 0.13), mx = sx + (e.blessed ? q * 2.6 : 0), my = y - q - 2; o2.beginPath(); o2.moveTo(mx, my - q); o2.lineTo(mx + q, my); o2.lineTo(mx, my + q); o2.lineTo(mx - q, my); o2.closePath(); o2.fill(); o2.stroke(); }
       // Stufenschild in Teamfarbe; mit Balken (nach dem ersten Schaden) steht es links daneben. Wie im Vorbild tragen die EIGENEN
       // Truppen bei vollem Leben gar kein Schild – erst nach dem ersten Schaden; gegnerische zeigen ihre Stufe immer.
-      if (!tower && !(e.kind === 'unit' && e.side === 0 && !bar)) {
+      if (!opt.plain && !tower && !(e.kind === 'unit' && e.side === 0 && !bar)) {
         const q = Math.max(10, Math.round(ppt * 0.46)), two = e.lvl > 9, bw = two ? q * 1.45 : q, lx = bar ? sx - w / 2 - bw - 3 : sx - bw / 2, ly = bar ? y + h / 2 - q / 2 : y + h - q;
         const font = `800 ${Math.max(8, Math.round(q * 0.82))}px -apple-system, system-ui, "Segoe UI", sans-serif`;
         if (lvlFont !== font) { lvlFont = font; o2.font = font; } // Schrift nur setzen, wenn sie wechselt (Schwärme)
@@ -1069,6 +1069,8 @@ export function createRenderer3D(canvas, overlay) {
   // Ort eines Feldpunkts auf dem Bildschirm (für Einblendungen über der Spielfläche)
   function toScreen(x, z, y = 1) { const [sx, sy] = project(x, y, z), r = canvas.getBoundingClientRect(); return { x: r.left + sx * r.width / width, y: r.top + sy * r.height / height }; }
 
-  return { ready, look, sprites, fx: efx, insts, resize, reset, onEvent, draw, toField, toScreen, snapshot, prepare, setOptions, figureNames: () => unitIndex(), warmFigures: onStep => unitIndex().then(list => warmUnits(list, { force: true, pause: 20, onStep })),   // alle Bildfolgen für den Offline-Betrieb laden (rund 72 MB)
+  // Kartenvorschau: ruhiges Bild ohne Aufstell-Uhren und Stufenschilder (Lebensbalken bleiben, sobald etwas Schaden nimmt)
+  const setPlain = v => { opt.plain = !!v; };
+  return { setPlain, ready, look, sprites, fx: efx, insts, resize, reset, onEvent, draw, toField, toScreen, snapshot, prepare, setOptions, figureNames: () => unitIndex(), warmFigures: onStep => unitIndex().then(list => warmUnits(list, { force: true, pause: 20, onStep })),   // alle Bildfolgen für den Offline-Betrieb laden (rund 72 MB)
     sheet: (m, side) => getSheet(m, side).tex.image, three: true, info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }) };
 }
