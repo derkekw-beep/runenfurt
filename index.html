@@ -8,7 +8,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Runenfurt</title>
 <meta name="description" content="Runenfurt – Kartenkämpfe in Echtzeit gegen den Computer. Läuft ohne Internet.">
-<meta name="theme-color" content="#0d1c26">
+<meta name="theme-color" content="#1c4a84">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -66,6 +66,12 @@
   <!-- Karten -->
   <div class="tab" id="tabCards" hidden>
     <div class="scroll">
+      <div class="deckPanel">
+        <div class="sub"><b>Dein Deck</b><span id="avgCost"></span></div>
+        <div class="seg small" id="slotSeg" role="group" aria-label="Deck-Platz"></div>
+        <div class="swapHint" id="swapHint" hidden></div>
+        <div class="grid" id="deckGrid"></div>
+      </div>
       <div id="upBox" hidden>
         <div class="sub"><b>Bereit zum Aufwerten</b><span id="upSum"></span></div>
         <div class="upRow" id="upRow"></div>
@@ -75,10 +81,6 @@
         <button class="btn tile" id="jokerBtn"><span class="ico joker"></span><span><b id="jokerNum">0 Joker</b><small>und andere Sonderdinge</small></span></button>
       </div>
       <button class="btn tile wideTile" id="mastBtn" hidden><span class="ico coin"></span><span><b>Kartenmeisterschaft</b><small id="mastInfo"></small></span><em>Abholen</em></button>
-      <div class="sub"><b>Dein Deck</b><span id="avgCost"></span></div>
-      <div class="seg small" id="slotSeg" role="group" aria-label="Deck-Platz"></div>
-      <div class="swapHint" id="swapHint" hidden></div>
-      <div class="grid" id="deckGrid"></div>
       <div class="sub"><b>Türme</b><span id="towerInfo"></span></div>
       <div class="grid" id="towerGrid"></div>
       <div class="sub"><b>Sammlung</b><span id="collCount"></span></div>

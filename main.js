@@ -6,7 +6,7 @@ import * as P from './progress.js';
 import { HERO_FORMS } from './helden.js';
 import { createRenderer, drawCardArt } from './render.js';
 import { createRenderer3D } from './render3d.js';
-import { sfx, unlock, setSound, setVolume } from './audio.js';
+import { sfx, unlock, setSound, setVolume, SOUND_NAMES, samplesReady } from './audio.js';
 import { STORY, explain } from './lore.js';
 import { createStage } from './arenabild.js';
 import { createPreview } from './vorschau.js';
@@ -100,9 +100,10 @@ function cardEl(id, opt = {}) {
   if (c.type !== 'tower') e.append(el('span', 'cost', opt.cost != null ? opt.cost : c.mirror ? '+1' : c.cost)); // Türme kosten keine Kraft
   e.append(el('span', c.name.length > 10 ? 'name long' : 'name', c.name));
   if (opt.locked != null) { e.classList.add('locked'); e.append(el('span', 'lv', `Arena ${opt.locked + 1}`)); }
-  else if (opt.lvl) e.append(el('span', 'lv', `St. ${opt.lvl}`));
+  else if (opt.lvl) e.append(el('span', 'lv', `<i>St.</i> ${opt.lvl}`));   // im Karten-Reiter macht das Stilblatt daraus „Stufe“
   if (opt.meter) {
     const m = el('span', 'meter'); const i = el('i'); i.style.width = `${Math.min(100, opt.meter * 100)}%`; m.append(i); e.append(m);
+    if (profile.cards[id]) { const u = P.upgradeInfo(profile, id); m.dataset.n = u.max ? '' : `${profile.cards[id].n}/${u.copies}`; }   // Stand im Balken (Karten-Reiter)
     if (opt.meter >= 1) e.classList.add('up');
   }
   // Seltenheit: Rahmenfarbe und ein Stein oben in der Mitte (selten: Raute, episch: Doppelraute, legendär: Stern); Helden tragen ein Banner
@@ -616,7 +617,7 @@ function renderDeck() {
     dg.append(e);
   });
   let legend = $('#slotLegend');
-  if (!legend) { legend = el('p', 'slotLegend'); legend.id = 'slotLegend'; dg.after(legend); }
+  if (!legend) { legend = el('p', 'slotLegend'); legend.id = 'slotLegend'; dg.after(legend); legend.addEventListener('click', () => legend.classList.toggle('open')); }   // die lange Erklärung erst auf Antippen
   legend.innerHTML = P.SPECIAL_SLOTS.map((sl, i) => `<span class="${P.slotOpen(profile, i) ? '' : 'off'}"><i class="k ${sl.kind}"></i>Platz ${i + 1}: ${sl.name}${P.slotOpen(profile, i) ? '' : ` (ab Arena ${sl.arena + 1})`}</span>`).join('')
     + '<small><b>Karte gedrückt halten und ziehen:</b> auf eine Deck-Karte gelegt, tauscht sie mit ihr den Platz oder ersetzt sie.<br>Goldene Krone an der Karte: Sie hat eine Heldenform. Violette Raute: Sie hat eine Runenform. Blass heißt: noch nicht freigeschaltet.<br>Die Runenform spielt nur auf dem Runenplatz und dem freien Platz, Helden und Heldenformen nur auf dem Heldenplatz und dem freien Platz.</small>';
   // Türme: die gewählte Art gilt für beide Außentürme; der Hauptturm steigt mit den Kartenstufen
@@ -1368,6 +1369,7 @@ function renderMore() {
   item('So geht’s', 'Regeln in Kürze', () => showHelp());
   item('Spielstand sichern', 'Auf ein anderes Gerät übertragen', showTransfer);
   item('Für unterwegs laden', 'Alle Figuren speichern – dann läuft alles auch ohne Netz', showOffline);
+  item('Klangprobe', 'Jeden Klang des Spiels einzeln anhören', showSoundTest);
   item('Alles freischalten', 'Alle Karten, Formen und Arenen – alles auf Höchststufe', showUnlockAll);
   item('Über Runenfurt', 'Version und Hinweise', showAbout);
   body.append(list);
@@ -1416,6 +1418,15 @@ function showSettings() {
   });
   body.append(reset);
   simpleSheet('Einstellungen', body);
+}
+
+// Klangprobe: jeder Klang als Knopf – so lässt sich sagen, welcher nicht gefällt (der Name steht auf dem Knopf)
+function showSoundTest() {
+  const d = el('div', '', `<h3>Klangprobe</h3><p class="center small">${samplesReady() ? 'Tippe einen Klang an. Mehrmals tippen: manche haben mehrere Fassungen.' : 'Die Aufnahmen laden noch – bis dahin hörst du die erzeugten Töne.'}</p>`);
+  const box = el('div', 'soundTest');
+  for (const n of SOUND_NAMES) { const b = el('button', 'btn', n); b.addEventListener('click', () => { unlock(); sfx(n); }); box.append(b); }
+  d.append(box);
+  simpleSheet('', d, false);
 }
 
 // Alles freischalten und auf Höchststufe setzen (zum Ausprobieren) – mit Rückfrage, weil es sich nicht zurücknehmen lässt

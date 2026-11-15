@@ -1,7 +1,7 @@
 // Offline-Cache für den Spiel-Code. Spielstände liegen NICHT hier, sondern im localStorage.
 // Das Spiel kommt immer komplett aus dem Cache EINER Version – nie halb alt, halb neu.
 // Bei jeder Änderung die Versionsnummer erhöhen (macht tools/deploy.mjs).
-const VERSION = 'runenfurt-v17';
+const VERSION = 'runenfurt-v18';
 // Die großen Bildfolgen der Figuren liegen in einem eigenen Speicher, der Versionen überdauert: Sie werden beim ersten
 // Gebrauch gespeichert (und vom Spiel im Hintergrund nachgeladen). Ihre Adresse trägt ?v=<Stand der Figur> – ändert sich
 // eine Figur, ändert sich die Adresse, und nur sie wird neu geholt. Die Liste unten pflegt tools/engine_dateien.mjs.
@@ -55,6 +55,10 @@ const FILES = [
   './engine/rezepte.js',
   './engine/sprites.js',
   './engine/assets/props.json',
+  './ton/klang.json',
+  './ton/klang.mp3',
+  './engine/assets/fx/fx.json',
+  './engine/assets/fx/fx.webp',
   './engine/assets/units/index.json',
   './engine/assets/units/stand.json',
   './engine/assets/units/armbrustwagen_k.webp',

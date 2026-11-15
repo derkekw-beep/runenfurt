@@ -1,7 +1,9 @@
 // Effekt-Bausteine: Teilchen (ein Zeichenaufruf für alle), Bodenringe und -scheiben, Brandflecken, Strahlen,
 // Trümmer, zeitversetzte Schritte. Rezepte (registry.js) setzen daraus Treffer, Zauber und Einschläge zusammen.
 // Farben dürfen heller als Weiß sein (hdr): solche Stellen leuchten in der Nachbearbeitung nach.
-import { THREE } from './deps.js';
+// Seit 2026-11-15 dazu Bildfolgen aus Blender (sheet): Explosion, Rauch, Staubkranz, Trefferstern, Hieb, Zauberschlag, Entladung,
+// Eis, Giftblasen, Flamme, Heilung, Lichtsäule, Wirbel, Druckwelle, Risse, Runenkreis – ein Sammelbild, zwei Zeichenaufrufe.
+import { THREE, ASSETS } from './deps.js';
 import { anchor } from './halten.js';
 
 const TAU = Math.PI * 2;
@@ -95,6 +97,95 @@ export function createFx(look) {
     geo.instanceCount = P.n; iPos.needsUpdate = iSR.needsUpdate = iCol.needsUpdate = true;
   }
 
+  // ---- Bildfolgen aus Blender (assets/fx/fx.webp, Lage und Raster in fx.json; gebaut mit tools/blender/fx_sheets.py und fx_pack.py) ----
+  // Jede Folge ist ein Raster gleich großer Bilder; gezeichnet wird das aktuelle Bild, überblendet mit dem nächsten (wenige Bilder
+  // wirken so flüssig). Stehende Folgen sind Tafeln zur Kamera (in Blender unter dem Blickwinkel des Spiels gerechnet), flache
+  // liegen auf dem Boden. Weiße Folgen färbt color ein; add 1 = reines Leuchten, add 0 = deckend wie gemalt.
+  const SMAX = 256, SHEETS = {};
+  const blank = new THREE.DataTexture(new Uint8Array(4), 1, 1); blank.needsUpdate = true;
+  const sMat = new THREE.ShaderMaterial({
+    uniforms: { map: { value: blank }, uTex: { value: new THREE.Vector2(1, 1) } },
+    vertexShader: `attribute vec3 iPos; attribute vec4 iA; attribute vec4 iB; attribute vec4 iC; attribute vec4 iD; attribute vec4 iCol; uniform vec2 uTex;
+      varying vec2 vA; varying vec2 vB; varying float vBl; varying float vAdd; varying vec4 vCol;
+      vec2 cellUv(float k, vec2 q){ vec2 px = iB.xy + vec2(mod(k, iB.z), floor(k / iB.z)) * iC.xy + q * iD.xy; return vec2(px.x * uTex.x, 1.0 - px.y * uTex.y); }
+      void main(){ float lie = step(1.5, iB.w); vAdd = iB.w - lie * 2.0; vCol = iCol; vBl = fract(iC.z);
+        vec2 q = clamp(vec2(uv.x, 1.0 - uv.y), vec2(0.5) / iD.xy, vec2(1.0) - vec2(0.5) / iD.xy);
+        vA = cellUv(iA.w, q); vB = cellUv(floor(iC.z), q);
+        vec2 p = (uv - vec2(iD.z, iD.w)) * iA.xy; float c = cos(iA.z), s = sin(iA.z); p = vec2(p.x * c - p.y * s, p.x * s + p.y * c);
+        vec4 mv = viewMatrix * vec4(iPos + lie * vec3(p.x, 0.0, -p.y), 1.0); mv.xy += (1.0 - lie) * p;
+        gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform sampler2D map; varying vec2 vA; varying vec2 vB; varying float vBl; varying float vAdd; varying vec4 vCol;
+      void main(){ vec4 c = mix(texture2D(map, vA), texture2D(map, vB), vBl); float a = c.a * vCol.a; if (a < 0.004) discard;
+        vec3 lin = pow(c.rgb / max(c.a, 0.0001), vec3(2.2)) * a;      // das Bild liegt vormultipliziert in sRGB vor
+        gl_FragColor = vec4(lin * vCol.rgb, a * (1.0 - vAdd)); }`,
+    transparent: true, premultipliedAlpha: true, depthWrite: false,
+  });
+  function sheetLayer(order) {
+    const g = new THREE.InstancedBufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0], 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 1, 1], 2));
+    g.setIndex([0, 1, 2, 2, 1, 3]);
+    const at = {};
+    for (const [k, n] of [['iPos', 3], ['iA', 4], ['iB', 4], ['iC', 4], ['iD', 4], ['iCol', 4]]) { at[k] = new THREE.InstancedBufferAttribute(new Float32Array(SMAX * n), n); at[k].setUsage(THREE.DynamicDrawUsage); g.setAttribute(k, at[k]); }
+    g.instanceCount = 0;
+    const m = new THREE.Mesh(g, sMat); m.frustumCulled = false; m.renderOrder = order; world.add(m);
+    return { g, at, list: [] };
+  }
+  const sUp = sheetLayer(5990), sFlat = sheetLayer(22);
+  let sheetsLoading = null;
+  function loadSheets() {
+    return sheetsLoading || (sheetsLoading = (async () => {
+      try {
+        const [info, tex] = await Promise.all([fetch(`${ASSETS}fx/fx.json`).then(r => r.json()), new THREE.TextureLoader().loadAsync(`${ASSETS}fx/fx.webp`)]);
+        tex.colorSpace = THREE.NoColorSpace; tex.premultiplyAlpha = true; tex.generateMipmaps = true; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.needsUpdate = true;
+        sMat.uniforms.map.value = tex; sMat.uniforms.uTex.value.set(1 / info.size[0], 1 / info.size[1]);
+        try { look.renderer.initTexture(tex); } catch { /* dann lädt die Grafikkarte das Bild beim ersten Effekt */ }   // gleich hochladen: sonst stockt der erste Effekt des Kampfs
+        Object.assign(SHEETS, info.sheets);
+        return true;
+      } catch { return false; }   // ohne Bildfolgen bleiben die Teilchen und Ringe
+    })());
+  }
+  // o: { x, y, z, r (Maßstab: so viele Felder ist eine Einheit der Folge groß), dur, delay, color, hdr, alpha, add, rot, spin, grow (Größe am Ende),
+  //      fadeIn, fadeOut (Sekunden), fps (Schleifen), vx, vy, vz (Drift), flip }. Liefert das laufende Stück (x, y, z darf man nachführen, dead = true beendet es).
+  function sheet(name, o) {
+    const s = SHEETS[name]; if (!s) return null;
+    const L = s.top ? sFlat : sUp; if (L.list.length >= SMAX) return null;
+    const w = (o.r ?? 1) * s.units, loop = s.loop && s.n > 1;
+    const it = { s, x: o.x, y: o.y ?? (s.top ? 0.05 : 0), z: o.z, w: w * (o.flip ? -1 : 1), h: w * s.ch / s.cw, rot: o.rot || 0, spin: o.spin || 0, t: -(o.delay || 0), dur: o.dur || (s.n > 1 ? s.n / 26 : 1),
+      loop, fps: o.fps || 16, f0: loop ? Math.random() * s.n : 0, c: rgb(o.color || '#ffffff', o.hdr || 1), alpha: o.alpha ?? 1, add: Math.min(0.999, o.add ?? 0), grow: o.grow ?? 1,
+      fin: o.fadeIn ?? 0, fout: o.fadeOut ?? (loop ? 0.25 : 0), vx: o.vx || 0, vy: o.vy || 0, vz: o.vz || 0, dead: false };
+    L.list.push(it);
+    return it;
+  }
+  function stepSheets(dt) {
+    for (const L of [sUp, sFlat]) {
+      const { list, at } = L;
+      for (let i = list.length - 1; i >= 0; i--) { const it = list[i]; it.t += dt; if (it.dead || it.t >= it.dur) list.splice(i, 1); }
+      if (L === sUp && list.length > 1) list.sort((a, b) => a.z - b.z);   // hinten zuerst
+      let n = 0;
+      for (const it of list) {
+        if (it.t < 0) continue;
+        const s = it.s, k = it.t / it.dur;
+        let i0 = 0, i1 = 0, bl = 0;
+        if (it.loop) { const f = (it.f0 + it.t * it.fps) % s.n; i0 = Math.floor(f); i1 = (i0 + 1) % s.n; bl = f - i0; }
+        else if (s.n > 1) { const f = k * (s.n - 1); i0 = Math.floor(f); i1 = Math.min(s.n - 1, i0 + 1); bl = f - i0; }
+        it.x += it.vx * dt; it.y += it.vy * dt; it.z += it.vz * dt; it.rot += it.spin * dt;
+        let a = it.alpha; if (it.fin > 0) a *= Math.min(1, it.t / it.fin); if (it.fout > 0) a *= Math.min(1, (it.dur - it.t) / it.fout);
+        const g = 1 + (it.grow - 1) * (1 - (1 - k) * (1 - k)), j = n * 4;
+        at.iPos.array[n * 3] = it.x; at.iPos.array[n * 3 + 1] = it.y; at.iPos.array[n * 3 + 2] = it.z;
+        at.iA.array[j] = it.w * g; at.iA.array[j + 1] = it.h * g; at.iA.array[j + 2] = it.rot; at.iA.array[j + 3] = s.first + i0;
+        at.iB.array[j] = s.x; at.iB.array[j + 1] = s.y; at.iB.array[j + 2] = s.cols; at.iB.array[j + 3] = (s.top ? 2 : 0) + it.add;
+        at.iC.array[j] = s.step[0]; at.iC.array[j + 1] = s.step[1]; at.iC.array[j + 2] = s.first + i1 + Math.min(0.999, bl); at.iC.array[j + 3] = 0;
+        at.iD.array[j] = s.cw; at.iD.array[j + 1] = s.ch; at.iD.array[j + 2] = s.ax; at.iD.array[j + 3] = s.ay;
+        at.iCol.array[j] = it.c[0]; at.iCol.array[j + 1] = it.c[1]; at.iCol.array[j + 2] = it.c[2]; at.iCol.array[j + 3] = a;
+        n++;
+      }
+      L.g.instanceCount = n;
+      if (n || L.had) for (const k in at) at[k].needsUpdate = true;
+      L.had = n > 0;
+    }
+  }
+
   // ---- Bodenringe und -scheiben (flach auf dem Boden, leuchtend) ----
   const flatGeo = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
   const ringMat = new THREE.ShaderMaterial({
@@ -129,6 +220,7 @@ export function createFx(look) {
     const m = flat(o), u = m.material.uniforms, c = rgb(o.color || '#ffffff', o.hdr || 1.2);
     u.uCol.value.set(c[0], c[1], c[2]); u.uW.value = 0.07; u.uFill.value = o.fill ?? 0.3; u.uDash.value = o.dash ?? 14;
     m.scale.set(o.r, 1, o.r);
+    if (o.rune !== false) sheet('kreis', { x: o.x, z: o.z, y: 0.045, r: o.r, dur: (o.dur || 0.6) + 0.12, color: o.color, hdr: (o.hdr || 1.2) * 1.15, add: 0.85, alpha: 0.85, spin: 1.1, fadeIn: 0.12, fadeOut: 0.14, grow: 1.04 });
     live.push({ t: 0, d: o.dur || 0.6, update(k, dt, time) { u.uSpin.value = time * 1.6; u.uA.value = Math.min(1, k * 8) * (0.7 + 0.3 * Math.sin(time * 14)); const s = o.r * (1 + 0.06 * (1 - k)); m.scale.set(s, 1, s); }, end() { drop(m); } });
   }
   // Pfütze: farbige Scheibe, die sich kurz ausbreitet und dann langsam verblasst (Tod einer Runenform: violett, eines Helden: gold).
@@ -205,9 +297,9 @@ export function createFx(look) {
       const f = live[i]; f.t += dt;
       if (f.t >= f.d) { f.update(1, dt, time); f.end(); live.splice(i, 1); } else f.update(f.t < 0 ? -1 : f.t / f.d, dt, time);
     }
-    stepParticles(dt);
+    stepParticles(dt); stepSheets(dt);
   }
-  function clear() { for (const f of live) f.end(); live.length = 0; P.n = 0; geo.instanceCount = 0; }
+  function clear() { for (const f of live) f.end(); live.length = 0; P.n = 0; geo.instanceCount = 0; sUp.list.length = sFlat.list.length = 0; }
 
-  return { burst, ring, zone, puddle, decal, beam, debris, fall, after, marker, update, clear, count: () => P.n, CELL };
+  return { burst, ring, zone, puddle, decal, beam, debris, fall, after, marker, sheet, loadSheets, sheets: SHEETS, update, clear, count: () => P.n, sheetCount: () => sUp.list.length + sFlat.list.length, CELL };
 }

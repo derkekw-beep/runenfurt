@@ -1,4 +1,6 @@
-// Klänge: alles wird im Browser erzeugt (Web Audio), es gibt keine Tondateien.
+// Klänge. Seit 2026-11-15 kommen Schläge, Klingen, Einschläge, Explosionen und Zauber aus echten Aufnahmen (ton/klang.mp3: alle
+// hintereinander in einer Datei, Lage in ton/klang.json; gebaut mit tools/ton_bauen.py aus freien CC0-Paketen, siehe ton/QUELLEN.txt).
+// Melodisches (Fanfaren, Glocken, Zähler) wird weiter im Browser erzeugt (Web Audio) – und alles, solange die Datei noch lädt oder fehlt.
 // Seit 2026-11-11: Ausgang über Tiefpass und Begrenzer (nichts klirrt, wenn viel zugleich klingt), Rechteck- und Sägezahn-Töne werden
 // abgemildert, häufige Klänge (Treffer, Schüsse) schwanken leicht in der Tonhöhe, damit sie sich nicht abnutzen.
 // Seit 2026-11-14 (Überarbeitung): Hall (ein erzeugter Raumklang, Anteil je Klang in WET), Lage im Raum (sfx(name, alt, { x }) –
@@ -8,6 +10,25 @@
 // Welches Ereignis welchen Klang bekommt, entscheidet main.js (soundOf).
 let ctx = null, master = null, verb = null, dest = null, enabled = true, noiseBuf = null, vary = 1;
 const lastAt = {};
+// Aufnahmen: sprite = die ganze Tondatei, spriteInfo[name] = { v: [[Beginn, Dauer], …], mix: Anteil des erzeugten Tons dazu }
+let sprite = null, spriteInfo = null, spriteOff = 0, spriteP = null;
+const turnOf = {}, SAMPLE_GAIN = 0.5, SYNTH_GAIN = 1.35;   // Aufnahmen sind lauter ausgesteuert als der erzeugte Ton: so stehen Kampf und Fanfaren im Gleichgewicht
+function loadSprite(c) {
+  return spriteP || (spriteP = (async () => {
+    try {
+      const base = new URL('./ton/', import.meta.url);
+      const [info, raw] = await Promise.all([fetch(new URL('klang.json', base)).then(r => r.json()), fetch(new URL('klang.mp3', base)).then(r => r.arrayBuffer())]);
+      const buf = await new Promise((res, rej) => { const p = c.decodeAudioData(raw, res, rej); if (p && p.catch) p.catch(rej); });
+      // Je nach Browser beginnt eine MP3-Datei um einige Hundertstel versetzt: am Anfang steht eine Marke, an der sich die Zeiten ausrichten.
+      const d = buf.getChannelData(0), n = Math.min(d.length, Math.floor(buf.sampleRate * 0.5));
+      let i = 0; while (i < n && Math.abs(d[i]) < 0.25) i++;
+      spriteOff = i < n ? i / buf.sampleRate - info.mark : 0;
+      spriteInfo = info.sounds; sprite = buf;
+      return true;
+    } catch { return false; }   // ohne Aufnahmen bleibt der erzeugte Ton
+  })());
+}
+export const samplesReady = () => !!sprite;
 
 let volume = 0.8;
 const level = () => (enabled ? 0.62 * volume : 0);
@@ -38,6 +59,7 @@ export function unlock() {
         verb.connect(conv); conv.connect(tame); tame.connect(master);
       } catch { verb = null; }
       dest = master;
+      loadSprite(ctx);
     }
     if (ctx.state !== 'running') ctx.resume();
   } catch { /* ohne Ton weiterspielen */ }
@@ -193,24 +215,38 @@ export const SOUND_NAMES = Object.keys(SOUNDS);
 
 // Für Werkzeuge (tools/klang.mjs): rechnet einen Klang ohne Lautsprecher aus und meldet Spitze, mittlere Lautstärke und Dauer –
 // so fällt auf, wenn ein Klang stumm bleibt, übersteuert oder beim Erzeugen scheitert. Ändert am laufenden Ton nichts.
-export async function measure(name, seconds = 2.2) {
+export async function measure(name, seconds = 3.2) {
   const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   if (!OAC || !SOUNDS[name]) return null;
   const sr = 44100, off = new OAC(2, Math.floor(sr * seconds), sr), keep = [ctx, master, verb, dest, noiseBuf];
+  await loadSprite(ctx || off);
   let err = '';
   try {
     ctx = off; master = off.createGain(); master.connect(off.destination); verb = null; dest = master;
     noiseBuf = off.createBuffer(1, sr, sr);
     const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    SOUNDS[name]();
+    play(name);
   } catch (e) { err = String(e && e.message || e); }
   [ctx, master, verb, dest, noiseBuf] = keep;
   if (err) return { name, err };
   const buf = await off.startRendering(), ch = buf.getChannelData(0);
   let peak = 0, sum = 0, last = 0;
   for (let i = 0; i < ch.length; i++) { const v = Math.abs(ch[i]); if (v > peak) peak = v; sum += v * v; if (v > 0.003) last = i; }
-  return { name, peak: Math.round(peak * 1000) / 1000, rms: Math.round(Math.sqrt(sum / Math.max(1, last)) * 1000) / 1000, dur: Math.round((last / sr) * 100) / 100 };
+  return { name, peak: Math.round(peak * 1000) / 1000, rms: Math.round(Math.sqrt(sum / Math.max(1, last)) * 1000) / 1000, dur: Math.round((last / sr) * 100) / 100, sample: !!(spriteInfo && spriteInfo[name]) };
+}
+
+// Spielt einen Klang in den laufenden Ausgang (dest): die Aufnahme, wenn es eine gibt (reihum eine ihrer Fassungen), sonst den erzeugten Ton;
+// steht bei der Aufnahme ein Anteil 'mix', klingt der erzeugte Ton leiser mit (Glocken und Bläser über dem aufgenommenen Schlag).
+function play(name) {
+  const s = sprite && spriteInfo[name];
+  if (!s) { const out = dest, sg = ctx.createGain(); sg.gain.value = SYNTH_GAIN; sg.connect(out); dest = sg; try { SOUNDS[name](); } finally { dest = out; } return; }
+  const n = s.v.length, k = turnOf[name] = ((turnOf[name] ?? -1) + 1 + (n > 2 && Math.random() < 0.35 ? 1 : 0)) % n, [at, dur] = s.v[k];
+  const src = ctx.createBufferSource(), g = ctx.createGain();
+  src.buffer = sprite; src.playbackRate.value = vary; g.gain.value = SAMPLE_GAIN;
+  src.connect(g); g.connect(dest);
+  src.start(ctx.currentTime, Math.max(0, at + spriteOff - 0.003), dur + 0.01);
+  if (s.mix) { const out = dest, sg = ctx.createGain(); sg.gain.value = s.mix; sg.connect(out); dest = sg; try { SOUNDS[name](); } finally { dest = out; } }
 }
 
 // alt: Ersatzklang, falls es für name keinen eigenen gibt (etwa die Fähigkeiten der Heldenformen)
@@ -231,7 +267,7 @@ export function sfx(name, alt, o) {
     const wet = WET[name] ?? 0.06;
     if (verb && wet > 0) { const w = ctx.createGain(); w.gain.value = wet; out.connect(w); w.connect(verb); }
     dest = bus;
-    SOUNDS[name]();
+    play(name);
   } catch { /* egal */ }
   dest = master;
   vary = 1;

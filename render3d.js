@@ -39,7 +39,7 @@ export function createRenderer3D(canvas, overlay) {
   // Kartenbilder geladen; die großen Bildfolgen holt prepare() für die Karten des jeweiligen Kampfs.
   const fresh = new Set();
   const ready = Promise.race([
-    Promise.allSettled([look.ready, unitIndex().then(list => { for (const n of list) fresh.add(n); setTimeout(() => warmUnits(list), 6000); return loadPortraits([...list, ...BUILDING_ART]); })]),
+    Promise.allSettled([look.ready, efx.loadSheets(), unitIndex().then(list => { for (const n of list) fresh.add(n); setTimeout(() => warmUnits(list), 6000); return loadPortraits([...list, ...BUILDING_ART]); })]),
     new Promise(r => setTimeout(r, 6000)),
   ]);
   const UNIT = SCALE;   // Größe der Figuren im Feld – gilt auch für die bisherigen

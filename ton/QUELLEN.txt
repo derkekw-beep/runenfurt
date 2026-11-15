@@ -1,0 +1,12 @@
+Die Spielklänge in klang.mp3 sind aus freien Aufnahmen gemischt. Alle Pakete stehen unter CC0 (gemeinfrei):
+
+- 100 CC0 SFX – https://opengameart.org/content/100-cc0-sfx (CC0)
+- 100 CC0 SFX #2 – https://opengameart.org/content/100-cc0-sfx-2 (CC0)
+- 80 CC0 creature SFX – https://opengameart.org/content/80-cc0-creature-sfx (CC0)
+- 25 CC0 bang / firework SFX – https://opengameart.org/content/25-cc0-bang-firework-sfx (CC0)
+- 50 RPG sound effects – https://opengameart.org/content/50-rpg-sound-effects (CC0)
+- 100 CC0 metal and wood SFX – https://opengameart.org/content/100-cc0-metal-and-wood-sfx (CC0)
+- RPG Sound Pack – https://opengameart.org/content/rpg-sound-pack (CC0)
+- Swishes Sound Pack – https://opengameart.org/content/swishes-sound-pack (CC0)
+
+Gebaut mit tools/ton_bauen.py.
