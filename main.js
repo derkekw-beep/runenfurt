@@ -8,6 +8,7 @@ import { createRenderer, drawCardArt } from './render.js';
 import { createRenderer3D } from './render3d.js';
 import { sfx, unlock, setSound, setVolume, SOUND_NAMES, samplesReady } from './audio.js';
 import { rollDeck, applyDeck, avgCost as deckAvg } from './deckwuerfel.js';
+import { META_STAND } from './metadecks.js';
 import { STORY, explain } from './lore.js';
 import { createStage } from './arenabild.js';
 import { createPreview } from './vorschau.js';
@@ -1428,9 +1429,10 @@ function showRoll() {
   if (!r) { toast('Dafür brauchst du mindestens acht Karten.', 2200); return; }
   rolled.push(r.deck);
   const miss = r.swaps.length, far = miss > 4;
-  const note = r.full ? 'Ein bewährtes Deck – alle acht Karten hast du.'
+  const proof = r.wr ? ` Im Vorbild gewann es zuletzt ${String(r.wr).replace('.', ',')} % seiner ${fmt(r.battles)} Kämpfe in der höchsten Arena (Stand ${META_STAND.split('-').reverse().join('.')}).` : '';
+  const note = (r.full ? 'Ein bewährtes Deck – alle acht Karten hast du.'
     : far ? `Für „${r.name}“ fehlen dir noch ${miss} Karten – das Deck ist aus deinen ähnlichsten Karten gebaut.`
-    : `Ein bewährtes Deck. ${miss === 1 ? 'Eine Karte fehlt dir noch' : `${miss} Karten fehlen dir noch`} – an ihrer Stelle: ${r.swaps.map(([a, b]) => `<b>${CARDS[b].name}</b> statt ${CARDS[a].name}`).join(', ')}.`;
+    : `Ein bewährtes Deck. ${miss === 1 ? 'Eine Karte fehlt dir noch' : `${miss} Karten fehlen dir noch`} – an ihrer Stelle: ${r.swaps.map(([a, b]) => `<b>${CARDS[b].name}</b> statt ${CARDS[a].name}`).join(', ')}.`) + proof;
   const d = el('div', 'rollSheet', `<h3>${far ? 'Gemischtes Deck' : r.name}</h3><p class="center small">${note}</p>`);
   const grid = el('div', 'grid rollGrid');
   for (const id of r.deck) grid.append(cardEl(id, { lvl: profile.cards[id].lvl, tag: 'div' }));

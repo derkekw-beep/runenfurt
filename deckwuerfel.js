@@ -1,5 +1,5 @@
-// Deck-Würfel: schlägt auf Knopfdruck ein Deck vor, das sich bewährt hat – eine der Deck-Vorlagen (metadecks.js), übersetzt in die
-// Karten, die der Spieler besitzt. Fehlt eine Karte der Vorlage, tritt die ähnlichste eigene an ihre Stelle (gleiche Art, gleiche
+// Deck-Würfel: schlägt auf Knopfdruck ein Deck vor, das sich bewährt hat – eine der Deck-Vorlagen (metadecks.js: die besten Decks der
+// höchsten Arena im Vorbild, mit Siegquote), übersetzt in die Karten, die der Spieler besitzt. Fehlt eine Karte der Vorlage, tritt die ähnlichste eigene an ihre Stelle (gleiche Art, gleiche
 // Aufgaben, ähnliche Kosten); am Ende wird geprüft, dass das Deck ein Mittel gegen Türme, einen Zauber und etwas gegen Flieger hat
 // und nicht zu teuer ist. Die Reihenfolge passt zu den besonderen Deck-Plätzen (Runenplatz, Heldenplatz).
 //   rollDeck(profile, rnd, { avoid })  →  { deck, name, base, full, swaps: [[fehlt, ersatz], …] }
@@ -32,7 +32,7 @@ export function rollDeck(p, rnd = Math.random, { avoid = [] } = {}) {
   if (own.length < 8) return null;
   const key = d => [...d].sort().join(','), skip = new Set([key(p.deck), ...avoid.map(key)]);
   // Vorlagen nach Eignung: möglichst viele eigene Karten, dann deren Stufen, dazu etwas Zufall
-  const ranked = META.map((m, i) => { const mine = m.d.filter(id => have.has(id)); return { m, i, n: mine.length, s: mine.length * 10 + mine.reduce((a, id) => a + lvl(id), 0) / 8 + rnd() * 6 }; })
+  const ranked = META.map((m, i) => { const mine = m.d.filter(id => have.has(id)); return { m, i, n: mine.length, s: mine.length * 10 + mine.reduce((a, id) => a + lvl(id), 0) / 8 + (m.wr ? (m.wr - 70) * 0.12 : 0) + rnd() * 6 }; })
     .sort((a, b) => b.s - a.s);
   const full = ranked.filter(r => r.n === 8 && !skip.has(key(r.m.d)));
   const pool = full.length ? full : ranked.slice(0, 5);
@@ -62,7 +62,7 @@ export function rollDeck(p, rnd = Math.random, { avoid = [] } = {}) {
     const b = best(c, id => fit(w[1], id)); swaps.push([w[1], b]); deck[w[0]] = b;
   }
   const ordered = P.slotOrder(deck, p.arena, { pool: own, runes: own.filter(id => P.hasRune(p, id)), forms: own.filter(id => P.hasForm(p, id)) });
-  return { deck: ordered, name: pick.m.n, base: pick.i, full: swaps.length === 0, swaps: swaps.filter(([a, b]) => ordered.includes(b)) };
+  return { deck: ordered, name: pick.m.n, base: pick.i, wr: pick.m.wr || 0, battles: pick.m.k || 0, full: swaps.length === 0, swaps: swaps.filter(([a, b]) => ordered.includes(b)) };
 }
 
 // Das vorgeschlagene Deck in den gewählten Deck-Platz legen
