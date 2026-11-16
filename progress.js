@@ -19,6 +19,7 @@ export const rarity = id => (C.RARITY && C.RARITY[id]) || (CARDS[id] && CARDS[id
 // ---- Kartenstufen wie im Vorbild (Stand November 2026; Tabellen und Quellen: recherche/vorbild/wirtschaft, Wiki „Cards“) ----
 // Stufen 1 bis 16. Eine Karte beginnt je nach Seltenheit auf Stufe 1, 3, 6, 9 oder 11.
 export const MAX_LEVEL = 16;
+export const DEV_MAX = 50;   // nur über das Entwickler-Werkzeug („Kartenstufen einstellen“): Stufen 17 bis 50, mit flacherer Skalierung (sim.cardMult)
 export const START_LEVEL = { gewoehnlich: 1, selten: 3, episch: 6, legendaer: 9, held: 11 };
 export const startLevel = id => START_LEVEL[rarity(id)];
 const Z = n => Array(n).fill(0);
@@ -77,7 +78,7 @@ export const ARENAS = [
 export const KT_NEED = [null, null, [9, 1], [9, 2], [10, 3], [10, 4], [10, 5], [10, 6], [10, 7], [10, 8], [10, 9], [10, 10], [11, 11], [11, 12], [12, 13], [13, 14], [14, 15]];
 const atLeast = (p, lvl) => Object.entries(p.cards).filter(([id, c]) => CARDS[id].type !== 'tower' && c.lvl >= lvl).length;
 export function towerCalc(p) { let kt = 1; for (let n = 2; n <= MAX_LEVEL; n++) { if (atLeast(p, KT_NEED[n][1]) >= KT_NEED[n][0]) kt = n; else break; } return kt; }
-export const towerLevel = p => Math.max(p.kt || 1, towerCalc(p));
+export const towerLevel = p => (p.ktDev ? p.kt || 1 : Math.max(p.kt || 1, towerCalc(p)));   // ktDev: mit dem Entwickler-Werkzeug fest eingestellt
 export function towerInfo(p) {
   const lvl = towerLevel(p);
   if (lvl >= MAX_LEVEL) return { lvl, max: true, have: 0, need: 0, at: 0 };
@@ -186,7 +187,7 @@ export function loadProfile(raw) {
     const c = d.cards && d.cards[id];
     const s0 = startLevel(id), raw = c ? num(c.lvl, old ? 1 : s0) : (old ? 1 : s0);
     // alt: jede Aufwertung bleibt eine Aufwertung – die Stufe verschiebt sich um die Startstufe der Seltenheit (selten +2, episch +5, legendär +8, Held +10)
-    p.cards[id] = { lvl: Math.min(MAX_LEVEL, Math.max(s0, old ? raw + s0 - 1 : raw)), n: num(c && c.n, 0) };
+    p.cards[id] = { lvl: Math.min(d.ktDev === true ? DEV_MAX : MAX_LEVEL, Math.max(s0, old ? raw + s0 - 1 : raw)), n: num(c && c.n, 0) };
   }
   // Karten ohne Vorbild gibt es nicht mehr (GONE): Das Gold ihrer Aufwertungen kommt zurück, dazu je übrige Karte ein kleiner Betrag.
   // Geschieht genau einmal – danach stehen sie nicht mehr im Spielstand. p.gone merkt es für den Hinweis im Menü.
@@ -223,7 +224,8 @@ export function loadProfile(raw) {
   // Runenformen: alte Spielstände kennen keine Scherben – wer die Form über die Kartenstufe schon hatte, behält sie
   if (d.runes && typeof d.runes === 'object') { for (const id of Object.keys(RUNES)) if (p.cards[id] && num(d.runes[id], 0)) p.runes[id] = Math.min(RUNE_SHARDS, num(d.runes[id], 0)); }
   else for (const id of Object.keys(RUNES)) if (p.cards[id] && p.cards[id].lvl >= runeLevel(id)) p.runes[id] = RUNE_SHARDS;
-  p.kt = Math.max(1, Math.min(MAX_LEVEL, Math.max(num(d.kt, 1), old ? oldLvl(num(d.xp, 0)) : 1, towerCalc(p))));   // sinkt nie; ein alter Spielstand behält mindestens seine Spielerstufe
+  p.ktDev = d.ktDev === true;   // Stufen über 16 gelten nur, wenn sie mit dem Entwickler-Werkzeug gesetzt wurden
+  p.kt = p.ktDev ? Math.max(1, Math.min(DEV_MAX, num(d.kt, 1))) : Math.max(1, Math.min(MAX_LEVEL, Math.max(num(d.kt, 1), old ? oldLvl(num(d.xp, 0)) : 1, towerCalc(p))));   // sinkt nie; ein alter Spielstand behält mindestens seine Spielerstufe
   p.eco = 2;
   p.wild = num(d.wild, 0) + refundShards;   // Scherben einer entfernten Karte werden freie Scherben
   // Truhenlager: Truhen, die ein alter Spielstand noch auf Truhenplätzen liegen hatte, lassen sich sofort öffnen. Dazu
@@ -273,6 +275,13 @@ export function loadProfile(raw) {
 // Alles freischalten (Knopf im Reiter „Mehr“, zum Ausprobieren): letzte Arena, jede Karte und jede Turmkarte auf der Höchststufe,
 // alle Runenformen erweckt, alle Heldenformen freigeschaltet, alle Gefahrenstufen des Überlebens offen, dazu reichlich Gold,
 // Runensplitter und Heldenmünzen. Lässt sich nicht zurücknehmen. Gibt die Zahl der Karten zurück, die jetzt auf Höchststufe stehen.
+// Entwickler-Werkzeug: alle Karten und Türme, die der Spieler hat, auf eine Stufe setzen (zum Ausprobieren, in beide Richtungen)
+export function setAllLevels(p, lvl) {
+  const L = Math.max(1, Math.min(DEV_MAX, lvl | 0));
+  for (const c of Object.values(p.cards)) c.lvl = L;
+  p.kt = L; p.ktDev = true;
+  return L;
+}
 export function unlockAll(p) {
   const last = ARENAS.length - 1;
   p.trophies = Math.max(p.trophies, ARENAS[last].at); p.best = Math.max(p.best, p.trophies); p.arena = last;

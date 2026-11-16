@@ -1372,6 +1372,7 @@ function renderMore() {
   item('Spielstand sichern', 'Auf ein anderes Gerät übertragen', showTransfer);
   item('Für unterwegs laden', 'Alle Figuren speichern – dann läuft alles auch ohne Netz', showOffline);
   item('Klangprobe', 'Jeden Klang des Spiels einzeln anhören', showSoundTest);
+  item('Kartenstufen einstellen', 'Entwickler-Werkzeug: alle Karten und Türme auf eine Stufe', showLevelTool);
   item('Alles freischalten', 'Alle Karten, Formen und Arenen – alles auf Höchststufe', showUnlockAll);
   item('Über Runenfurt', 'Version und Hinweise', showAbout);
   body.append(list);
@@ -1444,6 +1445,15 @@ function showRoll() {
   openSheet(d, true);
 }
 $('#rollBtn').addEventListener('click', () => { sfx('click'); showRoll(); });
+
+// Entwickler-Werkzeug: alle Karten und Türme auf eine Stufe setzen – nach oben wie nach unten, sofort wirksam
+function showLevelTool() {
+  const d = el('div', '', '<h3>Kartenstufen</h3><p class="center small">Setzt <b>alle</b> deine Karten und Türme auf diese Stufe. Über 16 geht es nur hier: bis Stufe 50, dort wächst jede Stufe um 5 % statt 10 %. Kartenstände und Gold bleiben.</p>');
+  const box = el('div', 'lvlTool');
+  for (const l of [...Array.from({ length: P.MAX_LEVEL }, (_, i) => i + 1), 20, 25, 30, 35, 40, 45, 50, 0].filter(Boolean)) { const b = el('button', 'btn', String(l)); b.addEventListener('click', () => { P.setAllLevels(profile, l); save(); sfx('upgrade'); artCache.clear(); render(); toast(`Alle Karten auf Stufe ${l}`, 1800); for (const x of box.children) x.classList.toggle('primary', x === b); }); box.append(b); }
+  d.append(box);
+  simpleSheet('', d, false);
+}
 
 // Klangprobe: jeder Klang als Knopf – so lässt sich sagen, welcher nicht gefällt (der Name steht auf dem Knopf)
 function showSoundTest() {

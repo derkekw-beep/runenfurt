@@ -105,10 +105,11 @@ export function portrait(name, w, h, n = 1) {
   const fig = figs.reduce((a, b) => (b.height > a.height ? b : a));
   const out = document.createElement('canvas'); out.width = w; out.height = h;
   const c = out.getContext('2d'); c.imageSmoothingQuality = 'high';
-  const s = Math.min(h * 0.7 / fig.height, w * 0.84 / fig.width) * (n > 2 ? 0.62 : n > 1 ? 0.74 : 1), fw = fig.width * s, fh = fig.height * s;
-  const spots = n === 1 ? [[0, 0]] : n === 2 ? [[-0.2, -0.04], [0.2, 0.03]] : n === 3 ? [[0, -0.1], [-0.22, 0.04], [0.22, 0.05]] : n === 4 ? [[-0.2, -0.1], [0.2, -0.09], [-0.22, 0.05], [0.21, 0.06]] : [[-0.28, -0.1], [0, -0.12], [0.28, -0.09], [-0.16, 0.05], [0.17, 0.06]];
+  // seit 2026-11-15 sind die Kartenbilder nah und von vorn-seitlich gerechnet (tools/blender/make_karten.py): die Figur füllt die Karte fast ganz
+  const s = Math.min(h * 0.86 / fig.height, w * 0.98 / fig.width) * (n > 2 ? 0.6 : n > 1 ? 0.72 : 1), fw = fig.width * s, fh = fig.height * s;
+  const spots = n === 1 ? [[0, 0]] : n === 2 ? [[-0.2, -0.07], [0.2, 0.02]] : n === 3 ? [[0, -0.16], [-0.24, 0.02], [0.24, 0.03]] : n === 4 ? [[-0.2, -0.17], [0.2, -0.16], [-0.24, 0.02], [0.23, 0.03]] : [[-0.3, -0.17], [0, -0.2], [0.3, -0.16], [-0.17, 0.02], [0.18, 0.03]];
   c.shadowColor = 'rgba(210,235,255,.5)'; c.shadowBlur = Math.max(4, w * 0.045);
-  spots.forEach(([x, y], k) => { const im = figs[(spots.length - 1 - k) % figs.length], iw = im.width * s, ih = im.height * s; c.drawImage(im, w / 2 + x * w - iw / 2, h * 0.84 + y * h - ih, iw, ih); });   // hinten zuerst
+  spots.forEach(([x, y], k) => { const im = figs[(spots.length - 1 - k) % figs.length], iw = im.width * s, ih = im.height * s; c.drawImage(im, w / 2 + x * w - iw / 2, h * 0.95 + y * h - ih, iw, ih); });   // hinten zuerst
   return out;
 }
 // Bildfolgen freigeben, die im nächsten Kampf nicht vorkommen (keep: Menge der Namen, die bleiben)

@@ -31,12 +31,16 @@ function emit(g, e) { if (g.events.length < 400) g.events.push(e); }
 // ändert Leben und Schaden um den Faktor 1,1 (so rechnet auch das Wiki des Vorbilds: Wert der Stufe 11 × 1,1^(Stufe − 11)).
 // Ohne Angabe gilt die Turnierstufe – darauf stehen die Regeltests.
 export const STD_LEVEL = 11;
-export const cardMult = lvl => Math.pow(1.1, (lvl || STD_LEVEL) - STD_LEVEL);
+// Über Stufe 16 (nur mit dem Entwickler-Werkzeug, bis 50) wächst alles langsamer: 5 % je Stufe statt 10 % – Stufe 50 ist damit gut
+// achtmal so stark wie Stufe 11, nicht vierzigmal.
+export const TOP_LEVEL = 16, DEV_LEVEL = 50;
+const over = lvl => Math.pow(1.05, Math.max(0, Math.min(DEV_LEVEL, lvl) - TOP_LEVEL));
+export const cardMult = lvl => Math.pow(1.1, Math.min(TOP_LEVEL, lvl || STD_LEVEL) - STD_LEVEL) * over(lvl || STD_LEVEL);
 // Türme haben eigene Reihen (Wiki „Tower Princess“ und „King's Tower“, Stufen 1–16), hier im Verhältnis zur Stufe 11
 const T_HP = [1400, 1512, 1624, 1750, 1890, 2030, 2184, 2352, 2534, 2786, 3052, 3346, 3668, 4032, 4424, 4858];
 const T_HP_MAIN = [2400, 2568, 2736, 2904, 3096, 3312, 3528, 3768, 4008, 4392, 4824, 5304, 5832, 6408, 7032, 7704];
 const T_DMG = [50, 54, 58, 62, 67, 72, 78, 84, 90, 99, 109, 119, 131, 144, 158, 173];
-const tRow = (row, lvl) => { const l = Math.max(1, Math.round(lvl || STD_LEVEL)); return l <= 16 ? row[l - 1] / row[STD_LEVEL - 1] : (row[15] / row[STD_LEVEL - 1]) * Math.pow(1.1, l - 16); };
+const tRow = (row, lvl) => { const l = Math.max(1, Math.round(lvl || STD_LEVEL)); return l <= 16 ? row[l - 1] / row[STD_LEVEL - 1] : (row[15] / row[STD_LEVEL - 1]) * over(l); };
 export const towerMult = (lvl, main) => tRow(main ? T_HP_MAIN : T_HP, lvl);   // Leben
 export const towerDmg = lvl => tRow(T_DMG, lvl);                                // Schaden
 

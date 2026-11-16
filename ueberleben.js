@@ -128,6 +128,14 @@ export const POWERS = {
   brut:      { name: 'Totenbrut',    rar: 1, text: 'zerfällt beim Tod in drei Kiesel', fits: (c, d) => !d.deathSpawn && !d.building && c.unit !== 'kiesel' && d.hp >= 300, on: (g, u, e) => { e.d = { ...e.d, deathSpawn: { unit: 'kiesel', count: 3 } }; } },
   bombe:     { name: 'Sterbebombe',  rar: 2, text: 'hinterlässt beim Tod eine Bombe: 230 Schaden im Umkreis von drei Feldern', fits: (c, d) => !d.deathDmg && !d.kamikaze, on: (g, u, e) => { e.d = { ...e.d, deathDmg: { dmg: 230, r: 3, knock: 1.5 } }; } },
   berserker: { name: 'Berserker',    rar: 2, text: 'gerät unter halbem Leben in Raserei: 30 % schneller, 40 % mehr Schaden', fits: (c, d) => !d.building && d.dmg > 0 && d.hp >= 500, on: (g, u, e) => { e.bers = 1; } },
+  // seit 2026-11-16, nach der Liste des Chaos-Modus im Vorbild (je Karte dort: mehr Leben, schneller schlagen, weiter schießen, Flächenschaden, mehr Figuren …)
+  koloss:    { name: 'Koloss',       rar: 0, text: 'hat doppeltes Leben, läuft aber ein Viertel langsamer', fits: (c, d) => !d.building && d.hp >= 300, on: (g, u, e) => { e.hp = e.maxHp = e.maxHp * 2; e.speed *= 0.75; } },
+  hagel:     { name: 'Schnellfeuer', rar: 0, text: 'schlägt und schießt um die Hälfte schneller', fits: (c, d) => d.dmg > 0, on: (g, u, e) => { e.atk /= 1.5; } },
+  weitblick: { name: 'Weitblick',    rar: 0, text: 'reicht um die Hälfte weiter', fits: (c, d) => d.range >= 3, on: (g, u, e) => { e.range *= 1.5; e.sight = Math.max(e.sight || 0, e.range + 1); } },
+  spender:   { name: 'Kraftspender', rar: 0, text: 'gibt beim Aufstellen eine Kraft zurück', fits: (c, d) => c.cost >= 3, on: (g, u, e, first) => { if (first) addKraft(g, 1); } },
+  wucht:     { name: 'Wuchtschlag',  rar: 1, text: 'trifft alles im Umkreis von anderthalb Feldern', fits: (c, d) => !d.splash && d.dmg > 0 && !d.building, on: (g, u, e) => { e.splash = 1.5; } },
+  drilling:  { name: 'Drilling',     rar: 2, text: 'erscheint dreifach', fits: (c, d) => !d.building && c.cost <= 3, on: (g, u, e) => { for (const dx of [-0.7, 0.7]) mark(spawnUnit(g, e.type, 0, clamp(e.x + dx, 0.4, W - 0.4), e.y, e.lvl, { deployT: e.deployT })); } },
+  riese:     { name: 'Riesenwuchs',  rar: 2, text: 'hat doppeltes Leben und doppelten Schaden', fits: (c, d) => !d.building && d.dmg > 0 && c.cost >= 4, on: (g, u, e) => { e.hp = e.maxHp = e.maxHp * 2; e.dmg *= 2; } },
   zwilling:  { name: 'Zwilling',     rar: 2, text: 'erscheint doppelt', fits: (c, d) => !d.building && c.cost <= 6, on: (g, u, e) => { mark(spawnUnit(g, e.type, 0, clamp(e.x + 0.7, 0.4, W - 0.4), e.y, e.lvl, { deployT: e.deployT })); } },
 };
 // Seltenheit je Wahl (Zeile = die wievielte Wahl des Laufs): gewöhnlich / selten / episch in Prozent – die Tabelle des Vorbilds
@@ -257,7 +265,10 @@ const budget = n => TUNE.base + n * TUNE.lin + n * n * TUNE.quad + TUNE.late * M
 // Türme wachsen im Vorbild langsamer als Karten: auf niedrigen Stufen sind sie im Verhältnis stärker (Stufe 2: gut ein Viertel).
 // Im Überleben tragen die Türme den Lauf – die Wellen gleichen diesen Vorsprung in ganzen Stufen aus (Turmstufe 1: drei, 2–4: zwei, 5–7: eine, ab 8: keine).
 export const towerEdge = lvl => Math.max(0, Math.round(Math.log(towerMult(lvl, true) / cardMult(lvl)) / Math.log(1.1)));
-export const foeLevel = (g, n) => g.waves.lvl + Math.floor((n - 1) / STAGE) + Math.max(0, Math.floor((n - 17) / 4)) + g.waves.u.foeLvl + (g.waves.u.edge || 0);   // jede Etappe eine Stufe stärker, ab Welle 21 noch schneller
+// Seit 2026-11-16 gedeckelt: Die Gegner steigen höchstens LVL_CAP Stufen über ihren Anfang (vorher ohne Grenze – spät im Lauf standen sie
+// so viele Stufen über den eigenen Karten, dass nichts mehr half). Danach kommt nur noch alle zehn Wellen eine Stufe dazu (ab Welle 30).
+export const LVL_CAP = 5;
+export const foeLevel = (g, n) => g.waves.lvl + Math.min(LVL_CAP, Math.floor((n - 1) / STAGE) + Math.max(0, Math.floor((n - 17) / 4))) + Math.max(0, Math.floor((n - 20) / 10)) + g.waves.u.foeLvl + (g.waves.u.edge || 0);   // jede Etappe eine Stufe stärker, ab Welle 21 noch schneller
 export const waveTime = n => (isBoss(n) ? 42 : 24);   // spätestens dann rückt die nächste Welle nach, auch wenn noch Gegner stehen
 
 function themeFor(u, n) {
@@ -280,14 +291,14 @@ function startWave(g) {
   const themed = u.pool.filter(T.fits);
   let left = budget(n) * (boss ? (stage === 1 ? 0.4 : 0.55) : 1), k = 0, at = 0;   // Begleiter des Bosses; der erste Boss kommt mit kleinem Gefolge
   const groups = [];
-  for (let tries = 0; left >= 1 && tries < 60 && groups.length < 16; tries++) {
+  for (let tries = 0; left >= 1 && tries < 90 && groups.length < 22; tries++) {
     const from = themed.length && rnd(u) < 0.78 ? themed : u.pool, id = from[Math.floor(rnd(u) * from.length)], c = CARDS[id];
     if (c.cost > left + 0.5 && tries < 50) continue;
     left -= c.cost;
     groups.push({ id, lane: lanes[k++ % lanes.length], at });
     at += 0.7 + rnd(u) * 0.6;
   }
-  if (left > 5) lvl += Math.floor(left / 8);   // mehr Trupps passen nicht aufs Feld: was an Stärke übrig ist, wird zu höheren Stufen
+  if (left > 5) lvl += Math.min(2, Math.floor(left / 8));   // mehr Trupps passen nicht aufs Feld: was an Stärke übrig ist, wird zu höheren Stufen
   // Elite: der zäheste Trupp der Welle bekommt eine Eigenschaft
   let elite = '';
   const eliteN = boss ? 0 : (u.danger >= 4 && n >= 2) || (n >= 4 && rnd(u) < Math.min(0.9, 0.3 + n * 0.03)) ? 1 + (n >= 15 ? 1 : 0) + (n >= 25 ? 1 : 0) : 0;

@@ -1502,3 +1502,5 @@ body.ddLive { cursor: grabbing; }
 #lvlPill { flex: 0 1 auto; min-width: 0; }
 #lvlPill .lvl { flex: none; }
 #lvlPill .xp { width: 64px; flex: 0 1 64px; min-width: 12px; }   /* bei großen Zahlen (Gold in Millionen) gibt der Erfahrungsbalken Platz ab */
+.lvlTool { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+.lvlTool .btn { height: 46px; font-size: 18px; font-weight: 800; }
