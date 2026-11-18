@@ -100,6 +100,7 @@ export function createLook(canvas, opt = {}) {
   // ---- Kamera: das ganze Feld passt ins Bild ----------------------------------------------------------
   const v3 = new THREE.Vector3(), base = new THREE.Vector3();
   let view = null;   // null = das ganze Feld; sonst ein Ausschnitt { x0, x1, y0, y1 } in Feldmaßen (setView)
+  let insetTop = 0, insetBottom = 0;   // so viele Bildpunkte oben/unten deckt eine Anzeige ab: das Feld rückt darunter (setInset, Überleben)
   function fitCamera() {
     camera.aspect = width / height;
     const dir = new THREE.Vector3(0, -Math.sin(PITCH), -Math.cos(PITCH)), target = new THREE.Vector3(W / 2, 0, H / 2);
@@ -111,8 +112,9 @@ export function createLook(canvas, opt = {}) {
       camera.lookAt(target); camera.updateMatrixWorld(); camera.updateProjectionMatrix();
       let x1 = 0, y0 = Infinity, y1 = -Infinity;
       for (const p of pts) { v3.set(...p).project(camera); x1 = Math.max(x1, Math.abs(v3.x)); y0 = Math.min(y0, v3.y); y1 = Math.max(y1, v3.y); }
-      const mid = (y0 + y1) / 2, ext = Math.max(x1, (y1 - y0) / 2);
-      camera.projectionMatrix.elements[9] = mid;
+      const lo = -1 + 2 * insetBottom / height, hi = 1 - 2 * insetTop / height, half = Math.max(0.2, (hi - lo) / 2);
+      const mid = (y0 + y1) / 2, ext = Math.max(x1, (y1 - y0) / 2 / half);
+      camera.projectionMatrix.elements[9] = mid - (hi + lo) / 2;
       camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
       if (Math.abs(ext - 0.985) < 0.002) break;
       dist *= ext / 0.985;
@@ -320,7 +322,7 @@ export function createLook(canvas, opt = {}) {
 
   function project(x, y, z) { v3.set(x, y, z).project(camera); return [(v3.x + 1) / 2 * width, (1 - v3.y) / 2 * height]; }
 
-  Object.assign(api, { renderer, scene, world, camera, sun, hemi, grade, hdr, ready, shadowTint, lightTint, resize, setArena, setQuality, update, render, project, fitCamera, setView: v => { view = v || null; fitCamera(); },
+  Object.assign(api, { renderer, scene, world, camera, sun, hemi, grade, hdr, ready, shadowTint, lightTint, resize, setArena, setQuality, update, render, project, fitCamera, setView: v => { view = v || null; fitCamera(); }, setInset: (t = 0, b = 0) => { if (t === insetTop && b === insetBottom) return; insetTop = t; insetBottom = b; fitCamera(); },
     size: () => ({ width, height, dpr }), theme: () => T, targets: () => ({ rtScene, chain }) });
   Object.defineProperty(api, 'props', { get: () => props });   // die 3D-Teile aus Blender, sobald sie geladen sind (vorher null)
   return api;

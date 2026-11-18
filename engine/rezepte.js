@@ -153,7 +153,50 @@ Object.assign(EVENTS, {
     fx.burst({ x: ev.x, y: 0.4, z: ev.y, n: 7, cell: CELL.smoke, add: 0, color: '#f4f1ea', color2: '#cfd3dc', alpha: 0.75, size: [0.4, 0.6], size2: [0.9, 1.2], life: [0.4, 0.7], speed: [0.5, 1.6], up: [0.4, 1.2], drag: 3, spread: 0.3 });
     if (ev.building) fx.debris({ x: ev.x, z: ev.y, n: 4, color: '#8a6a44', power: 0.5, size: 0.6 });
   },
-  heal(fx, ev) { fx.burst({ x: ev.x + (Math.random() - 0.5) * 0.4, y: 0.7, z: ev.y, n: 2, cell: CELL.diamond, color: '#e6ffee', color2: '#7dffa8', hdr: 2, size: [0.1, 0.16], size2: 0.02, life: [0.5, 0.8], speed: [0.05, 0.3], up: [1.2, 2], drag: 0.8, spin: [1, 3], spread: 0.15 }); },
+  // ein Heilschub an einer verletzten Figur: grüner Schein um sie, Lichtrauten steigen
+  heal(fx, ev) {
+    fx.burst({ x: ev.x, y: 0.75, z: ev.y, n: 1, cell: CELL.glow, color: '#b6ffcd', color2: '#3fdc7a', hdr: 1.9, size: 1.0, size2: 0.35, life: 0.3 });
+    fx.burst({ x: ev.x, y: 0.6, z: ev.y, n: 3, cell: CELL.diamond, color: '#e6ffee', color2: '#7dffa8', hdr: 2.2, size: [0.11, 0.17], size2: 0.02, life: [0.55, 0.85], speed: [0.05, 0.35], up: [1.4, 2.3], drag: 0.8, spin: [1, 3], spread: 0.35 });
+  },
+  // Heilkreis der Feldheilerin: ein grüner Ring läuft bis an den Rand der Heilung, der Boden leuchtet kurz, Lichtpunkte steigen im ganzen Kreis
+  healaura(fx, ev) {
+    fx.ring({ x: ev.x, z: ev.y, r0: 0.3, r: ev.r, dur: 0.5, color: '#7dffa8', hdr: 1.7, width: 0.22 });
+    fx.sheet('kreis', { x: ev.x, z: ev.y, r: ev.r, dur: 0.9, color: '#9dffbc', hdr: 1.3, alpha: 0.55, add: 0.9, fadeIn: 0.1, fadeOut: 0.5, spin: 1.2 });
+    fx.sheet('heil', { x: ev.x, y: 0.35, z: ev.y, r: 0.6, dur: 0.75, color: '#b6ffcd', hdr: 1.8, add: 0.9, fadeIn: 0.05, fadeOut: 0.3, fps: 14 });
+    fx.burst({ x: ev.x, y: 0.2, z: ev.y, n: 10, cell: CELL.diamond, color: '#e6ffee', color2: '#4fe08a', hdr: 2.1, size: [0.08, 0.14], size2: 0.02, life: [0.6, 1.0], speed: [0.05, 0.2], up: [1.2, 2.2], drag: 0.8, spin: [1, 3], spread: ev.r * 0.8 });
+  },
+  // Überleben – Risswacht: violetter Blitz aus dem Riss auf eine eigene Figur in seiner Nähe
+  riftbolt(fx, ev) {
+    const a = [ev.x, 1.4, ev.y], b = [ev.tx, ev.air ? 1.5 : 0.7, ev.ty];
+    link(fx, a, b, '#d9a8ff', 4, 0.5, 0.07, 0.2);
+    fx.burst({ x: a[0], y: a[1], z: a[2], n: 1, cell: CELL.glow, color: '#f0d9ff', color2: '#9a4fe0', hdr: 2.2, size: 1.2, size2: 0.3, life: 0.18 });
+    fx.burst({ x: b[0], y: b[1], z: b[2], n: 4, cell: CELL.spark, color: '#ffffff', color2: '#c98bff', hdr: 2.6, size: [0.08, 0.15], life: [0.15, 0.3], speed: [1.5, 3.5], up: [0.5, 2], gravity: -9, drag: 2 });
+  },
+  // Überleben – Giftklinge: grüne Bläschen steigen von der Figur
+  poison(fx, ev) {
+    const y = ev.air ? 1.5 : 0.6;
+    fx.burst({ x: ev.x, y, z: ev.y, n: 5, cell: CELL.glow, color: '#d6ff9a', color2: '#5fbf2a', hdr: 1.8, size: [0.1, 0.18], size2: 0.04, life: [0.5, 0.8], speed: [0.1, 0.4], up: [0.8, 1.6], drag: 1, spread: 0.3 });
+    fx.burst({ x: ev.x, y: y - 0.2, z: ev.y, n: 3, cell: CELL.smoke, add: 0, color: '#b7e07a', color2: '#4f8a2a', alpha: 0.55, size: [0.25, 0.35], size2: [0.5, 0.7], life: [0.4, 0.6], speed: [0.2, 0.6], up: [0.3, 0.8], drag: 2, spread: 0.25 });
+  },
+  // Überleben – Wachstum: goldener Wirbel, die Figur legt zu
+  grow(fx, ev) {
+    fx.ring({ x: ev.x, z: ev.y, r0: 0.2, r: 1.2, dur: 0.45, color: '#ffd45a', hdr: 1.8, width: 0.16 });
+    fx.burst({ x: ev.x, y: 0.4, z: ev.y, n: 8, cell: CELL.star, color: '#fff3c4', color2: '#ffb52a', hdr: 2.4, size: [0.1, 0.18], size2: 0.02, life: [0.5, 0.8], speed: [0.4, 1.2], up: [1.5, 3], drag: 1.2, spin: [3, 7], spread: 0.4 });
+  },
+  // Überleben – Goldhand, Goldwicht: Münzglanz
+  coin(fx, ev) {
+    const k = ev.big ? 1.8 : 1;
+    fx.burst({ x: ev.x, y: 0.9, z: ev.y, n: 1, cell: CELL.glow, color: '#fff3c4', color2: '#ffc23a', hdr: 2.4, size: 1.2 * k, size2: 0.3, life: 0.3 });
+    fx.burst({ x: ev.x, y: 0.8, z: ev.y, n: Math.round(7 * k), cell: CELL.diamond, color: '#fff6c8', color2: '#ffb52a', hdr: 2.6, size: [0.1, 0.17], size2: 0.03, life: [0.5, 0.9], speed: [1, 2.6 * k], up: [2, 4], gravity: -8, drag: 1, spin: [3, 8] });
+  },
+  // Aufwärtshaken: Stern am Ziel, ein Stoß nach oben, Staub am Absprung
+  launch(fx, ev, C) {
+    fx.sheet('treffer', { x: ev.x, y: 0.9, z: ev.y, r: 0.9, dur: 0.24, color: '#ffffff', hdr: 2.4, add: 0.85, rot: turn() });
+    fx.burst({ x: ev.x, y: 0.8, z: ev.y, n: 1, cell: CELL.glow, color: '#f0d0ff', color2: '#b06adf', hdr: 2.6, size: 1.8, size2: 0.4, life: 0.22 });
+    fx.burst({ x: ev.x, y: 0.6, z: ev.y, n: 10, cell: CELL.spark, color: '#ffffff', color2: '#c98bff', hdr: 2.6, size: [0.09, 0.18], life: [0.3, 0.55], speed: [1, 3], up: [4, 7], gravity: -10, drag: 1.2 });
+    fx.sheet('staub', { x: ev.x, y: 0.06, z: ev.y, r: 0.9, dur: 0.5, color: '#efe6cf', alpha: 0.8 });
+    C.shake(0.22);
+  },
   curse(fx, ev) {
     fx.burst({ x: ev.x, y: 0.6, z: ev.y, n: 1, cell: CELL.glow, color: '#c98bff', hdr: 2, size: 1.3, size2: 0.3, life: 0.25 });
     fx.ring({ x: ev.x, z: ev.y, r0: 0.2, r: 1.0, dur: 0.4, color: '#c98bff', hdr: 1.7, width: 0.16 });

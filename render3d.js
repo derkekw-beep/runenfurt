@@ -262,6 +262,8 @@ export function createRenderer3D(canvas, overlay) {
       else { const b = Math.min(1, (inst.age - 0.32) / 0.22); sy *= 1 - Math.sin(b * PI) * 0.28; }
     } else if (inst.age < 0.18) scale *= 0.3 + 0.7 * ease(inst.age / 0.18);
     if (stunned) tilt = Math.sin(time * 18 + e.id) * 0.08;
+    const fp = e.fly ? SIM.flyPart(e, e._x, e._y) : 0;   // vom Aufwärtshaken getroffen: Bogen mit Überschlag
+    if (fp > 0) { y += Math.sin(fp * PI) * e.fly.h; tilt = -fp * PI * 2; }
     inst.inner.rotation.set(tilt, e.kind === 'unit' ? inst.yaw + inst.spin : 0, 0);
     group.scale.set(scale, scale * sy, scale);
     const px = e._x + Math.sin(inst.yaw) * lunge, pz = e._y + Math.cos(inst.yaw) * lunge;
@@ -442,6 +444,7 @@ export function createRenderer3D(canvas, overlay) {
     } else if (inst.age < 0.18) sc = 0.3 + 0.7 * ease(inst.age / 0.18);
     if (e.stunT > 0) sy *= 1 + Math.sin(time * 30) * 0.03;
     u.uSize.value.set(R * sc * (2 - sy), R * sc * sy);
+    if (e.fly) y += Math.sin(SIM.flyPart(e, e._x, e._y) * PI) * e.fly.h;   // vom Aufwärtshaken getroffen
     inst.mesh.position.set(e._x, y, e._y);
     if (inst.blob) inst.blob.position.set(e._x, 0.03, e._y);
     if (e.hp < inst.hp - 0.5) inst.flash = 0.09;
@@ -1071,6 +1074,7 @@ export function createRenderer3D(canvas, overlay) {
 
   // Kartenvorschau: ruhiges Bild ohne Aufstell-Uhren und Stufenschilder (Lebensbalken bleiben, sobald etwas Schaden nimmt)
   const setPlain = v => { opt.plain = !!v; };
-  return { setPlain, ready, look, sprites, fx: efx, insts, resize, reset, onEvent, draw, toField, toScreen, snapshot, prepare, setOptions, figureNames: () => unitIndex(), warmFigures: onStep => unitIndex().then(list => warmUnits(list, { force: true, pause: 20, onStep })),   // alle Bildfolgen für den Offline-Betrieb laden (rund 72 MB)
+  const setInset = (t, b) => look.setInset(t, b);   // Überleben: Platz für die Anzeige oben – das Feld rückt darunter
+  return { setPlain, setInset, ready, look, sprites, fx: efx, insts, resize, reset, onEvent, draw, toField, toScreen, snapshot, prepare, setOptions, figureNames: () => unitIndex(), warmFigures: onStep => unitIndex().then(list => warmUnits(list, { force: true, pause: 20, onStep })),   // alle Bildfolgen für den Offline-Betrieb laden (rund 72 MB)
     sheet: (m, side) => getSheet(m, side).tex.image, three: true, info: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles }) };
 }

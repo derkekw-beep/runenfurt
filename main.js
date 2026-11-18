@@ -117,6 +117,13 @@ function cardEl(id, opt = {}) {
   if (HERO_FORMS[id] && opt.rune !== null) e.append(el('span', opt.locked == null && profile.cards[id] && P.hasForm(profile, id) ? 'formMark' : 'formMark off', ''));
   if (opt.ability) e.append(el('span', 'abil', `<b>${opt.ability.cost}</b>${opt.ability.name}`)); // Held in der Hand: Fähigkeit und ihre Kosten
   if (opt.wish) e.append(el('span', 'wishMark', '★'));
+  // Glanz (seit 2026-11-18): erweckte Runenform violett, Held und erweckte Heldenform golden – Holo-Schimmer, Funkeln, laufender Rahmen.
+  // In der Hand zählt bei der Runenform nur, ob sie gerade bereit ist (alle Zyklen voll).
+  const formFx = HERO_FORMS[id] && opt.rune !== null && opt.locked == null && profile.cards[id] && P.hasForm(profile, id);
+  const runeFx = opt.pips ? opt.pips.n >= opt.pips.of : !!(rune && rune.done && opt.locked == null);
+  // opt.fx: der Aufrufer weiß es genauer (im Deck glänzt nur, was auf seinem Platz wirklich so spielt)
+  const fx = opt.fx !== undefined ? opt.fx : c.hero && opt.locked == null ? 'held' : runeFx ? 'rune' : formFx ? 'form' : '';
+  if (fx) { e.classList.add('fx', `fx-${fx}`); cv.after(el('span', 'foil'), el('span', 'sparks'), el('span', 'fxRing')); }
   if (opt.pips) { // Zyklen bis zur Runenform
     const row = el('span', 'pips');
     for (let i = 0; i < opt.pips.of; i++) row.append(el('i', i < opt.pips.n ? 'on' : ''));
@@ -127,6 +134,29 @@ function cardEl(id, opt = {}) {
   e.dataset.id = id;
   return e;
 }
+
+// Glanzkarten kippen unter Finger oder Maus: der Lichtschein wandert mit, das Bild verschiebt sich gegen den Rahmen (Parallaxe)
+let tiltCard = null;
+const untilt = () => { if (!tiltCard) return; tiltCard.classList.remove('tilt'); for (const k of ['--mx', '--my', '--tx', '--ty', '--rx', '--ry']) tiltCard.style.removeProperty(k); tiltCard = null; };
+document.addEventListener('pointermove', e => {
+  const c = e.target.closest ? e.target.closest('.card.fx') : null;
+  if (tiltCard && tiltCard !== c) untilt();
+  if (!c || c.closest('#hand, #next') || c.classList.contains('float')) return;
+  const r = c.getBoundingClientRect(), x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+  tiltCard = c; c.classList.add('tilt');
+  c.style.setProperty('--mx', `${Math.round(x * 100)}%`); c.style.setProperty('--my', `${Math.round(y * 100)}%`);
+  c.style.setProperty('--tx', `${((0.5 - x) * 6).toFixed(1)}px`); c.style.setProperty('--ty', `${((0.5 - y) * 6).toFixed(1)}px`);
+  c.style.setProperty('--rx', `${((0.5 - y) * 14).toFixed(1)}deg`); c.style.setProperty('--ry', `${((x - 0.5) * 16).toFixed(1)}deg`);
+}, { passive: true });
+for (const t of ['pointerup', 'pointercancel', 'pointerleave', 'blur']) (t === 'blur' ? window : document).addEventListener(t, () => setTimeout(untilt, t === 'pointerup' ? 250 : 0), { passive: true });
+// Tasten: ein Lichtkreis läuft vom Finger aus über die Taste
+document.addEventListener('pointerdown', e => {
+  const b = e.target.closest ? e.target.closest('.btn, .big, #nav button') : null;
+  if (!b || b.disabled || document.body.classList.contains('calm')) return;
+  const r = b.getBoundingClientRect(), w = el('span', 'rip'), s = el('i');
+  s.style.left = `${e.clientX - r.left}px`; s.style.top = `${e.clientY - r.top}px`; s.style.setProperty('--d', `${Math.max(r.width, r.height) * 2.2}px`);
+  w.append(s); b.append(w); setTimeout(() => w.remove(), 600);
+}, { passive: true });
 
 // ---- Bildschirme und Reiter --------------------------------------------------------------------
 const TABS = { home: $('#tabHome'), cards: $('#tabCards'), shop: $('#tabShop'), road: $('#tabRoad'), more: $('#tabMore') };
@@ -607,11 +637,11 @@ function renderDeck() {
   const meter = id => { const c = profile.cards[id], u = P.upgradeInfo(profile, id); return u.max ? 0 : Math.max(0.001, c.n / u.copies); };
   const dg = $('#deckGrid'); dg.replaceChildren(); dg.classList.remove('calm'); $('#collGrid').classList.remove('calm');
   profile.deck.forEach((id, i) => {
-    const e = cardEl(id, { lvl: profile.cards[id].lvl, meter: meter(id), wish: profile.wish === id });
-    if (swap) e.classList.add('pick');
     const sl = P.SPECIAL_SLOTS[i]; // die ersten drei Plätze: Runenplatz, Heldenplatz, freier Platz
+    const open = !!sl && P.slotOpen(profile, i), form = open && P.formActive(profile, id), rune = open && !form && P.runeActive(profile, id), hero = open && !!CARDS[id].hero && sl.kind !== 'rune';
+    const e = cardEl(id, { lvl: profile.cards[id].lvl, meter: meter(id), wish: profile.wish === id, fx: form ? 'form' : rune ? 'rune' : hero ? 'held' : '' });   // Glanz nur, wenn die Karte auf ihrem Platz so spielt
+    if (swap) e.classList.add('pick');
     if (sl) {
-      const open = P.slotOpen(profile, i), form = open && P.formActive(profile, id), rune = open && !form && P.runeActive(profile, id), hero = open && !!CARDS[id].hero && sl.kind !== 'rune';
       e.classList.add('dslot', `slot-${sl.kind}`); if (!open) e.classList.add('slot-closed'); if (form || rune || hero) e.classList.add('live');
       e.dataset.slot = !open ? `ab Arena ${sl.arena + 1}` : form ? 'Held aktiv' : hero ? 'Held' : rune ? 'Rune aktiv' : sl.name;   // steht unter der Karte: was dieser Platz gerade bewirkt
     }
@@ -1585,7 +1615,7 @@ function startDraft(extra = {}) {   // extra: weitere Angaben für startBattle (
 // ---- Kampf -------------------------------------------------------------------------------------
 const B = { arena: null, g: null, ai: null, auto: null, acc: 0, last: 0, sel: null, ghost: null, paused: false, running: false, endAt: 0, drag: null, flags: {}, hand: [], next: null };
 // Überleben: Anzeige, Segen-Wahl, Startblatt und Abrechnung stehen in ueberleben-ui.js
-const survUi = createSurvUi({ el, fmt, sfx, B, P, banner: t => banner(t), toast: (t, ms) => toast(t, ms), openSheet, closeSheet, setDismiss: fn => { sheetDismiss = fn; }, profile: () => profile, save, today, start: o => startBattle(o), auto: () => !!B.auto || SPEED > 1,
+const survUi = createSurvUi({ el, fmt, sfx, B, P, art, inset: px => { if (renderer.setInset) renderer.setInset(px, 0); }, banner: t => banner(t), toast: (t, ms) => toast(t, ms), openSheet, closeSheet, setDismiss: fn => { sheetDismiss = fn; }, profile: () => profile, save, today, start: o => startBattle(o), auto: () => !!B.auto || SPEED > 1,
   mileRow, rewardParts, collected: (b, loot, title) => { collected(b, loot, title); if (loot && !loot.box) survUi.sheet(); }, askHelp: go => { if (!profile.seenHelp) showHelp(go); else go(); }, back: () => showModes() });
 const modiUi = createModiUi({ el, fmt, sfx, P, profile: () => profile, save, today, start: o => startBattle(o), draft: o => startDraft(o), surv: () => survUi.sheet(), survOpen: () => survUi.open(), openSheet, closeSheet, setDismiss: fn => { sheetDismiss = fn; }, cardEl, art,
   rewardParts, mileRow, collected: (b, loot, title) => collected(b, loot, title), askHelp: go => { if (!profile.seenHelp) showHelp(go); else go(); }, untilMidnight, render: () => render(), home: () => { closeSheet(); B.running = false; show('home'); }, fast: () => SPEED > 1,
@@ -1753,6 +1783,9 @@ function handleEvents() {
     if (ev.t === 'deploy') { sfx(deploySound(ev), 'deploy', at); if (ev.rune) sfx('rune_auf', 'rune', at); else if (ev.hero) sfx('held_auf', 'rune', at); }
     else if (ev.t === 'ability') sfx(ev.id, 'ability');
     else if (ev.t === 'burst' || ev.t === 'impact') sfx('heavy', null, at);
+    else if (ev.t === 'launch') sfx('wucht', null, at);   // Aufwärtshaken
+    else if (ev.t === 'riftbolt') sfx('magie_treffer', null, at);   // Überleben: der Riss schießt
+    else if (ev.t === 'healaura') sfx('magie', 'heal', at);
     else if (ev.t === 'cast') sfx(ev.fx != null ? 'launch' : 'cast');
     else if (ev.t === 'aura') sfx('aura');
     else if (ev.t === 'banner') sfx('rune');

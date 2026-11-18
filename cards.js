@@ -158,7 +158,7 @@ Object.assign(UNITS, {
   sprengkaefer_l:  { hp: 164, dmg: 182, atk: 1.0, range: 0.5, speed: VERY_FAST, r: 0.4, mass: 4, sight: 7, targets: 'buildings', splash: 1.5, kamikaze: true, model: 'sprengkaefer' },   // der Läufer, der nach dem Fass weiterrennt
   astriese_r:      rune('astriese', { spawn: { unit: 'wicht', every: 2.2, count: 1, first: 0, below: 0.5, back: 2.5 } }),
   erzritter_r:     rune('erzritter', { killHeal: { tiers: [[990, 160], [1991, 305], [1e9, 577]], over: 1.5 } }),
-  panzerbaer_r:    rune('panzerbaer', { combo: { every: 2, f: 1, knock: 4, fwd: true } }),
+  panzerbaer_r:    rune('panzerbaer', { combo: { every: 2, first: true, f: 1, knock: 4, toTower: true } }),   // wie die Evolution des Vorbilds: erster und jeder zweite Hieb ein Haken, 4 Felder Richtung nächster Turm
   sichelwerfer_r:  rune('sichelwerfer', { line: { len: 7.0, w: 2.0, back: true, near: { max: 2.5, f: 1.43, knock: 1 } } }),
   wurzelmutter_r:  rune('wurzelmutter', { spawnHeal: { amt: 220, over: 1.73, first: 4 } }),
   laternenfisch_r: rune('laternenfisch', { ramp: [[2, 3.43], [4, 12.06], [20, 24.11]], rampKeep: 7 }),
@@ -210,7 +210,7 @@ export const RUNES = {
   sprengkaefer:  { cycles: 2, unit: 'sprengkaefer_r',  desc: 'Werden sie abgefangen, platzt ihr Fass trotzdem, und der Läufer rennt mit einer kleineren Ladung weiter.' },
   astriese:      { cycles: 1, unit: 'astriese_r',      desc: 'Unter halbem Leben springt alle 2,2 Sekunden ein Wurzelwicht aus seinem Sack.' },
   erzritter:     { cycles: 1, unit: 'erzritter_r',     desc: 'Jeder Gegner, den er fällt, heilt ihn – je zäher das Opfer, desto mehr, bis zur Hälfte über sein volles Leben hinaus.' },
-  panzerbaer:    { cycles: 1, unit: 'panzerbaer_r',    desc: 'Jeder zweite Hieb ist ein Aufwärtshaken, der das Ziel vier Felder weit zurückschleudert.' },
+  panzerbaer:    { cycles: 1, unit: 'panzerbaer_r',    desc: 'Der erste und jeder zweite Hieb ist ein Aufwärtshaken: Das Ziel fliegt vier Felder weit in Richtung seines nächsten Turms.' },
   sichelwerfer:  { cycles: 1, unit: 'sichelwerfer_r',  desc: 'Wer näher als 2,5 Felder steht, bekommt die Sichel mit voller Wucht ab: deutlich mehr Schaden und ein Stoß zurück.' },
   wurzelmutter:  { cycles: 1, unit: 'wurzelmutter_r',  desc: 'Fällt einer der ersten vier Kiesel, die sie gerufen hat, heilt sie das kräftig – weit über ihr volles Leben hinaus.' },
   laternenfisch: { cycles: 2, unit: 'laternenfisch_r', desc: 'Behält die Glut seines Strahls beim Zielwechsel und erreicht nach langer Zeit eine vierte, doppelt so heiße Stufe.' },

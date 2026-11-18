@@ -1,6 +1,9 @@
 // Überleben: der Ablauf eines Laufs. Statt gleichförmiger Wellen gibt es Etappen aus fünf Wellen mit Thema und Ansage,
 // Elite-Gegner, eine Bosswelle am Ende jeder Etappe, Aufträge mit Bonus, Punkte – und nach jeder zweiten Welle die Wahl
 // zwischen drei Segen, die den Lauf prägen (stärkere Karten, mehr Kraft, zähere Türme, Sonderkräfte).
+// Seit 2026-11-18 außerdem: nach jeder ungeraden Welle eine Kartenkraft (bis zu zwei je Karte, auch für Zauber und Gebäude), zu jeder
+// neuen Etappe ein Fluch zur Wahl (einer oder beide – mehr Gefahr, mehr Punkte), Ereignisse mitten in der Welle (Goldwicht,
+// Sternschnuppen, Kopfgeld, Nachschub, Großangriff), ein Kombo-Zähler für schnelle Folgen von Siegen und Bosse mit Erdstoß.
 // Gefahrenstufen machen den Lauf härter und bringen mehr Punkte; die Tagesherausforderung hat einen festen Zufallskeim.
 //
 // Der Spielkern (sim.js) kennt davon nur einen Haken: rules.waves.director(g, dt) ersetzt den eingebauten Wellen-Ablauf.
@@ -10,7 +13,7 @@
 //   hud(g) · summary(g)                     was die Anzeige braucht · Abrechnung am Ende
 //   survLoad · bookRun · dangerOpen · dailyInfo …   Bestenliste, Gefahrenstufen und Tagesherausforderung im Spielstand
 import { CARDS, UNITS, RUNES } from './cards.js';
-import { W, RIVER_TOP, BRIDGES, OUTER_Y, MAIN_Y, MAX_KRAFT, STD_LEVEL, cardMult, towerMult, spawnUnit, hurt, formation, mainTower } from './sim.js';
+import { W, RIVER_TOP, BRIDGES, OUTER_Y, MAIN_Y, MAX_KRAFT, STD_LEVEL, cardMult, towerMult, towerDmg, spawnUnit, hurt, formation, mainTower } from './sim.js';
 
 export const STAGE = 5;        // Wellen je Etappe; die letzte ist die Bosswelle
 // Die Risse: Seit dem 2026-11-14 hat die Wellenseite keine Türme mehr. Die Gegner steigen aus drei Rissen am oberen Feldrand –
@@ -96,9 +99,9 @@ export const BOONS = {
 };
 export const RAR_NAME = ['Gewöhnlich', 'Selten', 'Episch'];
 export const PACT = { id: 'pakt', name: 'Dunkler Pakt', rar: 3, text: 'Alle Gegner steigen eine Stufe. Dafür wählst du gleich zwei Segen und bekommst 25 % mehr Punkte.' };
-export const boonText = (g, o) => { if (o.id === 'kk') return `${CARDS[o.card].name}: ${POWERS[o.power].text}.`; const b = o.id === 'pakt' ? PACT : BOONS[o.id]; return typeof b.text === 'function' ? b.text(g, g.waves.u, o) : b.text; };
-export const boonName = o => (o.id === 'kk' ? `${POWERS[o.power].name} · ${CARDS[o.card].name}` : o.id === 'pakt' ? PACT.name : BOONS[o.id].name);
-export const boonRar = o => (o.id === 'kk' ? POWERS[o.power].rar : o.id === 'pakt' ? 3 : BOONS[o.id].rar);
+export const boonText = (g, o) => { if (o.id === 'kk') return `${CARDS[o.card].name}: ${POWERS[o.power].text}.`; if (o.id === 'fluch') return o.curses.map(c => CURSES[c].text).join(' '); const b = o.id === 'pakt' ? PACT : BOONS[o.id]; return typeof b.text === 'function' ? b.text(g, g.waves.u, o) : b.text; };
+export const boonName = o => (o.id === 'kk' ? `${POWERS[o.power].name} · ${CARDS[o.card].name}` : o.id === 'fluch' ? o.curses.map(c => CURSES[c].name).join(' + ') : o.id === 'pakt' ? PACT.name : BOONS[o.id].name);
+export const boonRar = o => (o.id === 'kk' ? POWERS[o.power].rar : o.id === 'fluch' || o.id === 'pakt' ? 3 : BOONS[o.id].rar);
 
 // ---- Hilfen --------------------------------------------------------------------------------------------------------
 const rnd = u => ((u.seed = (Math.imul(u.seed, 1664525) + 1013904223) >>> 0) / 4294967296);   // eigener Zufall: Wellen und Angebote hängen nur vom Keim ab
@@ -107,7 +110,7 @@ const addKraft = (g, n) => { const S = g.sides[0]; S.kraft = Math.min(MAX_KRAFT,
 const heal = (g, t, share) => { if (t.hp <= 0) return; t.hp = Math.min(t.maxHp, t.hp + Math.round(t.maxHp * share)); emit(g, { t: 'heal', x: t.x, y: t.y }); };
 const fallen = (g, u) => u.outer.filter(t => !g.ents.some(e => e.kind === 'tower' && e.side === 0 && e.lane === t.lane && e.hp > 0));
 const towerHp = g => { let s = 0; for (const e of g.ents) if (e.kind === 'tower' && e.side === 0) s += e.hp; return s; };
-const score = (u, pts) => { const n = Math.round(pts * u.mult); u.score += n; return n; };
+const score = (u, pts) => { const n = Math.round(pts * u.mult * (u.curseMult || 1)); u.score += n; return n; };
 const foesLeft = g => g.ents.some(e => e.side === 1 && e.kind !== 'tower' && e.hp > 0);
 
 
@@ -137,28 +140,51 @@ export const POWERS = {
   drilling:  { name: 'Drilling',     rar: 2, text: 'erscheint dreifach', fits: (c, d) => !d.building && c.cost <= 3, on: (g, u, e) => { for (const dx of [-0.7, 0.7]) mark(spawnUnit(g, e.type, 0, clamp(e.x + dx, 0.4, W - 0.4), e.y, e.lvl, { deployT: e.deployT })); } },
   riese:     { name: 'Riesenwuchs',  rar: 2, text: 'hat doppeltes Leben und doppelten Schaden', fits: (c, d) => !d.building && d.dmg > 0 && c.cost >= 4, on: (g, u, e) => { e.hp = e.maxHp = e.maxHp * 2; e.dmg *= 2; } },
   zwilling:  { name: 'Zwilling',     rar: 2, text: 'erscheint doppelt', fits: (c, d) => !d.building && c.cost <= 6, on: (g, u, e) => { mark(spawnUnit(g, e.type, 0, clamp(e.x + 0.7, 0.4, W - 0.4), e.y, e.lvl, { deployT: e.deployT })); } },
+  // seit 2026-11-18: verrücktere Kräfte – sie hängen an Treffern und am Fallen (onHit, onDie unten)
+  vampir:    { name: 'Blutsauger',   rar: 1, text: 'heilt sich um ein Drittel des Schadens, den sie anrichtet', fits: (c, d) => !d.building && d.dmg > 0, on: (g, u, e) => { e.vamp = 0.33; } },
+  kette:     { name: 'Kettenblitz',  rar: 2, text: 'jeder Treffer springt mit halber Wucht auf zwei weitere Gegner über', fits: (c, d) => d.dmg > 0 && !d.chain, on: (g, u, e) => { e.chainHit = 2; } },
+  frosthieb: { name: 'Frosthieb',    rar: 0, text: 'jeder Treffer bremst das Ziel zwei Sekunden lang', fits: (c, d) => d.dmg > 0 && !d.slow, on: (g, u, e) => { e.frostHit = 2; } },
+  gift:      { name: 'Giftklinge',   rar: 1, text: 'jeder Treffer vergiftet: drei Sekunden lang Schaden', fits: (c, d) => d.dmg > 0, on: (g, u, e) => { e.poisonHit = true; } },
+  dornen:    { name: 'Dornenpanzer', rar: 0, text: 'wer sie aus der Nähe schlägt, bekommt 40 % des Schadens zurück', fits: (c, d) => d.hp >= 400, on: (g, u, e) => { e.thorns = 0.4; } },
+  wieder:    { name: 'Wiedergeburt', rar: 2, text: 'steht nach dem ersten Fallen mit halbem Leben wieder auf', fits: (c, d) => !d.building && d.hp >= 300, on: (g, u, e) => { e.revive = true; } },
+  spreng:    { name: 'Sprengschlag', rar: 1, text: 'jeder dritte Treffer explodiert im Umkreis von zwei Feldern', fits: (c, d) => d.dmg > 0 && !d.building, on: (g, u, e) => { e.boomN = 3; e.boomC = 0; } },
+  ernte:     { name: 'Seelenernte',  rar: 1, text: 'jeder Gegner, den sie fällt, gibt ihr 8 % mehr Schaden (bis +80 %)', fits: (c, d) => d.dmg > 0, on: (g, u, e) => { e.reap = 0; } },
+  wachstum:  { name: 'Wachstum',     rar: 2, text: 'wächst mit jedem Gegner, den sie fällt: mehr Leben, mehr Schaden', fits: (c, d) => !d.building && d.dmg > 0, on: (g, u, e) => { e.grow = 0; } },
+  gold:      { name: 'Goldhand',     rar: 0, text: 'jeder Gegner, den sie fällt, bringt eine halbe Kraft und Extrapunkte', fits: (c, d) => d.dmg > 0, on: (g, u, e) => { e.goldHit = true; } },
+  dauerbau:  { name: 'Dauerbau',     rar: 0, text: 'steht doppelt so lange', fits: (c, d) => !!d.building && d.life > 0, on: (g, u, e) => { e.life *= 2; } },
+  // Zauber: wirken auf den Kreis, den der Zauber beim Ausspielen bekommt (zonePowers unten)
+  nachhall:  { name: 'Nachhall',     rar: 2, spell: true, text: 'wirkt eine Sekunde später ein zweites Mal', fits: (c, d, id) => !c.dur && id !== 'trugbild' && id !== 'widerhall' },
+  weite:     { name: 'Weitwurf',     rar: 0, spell: true, text: 'wirkt in einem um 40 % größeren Kreis', fits: c => !c.roll && !c.summon },
+  eiszauber: { name: 'Eiszauber',    rar: 1, spell: true, text: 'friert alle getroffenen Gegner anderthalb Sekunden ein', fits: c => !c.summon && !c.heal },
+  heilregen: { name: 'Heilregen',    rar: 1, spell: true, text: 'heilt deine Truppen im Kreis um ein Drittel ihres Lebens', fits: c => !c.roll },
+  rueckfluss:{ name: 'Rückfluss',    rar: 0, spell: true, text: 'trifft er drei Gegner oder mehr, gibt er zwei Kraft zurück', fits: c => !c.summon && !c.heal },
 };
+export const MAX_POWERS = 2;   // so viele Kartenkräfte trägt eine Karte höchstens
 // Seltenheit je Wahl (Zeile = die wievielte Wahl des Laufs): gewöhnlich / selten / episch in Prozent – die Tabelle des Vorbilds
 export const POWER_ODDS = [[90, 10, 0], [20, 80, 0], [0, 50, 50], [0, 20, 80], [0, 0, 100]];
 const mark = e => { e.pw = true; return e; };   // schon behandelt: bekommt keine Kartenkraft mehr (Gefolge, Zwilling)
 const cardUnit = id => { const c = CARDS[id]; return c && c.type !== 'spell' && c.type !== 'tower' ? UNITS[c.mix ? c.mix[0][0] : c.unit] : null; };
+const isSpellCard = id => !!CARDS[id] && CARDS[id].type === 'spell';
+export const powersOf = (u, id) => u.powers[id] || [];
+const powerFits = (pid, id) => { const P = POWERS[pid], c = CARDS[id]; return P.spell ? isSpellCard(id) && P.fits(c, null, id) : !!cardUnit(id) && P.fits(c, cardUnit(id), id); };
 function offerPower(g) {
-  const u = g.waves.u, odds = POWER_ODDS[Math.min(POWER_ODDS.length - 1, u.powerN)], opts = [];
-  const cards = deckOf(g).filter(id => cardUnit(id) && !u.powers[id]);
-  for (let tries = 0; opts.length < 2 && tries < 80 && cards.length; tries++) {
+  const u = g.waves.u, odds = POWER_ODDS[Math.min(POWER_ODDS.length - 1, Math.floor(u.powerN / 2))], opts = [];
+  const cards = deckOf(g).filter(id => (cardUnit(id) || isSpellCard(id)) && powersOf(u, id).length < MAX_POWERS);
+  for (let tries = 0; opts.length < 3 && tries < 90 && cards.length; tries++) {
     let x = rnd(u) * 100, rar = 0;
     while (rar < 2 && x >= odds[rar]) x -= odds[rar++];
-    const card = cards[Math.floor(rnd(u) * cards.length)], c = CARDS[card], d = cardUnit(card);
-    let ids = Object.keys(POWERS).filter(id => POWERS[id].rar === rar && POWERS[id].fits(c, d));
-    if (!ids.length && tries > 40) ids = Object.keys(POWERS).filter(id => POWERS[id].fits(c, d));
-    ids = ids.filter(id => !opts.some(o => o.power === id || o.card === card));
+    const card = cards[Math.floor(rnd(u) * cards.length)];
+    let ids = Object.keys(POWERS).filter(id => POWERS[id].rar === rar && powerFits(id, card));
+    if (!ids.length && tries > 45) ids = Object.keys(POWERS).filter(id => powerFits(id, card));
+    ids = ids.filter(id => !powersOf(u, card).includes(id) && !opts.some(o => o.power === id || o.card === card));
     if (!ids.length) continue;
     opts.push({ id: 'kk', power: ids[Math.floor(rnd(u) * ids.length)], card });
   }
-  if (!opts.length) return;
+  if (!opts.length) return false;
   u.powerN++;
   u.choice = { big: true, first: false, kind: 'kraft', options: opts };
   emit(g, { t: 'boon', big: true, first: false, n: g.waves.n, kind: 'kraft' });
+  return true;
 }
 // Kartenkräfte auf frisch erschienene eigene Einheiten legen; laufende Wirkungen (Heilpuls, Berserker)
 function powerTick(g, u, dt) {
@@ -167,9 +193,9 @@ function powerTick(g, u, dt) {
     for (const e of g.ents) {
       if (e.id < u.seen || e.side !== 0 || e.kind === 'tower' || e.pw) continue;
       e.pw = true;
-      const card = u.cardOf.get(e.type), pw = card && u.powers[card];
-      if (!pw) continue;
-      POWERS[pw].on(g, u, e, !firsts.has(card));
+      const card = u.cardOf.get(e.type), pws = card && u.powers[card];
+      if (!pws) continue;
+      for (const pw of pws) POWERS[pw].on(g, u, e, !firsts.has(card));
       firsts.add(card);
     }
   }
@@ -179,6 +205,7 @@ function powerTick(g, u, dt) {
   for (const e of g.ents) {
     if (e.hp <= 0) continue;
     if (beat && e.regen && e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + Math.round(e.maxHp * e.regen));
+    if (beat && e.psnT > 0) { e.psnT--; hurt(g, e, e.psnDmg, 0); emit(g, { t: 'poison', x: e.x, y: e.y, air: e.air }); }   // Giftklinge
     if (e.bers === 1 && e.hp < e.maxHp / 2) { e.bers = 2; e.hasteT = 1e9; e.dmg = Math.round(e.dmg * 1.4); emit(g, { t: 'surv', k: 'bers', x: e.x, y: e.y }); }
   }
 }
@@ -224,6 +251,148 @@ function moodTick(g, u, dt) {
   }
 }
 
+// ---- Flüche: zu jeder neuen Etappe (ab der zweiten) wählst du einen von zweien – oder beide ---------------------------------
+// Ein Fluch macht die Gegner der Etappe gefährlicher und gilt bis zum Ende ihrer Bosswelle. Einer bringt 25 % mehr Punkte,
+// beide zusammen 60 % und sofort einen Großen Segen obendrauf. Derselbe Fluch kommt nie zweimal hintereinander.
+export const CURSES = {
+  eisenhaut: { name: 'Eisenhaut',   text: 'Gegner erscheinen mit einem Schild in Höhe eines Viertels ihres Lebens.' },
+  blutdurst: { name: 'Blutdurst',   text: 'Gegner heilen sich um 30 % des Schadens, den sie anrichten.' },
+  spiegel:   { name: 'Spiegelbrut', text: 'Jeder dritte gefallene Gegner kehrt als Schemen mit einem Drittel Leben zurück.' },
+  spreng:    { name: 'Sprengsatz',  text: 'Gegner explodieren beim Fallen und treffen deine Truppen ringsum.' },
+  wut:       { name: 'Letzte Wut',  text: 'Die letzten fünf Gegner einer Welle laufen und schlagen schneller.' },
+  eiskralle: { name: 'Eiskralle',   text: 'Jeder Treffer der Gegner bremst deine Truppen.' },
+  stachel:   { name: 'Stachelhaut', text: 'Wer Gegner aus der Nähe schlägt, bekommt ein Fünftel des Schadens zurück.' },
+  nebel:     { name: 'Nebelmarsch', text: 'Gegner bleiben unsichtbar, bis sie den Fluss erreichen oder angreifen.' },
+  horde:     { name: 'Horde',       text: 'Jede Welle ist ein Drittel größer.' },
+  flink:     { name: 'Flinke Füße', text: 'Gegner laufen 25 % schneller.' },
+  kraftraub: { name: 'Kraftraub',   text: 'Jeder Treffer an deinen Türmen kostet dich etwas Kraft.' },
+  riesen:    { name: 'Riesenwuchs', text: 'Der zäheste Trupp jeder Welle hat doppeltes Leben und anderthalbfachen Schaden.' },
+};
+export const CURSE_MULT = [1, 1.25, 1.6];   // Punkte-Faktor mit keinem, einem, zwei Flüchen
+const cursed = (u, id) => u.curses.includes(id);
+function offerCurse(g) {
+  const u = g.waves.u, ids = Object.keys(CURSES).filter(id => !u.lastCurses.includes(id));
+  const a = ids.splice(Math.floor(rnd(u) * ids.length), 1)[0], b = ids[Math.floor(rnd(u) * ids.length)];
+  u.choice = { big: false, first: false, kind: 'fluch', options: [{ id: 'fluch', curses: [a] }, { id: 'fluch', curses: [b] }, { id: 'fluch', curses: [a, b] }] };
+  emit(g, { t: 'boon', big: false, first: false, n: g.waves.n, kind: 'fluch' });
+  return true;
+}
+// nach einer Wahl: was steht noch an? (nach dem Boss: Großer Segen → Kartenkraft → Fluch der nächsten Etappe)
+function nextChoice(g, u) {
+  if (u.choice) return;
+  if (u.powerDue) { u.powerDue = false; if (offerPower(g)) return; }
+  if (u.curseDue) { u.curseDue = false; offerCurse(g); }
+}
+
+// ---- Ereignisse: ab Welle 3 bringt gut jede dritte gewöhnliche Welle eines mit (nie zwei Wellen hintereinander) -----------
+export const EVENTS = {
+  schatz:    { name: 'Goldwicht',      text: 'Ein Goldwicht huscht übers Feld. Fang ihn, bevor er nach 14 Sekunden verschwindet: 3 Kraft, Punkte und einmal Neu-Würfeln.' },
+  sterne:    { name: 'Sternschnuppen', text: 'Sterne fallen aufs Feld und treffen alles, was darunter steht – beide Seiten.' },
+  kopfgeld:  { name: 'Kopfgeld',       text: 'Auf einen Gegner ist ein Kopfgeld ausgesetzt (goldene Raute). Wer ihn fällt, bekommt 3 Kraft und Punkte.' },
+  nachschub: { name: 'Nachschub',      text: 'Ein Versorgungszug kommt durch: 3 Kraft sofort, deine Türme heilen ein wenig.' },
+  sturm:     { name: 'Großangriff',    text: 'Diese Welle ist anderthalbmal so groß – und bringt doppelte Punkte.' },
+};
+function pickEvent(g, u, n) {
+  if (isBoss(n) || n < 3 || u.lastEvent === n - 1 || rnd(u) > 0.38) return '';
+  const ids = Object.keys(EVENTS).filter(id => id !== 'nachschub' || mine(g).some(t => t.hp < t.maxHp * 0.85));
+  u.lastEvent = n; u.stats.events++;
+  return ids[Math.floor(rnd(u) * ids.length)];
+}
+
+// ---- Kombo: Siege in schneller Folge (höchstens 2,5 Sekunden Abstand) bringen mehr Punkte, ab dem fünften bis zum Doppelten --
+export const COMBO_GAP = 2.5;
+export const comboMult = c => 1 + Math.min(1, Math.max(0, c - 4) * 0.05);
+
+// ---- Haken in den Spielkern: Treffer und Fallen (sim.js ruft sie nur im Überleben) ------------------------------------------
+function onHit(g, s, e, amt) {
+  const u = g.waves && g.waves.u;
+  if (!u) return amt;
+  if (s.side === 0) {   // Kartenkräfte deiner Truppen
+    if (s.reap) amt *= 1 + Math.min(0.8, s.reap * 0.08);
+    if (s.vamp && s.kind === 'unit' && s.hp > 0 && s.hp < s.maxHp) { s.hp = Math.min(s.maxHp, s.hp + Math.round(amt * s.vamp)); if (++u.fxN % 3 === 0) emit(g, { t: 'heal', x: s.x, y: s.y }); }
+    if (e.kind === 'unit') {
+      if (s.frostHit) { e.slowT = Math.max(e.slowT, s.frostHit); if (++u.fxN % 2 === 0) emit(g, { t: 'surv', k: 'frosthieb', x: e.x, y: e.y }); }
+      if (s.poisonHit) { e.psnT = 3; e.psnDmg = Math.max(e.psnDmg || 0, Math.round(s.dmg * 0.25)); }
+    }
+    if (s.boomN && ++s.boomC >= s.boomN) { s.boomC = 0; g.zones.push({ blast: { dmg: Math.round(amt * 0.8), slow: 0, tf: 0.5 }, side: 0, x: e.x, y: e.y, r: 2, delay: 0.01, dur: 0, done: false }); }
+    if (s.chainHit && !u.chaining) {
+      u.chaining = true;
+      const d2 = o => Math.hypot(o.x - e.x, o.y - e.y);
+      const more = g.ents.filter(o => o !== e && o.side === 1 && o.kind !== 'tower' && o.hp > 0 && !o.hidden && d2(o) <= 3.5).sort((a, b) => d2(a) - d2(b)).slice(0, s.chainHit);
+      if (more.length) { emit(g, { t: 'chain', side: 0, x: e.x, y: e.y, air: e.air, hits: more.map(o => ({ x: o.x, y: o.y, air: o.air })) }); for (const o of more) hurt(g, o, Math.round(amt * 0.5), 0); }
+      u.chaining = false;
+    }
+  } else if (s.side === 1 && u.curses.length) {   // Flüche der Gegner
+    if (cursed(u, 'blutdurst') && s.kind === 'unit' && s.hp < s.maxHp) { s.hp = Math.min(s.maxHp, s.hp + Math.round(amt * 0.3)); if (++u.fxN % 3 === 0) emit(g, { t: 'heal', x: s.x, y: s.y }); }
+    if (cursed(u, 'eiskralle') && e.kind === 'unit') e.slowT = Math.max(e.slowT, 1.5);
+    if (cursed(u, 'kraftraub') && e.kind === 'tower') { const S = g.sides[0]; S.kraft = Math.max(0, S.kraft - 0.25); }
+    if (cursed(u, 'nebel') && s.cloakT > 1e5) s.cloakT = 0;
+  }
+  // Rückschlag aus der Nähe: Dornenpanzer (deine Kraft) und Stachelhaut (Fluch); hurt hat keinen Angreifer, also keine Kette
+  if (s.kind === 'unit' && s.hp > 0 && Math.hypot(s.x - e.x, s.y - e.y) <= s.r + e.r + 1.6) {
+    if (e.side === 0 && e.thorns && s.side === 1) hurt(g, s, Math.round(amt * e.thorns), 0);
+    else if (e.side === 1 && s.side === 0 && cursed(u, 'stachel')) hurt(g, s, Math.round(amt * 0.2), 1);
+  }
+  return amt;
+}
+function onDie(g, e) {
+  const u = g.waves && g.waves.u;
+  if (!u || e.kind === 'tower') return false;
+  if (e.side === 0) {
+    if (!e.revive || e.revived || e.kind !== 'unit' || e.hp > 0) return false;
+    e.revived = true; e.hp = Math.round(e.maxHp * 0.5); e.stunT = Math.max(e.stunT, 0.5); e.psnT = 0;   // Wiedergeburt
+    emit(g, { t: 'healaura', x: e.x, y: e.y, r: 1.4, side: 0 }); emit(g, { t: 'surv', k: 'wieder', x: e.x, y: e.y });
+    return true;
+  }
+  const k = e.lastBy ? g.byId.get(e.lastBy) : null;
+  if (k && k.side === 0 && k.hp > 0) {
+    if (k.reap !== undefined) k.reap++;
+    if (k.grow !== undefined && k.grow < 10) { k.grow++; const add = Math.round(k.maxHp * 0.1); k.maxHp += add; k.hp += add; k.dmg = Math.round(k.dmg * 1.08); emit(g, { t: 'grow', x: k.x, y: k.y }); }
+    if (k.goldHit) { addKraft(g, 0.5); score(u, 6); emit(g, { t: 'coin', x: e.x, y: e.y }); }
+  }
+  if (cursed(u, 'spreng')) g.zones.push({ blast: { dmg: Math.round(90 * cardMult(e.lvl)), slow: 0, tf: 0.35 }, side: 1, x: e.x, y: e.y, r: 1.5, delay: 0.25, dur: 0, done: false });
+  if (cursed(u, 'spiegel') && !e.shade && !e.boss && ++u.mirrorN % 3 === 0) u.later.push({ at: u.time + 0.4, k: 'schemen', type: e.type, x: e.x, y: e.y, lvl: e.lvl, hp: Math.round(e.maxHp / 3) });
+  return false;
+}
+
+// Kartenkräfte der Zauber: greifen am Kreis, sobald der Zauber ausgespielt ist (vor seiner Wirkung)
+function zonePowers(g, u) {
+  for (const z of g.zones) {
+    if (z.pw || z.side !== 0 || !z.card || !isSpellCard(z.card)) continue;
+    z.pw = true;
+    const pws = u.powers[z.card];
+    if (!pws) continue;
+    const t = u.time + Math.max(0, z.delay || 0);
+    for (const pw of [...pws].sort((a, b) => (b === 'weite') - (a === 'weite'))) {   // erst den Kreis vergrößern, dann die übrigen Wirkungen messen
+      if (pw === 'weite') z.r *= 1.4;
+      else if (pw === 'nachhall') u.later.push({ at: t + 1, k: 'nach', z: { ...z, delay: 0, hit: false, done: false, held: undefined, pw: true } });
+      else if (pw === 'eiszauber') u.later.push({ at: t + 0.05, k: 'eis', x: z.x, y: z.y, r: z.r });
+      else if (pw === 'heilregen') u.later.push({ at: t + 0.05, k: 'heil', x: z.x, y: z.y, r: z.r });
+      else if (pw === 'rueckfluss') u.later.push({ at: t - 0.02, k: 'fluss', x: z.x, y: z.y, r: z.r });
+    }
+  }
+}
+// Nachwirkungen zu einem festen Zeitpunkt
+function laterTick(g, u) {
+  const inR = (e, L) => Math.hypot(e.x - L.x, e.y - L.y) <= L.r + e.r;
+  for (let i = u.later.length - 1; i >= 0; i--) {
+    const L = u.later[i];
+    if (L.at > u.time) continue;
+    u.later.splice(i, 1);
+    if (L.k === 'stern') { emit(g, { t: 'spell', spell: 'sternschlag', side: 1, x: L.x, y: L.y, r: L.r }); for (const e of g.ents) if (e.side === 1 && e.kind === 'unit' && e.hp > 0 && inR(e, L)) hurt(g, e, e.boss ? Math.round(L.dmg / 2) : L.dmg, 0); }
+    else if (L.k === 'nach') { g.zones.push(L.z); emit(g, { t: 'surv', k: 'nachhall', x: L.z.x, y: L.z.y }); }
+    else if (L.k === 'eis') { emit(g, { t: 'burst', x: L.x, y: L.y, r: L.r, frost: true, side: 0 }); for (const e of g.ents) if (e.side === 1 && e.kind === 'unit' && e.hp > 0 && inR(e, L)) { e.stunT = Math.max(e.stunT, 1.5); e.iceT = Math.max(e.iceT || 0, 1.5); e.inRange = false; } }
+    else if (L.k === 'heil') { emit(g, { t: 'healaura', x: L.x, y: L.y, r: L.r, side: 0 }); for (const e of g.ents) if (e.side === 0 && e.kind === 'unit' && e.hp > 0 && inR(e, L) && e.hp < e.maxHp) { e.hp = Math.min(e.maxHp, e.hp + Math.round(e.maxHp / 3)); emit(g, { t: 'heal', x: e.x, y: e.y }); } }
+    else if (L.k === 'fluss') { if (g.ents.filter(e => e.side === 1 && e.kind !== 'tower' && e.hp > 0 && inR(e, L)).length >= 3) { addKraft(g, 2); emit(g, { t: 'surv', k: 'rueckfluss', x: L.x, y: L.y }); } }
+    else if (L.k === 'schemen') {
+      const s = spawnUnit(g, L.type, 1, L.x, L.y, L.lvl, { deployT: 0.5 });
+      s.hp = s.maxHp = Math.max(1, L.hp); s.shade = true;
+      u.foes.set(s.id, { pts: 2, elite: '', boss: false, x: s.x, y: s.y, lvl: L.lvl });
+      emit(g, { t: 'clone', x: s.x, y: s.y, side: 1 });
+    }
+  }
+}
+
 // ---- Aufbau eines Laufs -------------------------------------------------------------------------------------------
 // waves: { pool, lvl, endless, goal } aus progress.modeRules · seed: Zufallskeim · danger: 0 bis 5 · daily: Tagesherausforderung (Kennzeichen)
 export function setup(waves, { seed = 1, danger = 0, daily = '' } = {}) {
@@ -238,12 +407,15 @@ function init(g, cfg) {
   const u = wv.u = {
     seed: cfg.seed, danger: cfg.danger, daily: cfg.daily, pool,
     phase: 'pause', t: 5, waveT: 0, time: 0, theme: '', next: '', queue: [], foes: new Map(),
-    score: 0, mult: dangerMult(cfg.danger), kills: 0, stats: { fast: 0, flawless: 0, elites: 0, bosses: 0, quests: 0 },
+    score: 0, mult: dangerMult(cfg.danger), kills: 0, stats: { fast: 0, flawless: 0, elites: 0, bosses: 0, quests: 0, combo: 0, curses: 0, events: 0, treasures: 0 },
     boons: {}, order: [], choice: null, extra: 0, rerolls: 1, pacts: 0, foeLvl: cfg.danger >= 1 ? 1 : 0, foeSpeed: cfg.danger >= 2 ? 1.1 : 1,
     waveKraft: 0, wehr: false, seen: g.nextId, twr: 0, hurtNow: false, cleared: 0, bolt: 0,
     quest: null, boss: null, outer: [], last: null,
     powers: {}, powerList: [], powerN: 0, powerDue: false, cardOf: new Map(), mood: '', moodT: 0, seenMood: g.nextId, pulse: 0,
+    curses: [], lastCurses: [], curseMult: 1, curseDue: false, event: '', lastEvent: 0, treasure: null, stars: null, later: [],
+    combo: 0, lastKill: -9, mirrorN: 0, wut: false, waveBonus: 1, waveTotal: 0, chaining: false, fxN: 0,
   };
+  g.hitHook = onHit; g.dieHook = onDie;
   // welche Einheit zu welcher Karte des Decks gehört (für die Kartenkräfte)
   for (const id of deckOf(g)) { const c = CARDS[id]; if (c.type === 'spell') continue; for (const [t] of c.mix || [[c.unit]]) u.cardOf.set(t, id); const R = RUNES[id]; if (R && R.unit) u.cardOf.set(R.unit, id); }
   for (const e of g.ents) if (e.kind === 'tower' && e.side === 0 && !e.main) u.outer.push({ type: e.type, x: e.x, y: e.y, lane: e.lane, lvl: e.lvl });
@@ -269,7 +441,29 @@ export const towerEdge = lvl => Math.max(0, Math.round(Math.log(towerMult(lvl, t
 // so viele Stufen über den eigenen Karten, dass nichts mehr half). Danach kommt nur noch alle zehn Wellen eine Stufe dazu (ab Welle 30).
 export const LVL_CAP = 5;
 export const foeLevel = (g, n) => g.waves.lvl + Math.min(LVL_CAP, Math.floor((n - 1) / STAGE) + Math.max(0, Math.floor((n - 17) / 4))) + Math.max(0, Math.floor((n - 20) / 10)) + g.waves.u.foeLvl + (g.waves.u.edge || 0);   // jede Etappe eine Stufe stärker, ab Welle 21 noch schneller
-export const waveTime = n => (isBoss(n) ? 42 : 24);   // spätestens dann rückt die nächste Welle nach, auch wenn noch Gegner stehen
+// Wellenmacht (seit 2026-11-18): Ab Welle 16 hat jede Welle 6 % mehr Leben und 3,5 % mehr Schaden als die vorige (wächst mit, wie die
+// Segen und Kräfte des Spielers) – sichtbar in der Anzeige, ohne höhere Stufen. Vorher blieben die Wellen nach der Stufengrenze gleich
+// stark; der Computer-Spieler stand bei Welle 44 mit unversehrten Türmen, mit +5 % je Welle (ohne Zinseszins) noch bei Welle 56.
+export const RAMP = { from: 15, hp: 1.06, dmg: 1.035 };
+export const rampOf = n => Math.max(0, n - RAMP.from);
+export const rampHp = n => RAMP.hp ** rampOf(n), rampDmg = n => RAMP.dmg ** rampOf(n);
+export const waveTime = n => (isBoss(n) ? 42 : 24);
+// Risswacht (seit 2026-11-18): Die Wellenseite hat keine Türme. Ohne Gegenwehr stand das eigene Heer am Ende auf den Rissen und fing
+// jede Welle schon beim Erscheinen ab (gemessen: Welle 30 mit unversehrten Türmen, auch bei steilerer Wellenmacht). Jetzt schießen
+// die drei Risse wie Kronentürme auf eigene Truppen und Gebäude in ihrer Nähe – Schaden eines Turms auf der Stufe der Gegner.
+export const RIFT_GUARD = { range: 7, every: 0.8 };
+function riftGuard(g, u, dt) {
+  if (!g.waves.n || (u.riftT = (u.riftT || 0) - dt) > 0) return;
+  u.riftT += RIFT_GUARD.every;
+  const n = g.waves.n, dmg = Math.round(UNITS.aussenturm.dmg * towerDmg(foeLevel(g, n)) * rampDmg(n));   // towerDmg: Faktor zur Stufe 11
+  for (const [x, y] of RIFTS) {
+    let best = null, bd = RIFT_GUARD.range;
+    for (const e of g.ents) { if (e.side !== 0 || e.kind === 'tower' || e.hp <= 0 || e.hidden || e.deployT > 0) continue; const d = Math.hypot(e.x - x, e.y - y) - e.r; if (d < bd) { bd = d; best = e; } }
+    if (!best) continue;
+    emit(g, { t: 'riftbolt', x, y, tx: best.x, ty: best.y, air: best.air });
+    hurt(g, best, dmg, 1);
+  }
+}   // spätestens dann rückt die nächste Welle nach, auch wenn noch Gegner stehen
 
 function themeFor(u, n) {
   if (isBoss(n)) return 'boss';
@@ -283,13 +477,17 @@ function startWave(g) {
   const wv = g.waves, u = wv.u, n = ++wv.n, stage = Math.ceil(n / STAGE), boss = isBoss(n);
   g.kraftFixed = n >= 20 ? 3 : n >= 10 ? 2 : 1;
   u.phase = 'welle'; u.waveT = 0; u.theme = u.next; u.next = themeFor(u, n + 1);
-  u.twr = towerHp(g); u.hurtNow = false; u.bolt = u.boons.blitzwacht ? 2.6 : 0;
+  u.twr = towerHp(g); u.hurtNow = false; u.bolt = u.boons.blitzwacht ? 2.6 : 0; u.wut = false;
+  const ev = pickEvent(g, u, n);
+  u.event = ev; u.waveBonus = ev === 'sturm' ? 2 : 1;
+  if (ev === 'nachschub') { addKraft(g, 3); for (const t of mine(g)) heal(g, t, 0.12); }
+  if (ev === 'sterne') u.stars = { left: 5 + stage, t: 2.5 };
   if (u.waveKraft) addKraft(g, u.waveKraft);
   if ((n - 1) % STAGE === 0) { newQuest(u, stage); const ids = Object.keys(MOODS).filter(id => id !== u.mood); setMood(g, u, stage >= 2 ? ids[Math.floor(rnd(u) * ids.length)] : ''); }
   let lvl = foeLevel(g, n);
   const T = THEMES[u.theme] || THEMES.gemischt, lanes = T.both || boss ? [0, 1] : [rnd(u) < 0.5 ? 0 : 1];
   const themed = u.pool.filter(T.fits);
-  let left = budget(n) * (boss ? (stage === 1 ? 0.4 : 0.55) : 1), k = 0, at = 0;   // Begleiter des Bosses; der erste Boss kommt mit kleinem Gefolge
+  let left = budget(n) * (boss ? (stage === 1 ? 0.4 : 0.55) : 1) * (cursed(u, 'horde') ? 1.33 : 1) * (ev === 'sturm' ? 1.5 : 1), k = 0, at = 0;   // Begleiter des Bosses; der erste Boss kommt mit kleinem Gefolge
   const groups = [];
   for (let tries = 0; left >= 1 && tries < 90 && groups.length < 22; tries++) {
     const from = themed.length && rnd(u) < 0.78 ? themed : u.pool, id = from[Math.floor(rnd(u) * from.length)], c = CARDS[id];
@@ -303,10 +501,12 @@ function startWave(g) {
   let elite = '';
   const eliteN = boss ? 0 : (u.danger >= 4 && n >= 2) || (n >= 4 && rnd(u) < Math.min(0.9, 0.3 + n * 0.03)) ? 1 + (n >= 15 ? 1 : 0) + (n >= 25 ? 1 : 0) : 0;
   const tough = [...groups].sort((a, b) => unitOf(b.id).hp - unitOf(a.id).hp);
+  if (cursed(u, 'riesen') && tough.length) tough[0].giant = true;
+  if (ev === 'kopfgeld' && groups.length) groups[Math.floor(rnd(u) * groups.length)].bounty = true;
   for (let i = 0; i < eliteN && i < tough.length; i++) { const ks = Object.keys(ELITES).filter(e => e !== 'brut' || UNITS.kiesel); tough[i].elite = ks[Math.floor(rnd(u) * ks.length)]; elite = elite || tough[i].elite; }
   for (const gr of groups) {
     const [rx, ry] = RIFTS[gr.lane], x = rx + (rnd(u) - 0.5) * 2.6, y = ry + rnd(u) * 2.4, c = CARDS[gr.id], us = unitsOf(gr.id), pts = Math.max(2, Math.round(8 * c.cost / us.length));
-    formation(us.length, 0.5, 1).forEach(([dx, dy], i) => u.queue.push({ at: gr.at, unit: us[i], x: clamp(x + dx, 0.4, W - 0.4), y: clamp(y + dy, 0.4, RIVER_TOP - 0.5), lvl: Math.max(lvl, floorOf(g, gr.id)), pts, elite: i === 0 ? gr.elite || '' : '', card: i === 0 ? gr.id : '' }));
+    formation(us.length, 0.5, 1).forEach(([dx, dy], i) => u.queue.push({ at: gr.at, unit: us[i], x: clamp(x + dx, 0.4, W - 0.4), y: clamp(y + dy, 0.4, RIVER_TOP - 0.5), lvl: Math.max(lvl, floorOf(g, gr.id)), pts, elite: i === 0 ? gr.elite || '' : '', card: i === 0 ? gr.id : '', giant: !!gr.giant, bounty: i === 0 && !!gr.bounty }));
   }
   let bossName = '';
   if (boss) {
@@ -316,8 +516,14 @@ function startWave(g) {
     u.queue.push({ at: 1.2, unit: unitsOf(id)[0], x: RIFTS[2][0], y: RIFTS[2][1] + 1.2, lvl: Math.max(lvl, floorOf(g, id)) + 1, pts: 150 * stage, boss: { kind: kind.id, name: kind.name, stage, card: id }, card: id });
     bossName = kind.name;
   }
+  if (ev === 'schatz') {   // Goldwicht: ein flinker Einzelner aus dem Vorrat, der nicht kämpft
+    const quick = u.pool.filter(id => unitsOf(id).length === 1 && !unitOf(id).air && unitOf(id).speed >= 1.5), from = quick.length ? quick : u.pool.filter(id => unitsOf(id).length === 1);
+    const id = (from.length ? from : u.pool)[Math.floor(rnd(u) * (from.length || u.pool.length))], [rx, ry] = RIFTS[rnd(u) < 0.5 ? 0 : 1];
+    u.queue.push({ at: 2.5, unit: unitsOf(id)[0], x: rx, y: ry + 1, lvl, pts: 0, elite: '', card: id, treasure: true });
+  }
   u.queue.sort((a, b) => a.at - b.at);
-  emit(g, { t: 'wave', n, boss, lvl, theme: u.theme, name: boss ? bossName : T.name, hint: boss ? BOSS_KINDS[(stage - 1) % BOSS_KINDS.length].text : T.hint, elite });
+  u.waveTotal = u.queue.length;
+  emit(g, { t: 'wave', n, boss, lvl, theme: u.theme, name: boss ? bossName : T.name, hint: boss ? BOSS_KINDS[(stage - 1) % BOSS_KINDS.length].text : T.hint, elite, event: ev, curses: [...u.curses] });
   if (u.boons.verstaerkung) reinforce(g, u);
 }
 
@@ -341,6 +547,14 @@ function release(g, u, q) {   // ein Gegner betritt das Feld
     else if (q.elite === 'rasend') { e.speed *= 1.35; e.atk *= 0.75; }
     else if (q.elite === 'zaeh') e.hp = e.maxHp = Math.round(e.maxHp * 2.2);
   }
+  const late = rampOf(g.waves.n);
+  if (late) { const kh = rampHp(g.waves.n); e.hp = e.maxHp = Math.round(e.maxHp * kh); e.dmg = Math.round(e.dmg * rampDmg(g.waves.n)); if (e.shield) e.shield = e.maxShield = Math.round(e.shield * kh); }
+  if (q.giant) { e.hp = e.maxHp = Math.round(e.maxHp * 2); e.dmg = Math.round(e.dmg * 1.5); meta.pts *= 2; }
+  if (cursed(u, 'eisenhaut')) e.shield = e.maxShield = (e.shield || 0) + Math.round(e.maxHp * 0.25);
+  if (cursed(u, 'flink')) e.speed *= 1.25;
+  if (cursed(u, 'nebel')) e.cloakT = 1e9;
+  if (q.treasure) { e.dmg = 0; e.hp = e.maxHp = Math.round(e.maxHp * 2.5); e.speed *= 1.25; e.blessed = true; e.treasure = true; e.cloakT = 0; meta.treasure = true; meta.pts = 0; u.treasure = { id: e.id, t: 14 }; emit(g, { t: 'surv', k: 'goldwicht', x: e.x, y: e.y }); }
+  if (q.bounty) { e.blessed = true; meta.bounty = true; }
   if (q.boss) {
     const s = q.boss.stage;
     e.hero = true; e.boss = true; e.hp = e.maxHp = Math.round(e.maxHp * (1.8 + 0.35 * s)); e.dmg = Math.round(e.dmg * (1.1 + 0.05 * s));
@@ -370,14 +584,19 @@ function endWave(g, u, cleared) {
   const n = g.waves.n;
   if (cleared) {
     const fast = u.waveT < 14, flawless = !u.hurtNow;
-    const pts = score(u, (20 + 5 * n) * (fast ? 1.5 : 1) + (flawless ? 30 : 0));
+    const pts = score(u, (20 + 5 * n) * (fast ? 1.5 : 1) * u.waveBonus + (flawless ? 30 : 0));
     u.cleared++; if (fast) { u.stats.fast++; questAdd(g, u, 'eilig'); } if (flawless) { u.stats.flawless++; questAdd(g, u, 'makellos'); }
     emit(g, { t: 'surv', k: 'clear', n, pts, fast, flawless });
   }
   u.phase = 'pause'; u.t = cleared ? 3.5 : 0.4;
-  if (isBoss(n)) u.powerDue = true;   // nach dem Segen folgt die Kartenkraft
-  if (n % 2 === 0 || isBoss(n)) offer(g, isBoss(n));
-  if (!u.choice && u.powerDue) { u.powerDue = false; offerPower(g); }
+  u.event = ''; u.stars = null;
+  // Stelle in der Etappe: nach Welle 1 und 3 eine Kartenkraft, nach 2 und 4 ein Segen; nach dem Boss Großer Segen, Kartenkraft und
+  // der Fluch der nächsten Etappe (die Flüche dieser Etappe enden hier)
+  const k = n % STAGE;
+  if (isBoss(n)) { u.curses = []; u.curseMult = 1; u.powerDue = true; u.curseDue = true; offer(g, true); }
+  else if (k === 2 || k === 4) offer(g, false);
+  else u.powerDue = true;
+  nextChoice(g, u);
 }
 
 // ---- Segen anbieten und wählen ---------------------------------------------------------------------------------------
@@ -407,8 +626,16 @@ export function pick(g, k) {
   if (!o) return null;
   u.choice = null;
   if (o.id === 'kk') {   // Kartenkraft: gilt ab jetzt für jede Einheit dieser Karte
-    u.powers[o.card] = o.power; u.powerList.push({ card: o.card, power: o.power });
+    u.powers[o.card] = [...powersOf(u, o.card), o.power]; u.powerList.push({ card: o.card, power: o.power });
     emit(g, { t: 'surv', k: 'kraft', card: o.card, power: o.power });
+    nextChoice(g, u);
+    return o;
+  }
+  if (o.id === 'fluch') {   // Fluch der Etappe: einer oder beide
+    u.curses = [...o.curses]; u.lastCurses = [...o.curses]; u.curseMult = CURSE_MULT[o.curses.length]; u.stats.curses += o.curses.length;
+    emit(g, { t: 'surv', k: 'fluch', ids: o.curses, names: o.curses.map(c => CURSES[c].name) });
+    if (o.curses.length > 1) { offer(g, true); if (u.choice) u.choice.options = u.choice.options.filter(x => x.id !== 'pakt'); }   // beide: Großer Segen obendrauf
+    nextChoice(g, u);
     return o;
   }
   if (o.id === 'pakt') {
@@ -419,13 +646,13 @@ export function pick(g, k) {
   }
   emit(g, { t: 'surv', k: 'segen', id: o.id });
   if (u.extra > 0) { u.extra--; offer(g, true); if (u.choice) u.choice.options = u.choice.options.filter(x => x.id !== 'pakt'); }
-  if (!u.choice && u.powerDue) { u.powerDue = false; offerPower(g); }
+  nextChoice(g, u);
   return o;
 }
 // Einmal je Lauf: drei neue Angebote
 export function reroll(g) {
   const u = g.waves && g.waves.u;
-  if (!u || !u.choice || u.choice.kind === 'kraft' || u.rerolls < 1) return false;
+  if (!u || !u.choice || u.choice.kind === 'kraft' || u.choice.kind === 'fluch' || u.rerolls < 1) return false;
   u.rerolls--;
   const { big, first } = u.choice, pact = u.choice.options.some(o => o.id === 'pakt');
   offer(g, big, first);
@@ -436,6 +663,7 @@ export function reroll(g) {
 const WANT = { meisterschaft: 10, schulung: 9, doppelkraft: 9, schutzbann: 8, verstaerkung: 8, kraftfluss: 7, wiederaufbau: 9.5, wachposten: 6.5, blitzwacht: 6, letztewehr: 5.5, drill: 5, bollwerk: 4.5, turmstaerke: 4.5, turmschuetzen: 4.5, beutezug: 4.5, runenmacht: 6, frostfalle: 4, vorrat: 3.5, eilmarsch: 2, mauerwerk: 1, pakt: 0 };
 export function autoPick(g) {
   const u = g.waves && g.waves.u; if (!u || !u.choice) return null;
+  if (u.choice.kind === 'fluch') return pick(g, 0);   // der Computer nimmt einen Fluch, nie beide
   const hurtTowers = mine(g).some(t => t.hp < t.maxHp * 0.55);
   let best = 0, bv = -1;
   u.choice.options.forEach((o, i) => { const v = o.id === 'mauerwerk' && hurtTowers ? 8.5 : WANT[o.id] ?? 3; if (v > bv) { bv = v; best = i; } });
@@ -450,13 +678,22 @@ function tick(g, dt) {
   if (u.boons.schutzbann) for (const e of g.ents) if (e.id >= u.seen && e.side === 0 && e.kind === 'unit' && !e.maxShield) e.shield = e.maxShield = Math.round(e.maxHp * 0.25);
   powerTick(g, u, dt);
   moodTick(g, u, dt);
+  zonePowers(g, u);
+  laterTick(g, u);
+  riftGuard(g, u, dt);
   u.seen = g.nextId;
   // gefallene Gegner: Punkte, Beute, Brut der Elite
   for (const [id, m] of u.foes) {
     const e = g.byId.get(id);
     if (e && e.hp > 0) { m.x = e.x; m.y = e.y; continue; }
     u.foes.delete(id);
-    u.kills++; score(u, m.pts); questAdd(g, u, 'jaeger');
+    u.kills++;
+    u.combo = u.time - u.lastKill <= COMBO_GAP ? u.combo + 1 : 1; u.lastKill = u.time;
+    if (u.combo > u.stats.combo) u.stats.combo = u.combo;
+    if (u.combo >= 10 && u.combo % 10 === 0) emit(g, { t: 'surv', k: 'kombo', n: u.combo });
+    score(u, m.pts * comboMult(u.combo)); questAdd(g, u, 'jaeger');
+    if (m.treasure) { addKraft(g, 3); u.rerolls++; u.stats.treasures++; emit(g, { t: 'coin', x: m.x, y: m.y, big: true }); emit(g, { t: 'surv', k: 'schatz', x: m.x, y: m.y, pts: score(u, 120 * Math.ceil(g.waves.n / STAGE)) }); u.treasure = null; }
+    if (m.bounty) { addKraft(g, 3); emit(g, { t: 'surv', k: 'kopfgeld', x: m.x, y: m.y, pts: score(u, 80 * Math.ceil(g.waves.n / STAGE)) }); }
     if (u.boons.beutezug) addKraft(g, 0.12 * u.boons.beutezug);
     if (m.elite) { u.stats.elites++; emit(g, { t: 'surv', k: 'elite', x: m.x, y: m.y }); }
     if (m.elite === 'brut') for (let i = 0; i < 3; i++) spawnUnit(g, 'kiesel', 1, clamp(m.x + (i - 1) * 0.6, 0.4, W - 0.4), m.y, m.lvl, { deployT: 0.5 });
@@ -470,6 +707,15 @@ function tick(g, dt) {
     if (e && e.hp > 0) {
       b.hp = e.hp; b.maxHp = e.maxHp;
       if (!b.rage && e.hp <= e.maxHp * 0.5) { b.rage = true; e.hasteT = 1e6; emit(g, { t: 'surv', k: 'zorn', x: e.x, y: e.y, name: b.name }); }
+      b.stompT = (b.stompT ?? 6) - dt;   // Erdstoß: angekündigt durch einen roten Kreis, betäubt kurz, was darin steht
+      if (b.stompT <= 0 && e.deployT <= 0 && !(e.stunT > 0)) {
+        if (g.ents.some(o => o.side === 0 && o.kind !== 'tower' && o.hp > 0 && !o.air && Math.hypot(o.x - e.x, o.y - e.y) <= 3.2)) {
+          b.stompT = b.rage ? 5 : 8; const r = 2.6;
+          emit(g, { t: 'cast', spell: 'stampf', side: 1, x: e.x, y: e.y, r, delay: 0.9 });
+          g.zones.push({ blast: { dmg: Math.round(160 * cardMult(e.lvl)), slow: 0, stun: 0.8, tf: 0.3 }, side: 1, x: e.x, y: e.y, r, delay: 0.9, dur: 0, done: false });
+          emit(g, { t: 'surv', k: 'stampf', name: b.name });
+        } else b.stompT = 1;
+      }
       b.callT -= dt;
       if (b.callT <= 0 && b.calls < 6 && e.deployT <= 0) {
         b.callT = b.kind === 'brut' ? 4.5 : 9; b.calls++;
@@ -497,6 +743,26 @@ function tick(g, dt) {
       emit(g, { t: 'burst', x: mt.x, y: mt.y, r: 7, side: 0, big: true }); emit(g, { t: 'surv', k: 'wehr' });
     }
   }
+  // Goldwicht: entkommt nach seiner Zeit · Sternschnuppen · Letzte Wut · Nebelmarsch
+  if (u.treasure) {
+    const e = g.byId.get(u.treasure.id);
+    if (!e || e.hp <= 0) u.treasure = null;
+    else if ((u.treasure.t -= dt) <= 0) { u.foes.delete(e.id); e.hp = 0; u.treasure = null; emit(g, { t: 'rise', side: 1, x: e.x, y: e.y }); emit(g, { t: 'surv', k: 'entkommen', x: e.x, y: e.y }); }
+  }
+  if (u.stars && u.phase === 'welle' && (u.stars.t -= dt) <= 0) {
+    u.stars.t = 1.1; u.stars.left--;
+    const near = g.ents.filter(e => e.kind === 'unit' && e.hp > 0 && !e.stub), at = near.length && rnd(u) < 0.7 ? near[Math.floor(rnd(u) * near.length)] : { x: 1.5 + rnd(u) * (W - 3), y: 4 + rnd(u) * 24 };
+    const x = clamp(at.x + (rnd(u) - 0.5) * 1.2, 0.6, W - 0.6), y = clamp(at.y + (rnd(u) - 0.5) * 1.2, 0.6, 31.4), r = 1.6, dmg = Math.round(240 * cardMult(foeLevel(g, Math.max(1, g.waves.n))));
+    emit(g, { t: 'cast', spell: 'sternschlag', side: 1, x, y, r, delay: 1.0 });
+    g.zones.push({ blast: { dmg, slow: 0, tf: 0.3 }, side: 1, x, y, r, delay: 1.0, dur: 0, done: false });   // trifft deine Seite …
+    u.later.push({ at: u.time + 1.0, k: 'stern', x, y, r, dmg });                                            // … und die Gegner zur selben Zeit
+    if (u.stars.left <= 0) u.stars = null;
+  }
+  if (cursed(u, 'wut') && u.phase === 'welle' && !u.queue.length && !u.wut) {
+    const left = g.ents.filter(e => e.side === 1 && e.kind === 'unit' && e.hp > 0);
+    if (left.length && left.length <= 5) { u.wut = true; for (const e of left) e.hasteT = 1e9; emit(g, { t: 'surv', k: 'wut' }); }
+  }
+  if (cursed(u, 'nebel')) for (const e of g.ents) if (e.side === 1 && e.cloakT > 1e5 && (e.y >= RIVER_TOP - 1 || e.inRange)) e.cloakT = 0;
   if (g.over) return;
   if (u.phase === 'welle') {
     u.waveT += dt;
@@ -523,13 +789,17 @@ export function hud(g) {
     boons: Object.entries(u.boons).map(([id, n]) => ({ id, n, name: BOONS[id].name })), rerolls: u.rerolls,
     quest: q ? { name: QUESTS[q.id].name, text: QUESTS[q.id].text(q.need), have: q.have, need: q.need, done: q.done } : null,
     boss: u.boss ? { name: u.boss.name, hp: u.boss.hp, maxHp: u.boss.maxHp, rage: u.boss.rage } : null,
-    mood: u.mood ? MOODS[u.mood].name : '', powers: u.powerList.map(p => ({ card: p.card, name: POWERS[p.power].name })), kind: u.choice ? u.choice.kind || '' : '',
+    mood: u.mood ? MOODS[u.mood].name : '', moodText: u.mood ? MOODS[u.mood].text : '', powers: u.powerList.map(p => ({ card: p.card, power: p.power, name: POWERS[p.power].name, rar: POWERS[p.power].rar })), kind: u.choice ? u.choice.kind || '' : '',
+    curses: u.curses.map(id => ({ id, name: CURSES[id].name, text: CURSES[id].text })), curseMult: u.curseMult,
+    event: u.event ? { id: u.event, name: EVENTS[u.event].name, text: EVENTS[u.event].text } : null, treasure: u.treasure ? Math.max(0, u.treasure.t) : 0,
+    combo: u.time - u.lastKill <= COMBO_GAP && u.combo >= 3 ? u.combo : 0, comboMult: comboMult(u.combo), comboLeft: Math.max(0, COMBO_GAP - (u.time - u.lastKill)) / COMBO_GAP,
+    ramp: Math.round((rampHp(wv.n) - 1) * 100), stagePos: wv.n ? ((wv.n - 1) % STAGE) + 1 : 0, total: Math.max(u.waveTotal, u.foes.size + u.queue.length),
   };
 }
 export function summary(g) {
   const wv = g.waves, u = wv && wv.u;
   if (!u) return null;
-  return { wave: wv.n, score: u.score, kills: u.kills, danger: u.danger, daily: u.daily, mult: u.mult, time: Math.round(g.time), boons: [...u.order], pacts: u.pacts, ...u.stats };
+  return { wave: wv.n, score: u.score, kills: u.kills, danger: u.danger, daily: u.daily, mult: u.mult, time: Math.round(g.time), boons: [...u.order], pacts: u.pacts, powers: u.powerList.map(p => ({ ...p })), ...u.stats };
 }
 
 // ---- Spielstand: Bestenliste der eigenen Läufe, Gefahrenstufen, Tagesherausforderung --------------------------------

@@ -1,10 +1,10 @@
-// Überleben: Anzeige im Kampf (Welle, Thema, nächste Welle, Punkte, Auftrag, Boss, Segen), die Wahl der Segen,
-// das Blatt vor dem Start (Gefahrenstufe, Tagesherausforderung, Bestenliste, Meilensteine) und die Abrechnung.
+// Überleben: Anzeige im Kampf (Wellenkopf mit Etappe, Fortschritt, Flüche, Ereignis, Kombo, Boss, Kräfte und Segen), die große
+// Wellen-Ansage, die Wahl der Segen, Kartenkräfte und Flüche, das Blatt vor dem Start und die Abrechnung.
 // Die Regeln selbst stehen in ueberleben.js. main.js ruft nur: sheet(), start(), onEvent(ev), update(now), result(box, book), stop().
 import { CARDS } from './cards.js';
 import * as U from './ueberleben.js';
 
-// Symbole der Segen: kleine Zeichnungen, damit sie auf jedem Gerät gleich aussehen
+// Symbole: kleine Zeichnungen, damit sie auf jedem Gerät gleich aussehen
 const SVG = d => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
 const ICON = {
   kraft:  SVG('<path d="M12 2c4 5 7 8.4 7 12a7 7 0 0 1-14 0c0-3.6 3-7 7-12z" fill="currentColor"/><path d="M9 14a3 3 0 0 0 3 3" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity=".7"/>'),
@@ -12,51 +12,130 @@ const ICON = {
   karte:  SVG('<rect x="5" y="3" width="14" height="18" rx="2.5" fill="currentColor"/><path d="M12 7l4 5h-2.6v5h-2.8v-5H8z" fill="#fff" opacity=".85"/>'),
   blitz:  SVG('<path d="M13.5 2L5 13.5h5.5L9 22l9.5-12.5H13z" fill="currentColor"/>'),
   schild: SVG('<path d="M12 2l8 3v6c0 5-3.4 9-8 11-4.6-2-8-6-8-11V5z" fill="currentColor"/><path d="M12 6v12" stroke="#fff" stroke-width="1.6" opacity=".6"/>'),
-  trupp:  SVG('<circle cx="8" cy="8" r="3.2" fill="currentColor"/><circle cx="16.5" cy="9" r="2.7" fill="currentColor"/><path d="M2.5 20c0-4 2.4-6.5 5.5-6.5s5.5 2.500 5.500 6.500zM14 20c0-1.800-.4-3.400-1.200-4.600 1-.9 2.200-1.400 3.700-1.400 3 0 5 2.300 5 6z" fill="currentColor"/>'),
-  pakt:   SVG('<path d="M12 2l2.6 6.300L21 9l-4.800 4.300L17.600 20 12 16.500 6.400 20l1.400-6.700L3 9l6.400-.7z" fill="currentColor"/>'),
+  trupp:  SVG('<circle cx="8" cy="8" r="3.2" fill="currentColor"/><circle cx="16.5" cy="9" r="2.7" fill="currentColor"/><path d="M2.5 20c0-4 2.4-6.5 5.5-6.5s5.5 2.5 5.5 6.5zM14 20c0-1.8-.4-3.4-1.2-4.6 1-.9 2.2-1.4 3.7-1.4 3 0 5 2.3 5 6z" fill="currentColor"/>'),
+  pakt:   SVG('<path d="M12 2l2.6 6.3L21 9l-4.8 4.3L17.6 20 12 16.5 6.4 20l1.4-6.7L3 9l6.4-.7z" fill="currentColor"/>'),
+  schaedel: SVG('<path d="M12 2.5c-4.7 0-8 3.3-8 7.6 0 2.6 1.2 4.5 3 5.6V19a1.5 1.5 0 0 0 1.5 1.5h7A1.5 1.5 0 0 0 17 19v-3.3c1.8-1.1 3-3 3-5.6 0-4.3-3.3-7.6-8-7.6z" fill="currentColor"/><circle cx="8.8" cy="11" r="2" fill="#1a0b10"/><circle cx="15.2" cy="11" r="2" fill="#1a0b10"/><path d="M11 15.6l1-1.8 1 1.8z" fill="#1a0b10"/>'),
+  stern:  SVG('<path d="M12 1.5l2.9 7 7.6.6-5.8 5 1.8 7.4L12 17.5l-6.5 4 1.8-7.4-5.8-5 7.6-.6z" fill="currentColor"/>'),
+  laune:  SVG('<path d="M6 15a4 4 0 0 1 .5-8 5.5 5.5 0 0 1 10.6 1.5A3.5 3.5 0 0 1 17 15z" fill="currentColor"/><path d="M8 18l-1 3M12 18l-1 3M16 18l-1 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>'),
+  auftrag: SVG('<path d="M6 3h12v18l-6-4-6 4z" fill="currentColor"/><path d="M9 9l2 2 4-4" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>'),
 };
 const BOON_ICON = { kraftfluss: 'kraft', doppelkraft: 'kraft', vorrat: 'kraft', beutezug: 'kraft', mauerwerk: 'turm', bollwerk: 'turm', turmschuetzen: 'turm', turmstaerke: 'turm', wiederaufbau: 'turm', letztewehr: 'turm',
-  drill: 'karte', schulung: 'karte', meisterschaft: 'karte', runenmacht: 'karte', blitzwacht: 'blitz', frostfalle: 'blitz', eilmarsch: 'trupp', wachposten: 'trupp', verstaerkung: 'trupp', schutzbann: 'schild', pakt: 'pakt', kk: 'karte' };
+  drill: 'karte', schulung: 'karte', meisterschaft: 'karte', runenmacht: 'karte', blitzwacht: 'blitz', frostfalle: 'blitz', eilmarsch: 'trupp', wachposten: 'trupp', verstaerkung: 'trupp', schutzbann: 'schild', pakt: 'pakt', kk: 'karte', fluch: 'schaedel' };
 const icon = id => ICON[BOON_ICON[id] || 'blitz'];
+const RAR_CLASS = ['r0', 'r1', 'r2', 'r3'];
+const komma = v => String(Math.round(v * 100) / 100).replace('.', ',');
 
-// ctx: { el, fmt, sfx, banner, toast, openSheet, closeSheet, setDismiss, B, P, profile(), save(), today(), start(opts), auto(), mileRow, collected, askHelp(go) }
+// ctx: { el, fmt, sfx, banner, toast, openSheet, closeSheet, setDismiss, B, P, art(id), inset(px), profile(), save(), today(), start(opts), auto(), mileRow, collected, askHelp(go) }
 export function createSurvUi(ctx) {
   const { el, fmt, sfx, B, P } = ctx;
   const wrap = document.querySelector('#arenaWrap');
-  let bar = null, parts = null, lastKey = '', lastT = 0, choosing = false, seenThemes = new Set();
+  let bar = null, parts = null, kit = null, insetH = 0, lastKey = '', lastT = 0, choosing = false, seenThemes = new Set(), lastScore = 0, lastWave = 0;
 
   // ---- Anzeige im Kampf ----
+  // Flach gehalten (seit 2026-11-18, vorher lag die halbe Arena unter der Anzeige): eine Zeile Wellenkopf, eine schmale Zeile Chips.
+  // Boss und Kombo stecken in den Kästen der ersten Zeile, Kräfte und Segen stehen klein unten links. Die Kamera rückt das Feld
+  // unter die Anzeige (ctx.inset → renderer.setInset): nichts vom Feld liegt unter der Anzeige.
   function start() {
     stop();
     if (!B.g.waves || !B.g.waves.director) return;
-    bar = el('div', 'survBar', '<div class="svRow"><span class="svWave"></span><span class="svPts"></span></div><div class="svRow two"><span class="svNext"></span><span class="svQuest"></span></div><div class="svBoss" hidden><i></i><b></b></div><div class="svBoons"></div>');
+    bar = el('div', 'survBar',
+      '<div class="svTop">' +
+        '<div class="svWaveBox"><b class="svN">0</b><span class="svLbl">Welle</span><div class="svPips"></div></div>' +
+        '<div class="svMid"><div class="svTheme"></div><div class="svProg"><i></i><span></span></div></div>' +
+        '<div class="svScore"><b>0</b><span></span></div>' +
+      '</div>' +
+      '<div class="svChips"></div>');
     bar.id = 'survBar';
-    wrap.append(bar);
-    parts = { wave: bar.querySelector('.svWave'), pts: bar.querySelector('.svPts'), next: bar.querySelector('.svNext'), quest: bar.querySelector('.svQuest'), boss: bar.querySelector('.svBoss'), boons: bar.querySelector('.svBoons') };
-    lastKey = ''; choosing = false; seenThemes = new Set();
+    kit = el('div', 'svKit');
+    wrap.append(bar, kit);
+    const q = s => bar.querySelector(s);
+    parts = { n: q('.svN'), pips: q('.svPips'), box: q('.svWaveBox'), mid: q('.svMid'), theme: q('.svTheme'), prog: q('.svProg i'), progT: q('.svProg span'), scoreBox: q('.svScore'), score: q('.svScore b'), mult: q('.svScore span'), chips: q('.svChips') };
+    lastKey = ''; choosing = false; seenThemes = new Set(); lastScore = 0; lastWave = 0; insetH = -1;
     update(0, true);
   }
-  function stop() { if (bar) bar.remove(); bar = parts = null; choosing = false; }
+  function stop() {
+    if (bar) bar.remove(); if (kit) kit.remove(); bar = parts = kit = null; choosing = false;
+    const w = document.querySelector('.svWaveBanner'); if (w) w.remove();
+    if (insetH !== 0) { insetH = 0; ctx.inset(0); }
+  }
+  // Platz für die Anzeige: so hoch, wie sie gerade ist (die Kamera rechnet nur neu, wenn sich das ändert)
+  function fitInset() {
+    const h = Math.round(bar.offsetTop + bar.offsetHeight + 2);
+    if (h !== insetH && h > 10) { insetH = h; ctx.inset(h); }
+  }
 
+  const chip = (cls, ico, text, title = '') => `<span class="svChip ${cls}" title="${title.replace(/"/g, '&quot;')}">${ico}<b>${text}</b></span>`;
   function update(now, force) {
     if (!bar) return;
     const g = B.g, h = U.hud(g);
     if (!h) return;
     if (h.choice && !choosing && !g.over && !B.loading) { choose(); force = true; }   // die Anzeige zeigt beim Wählen den Stand von jetzt
-    if (!force && now - lastT < 200) return;
+    // Kombo: im Punktekasten, läuft jede Bildfolge mit
+    parts.scoreBox.classList.toggle('combo', !!h.combo);
+    parts.scoreBox.classList.toggle('hot', h.combo >= 10);
+    const m = h.mult * (h.curseMult || 1);
+    parts.mult.textContent = h.combo ? `Kombo ${h.combo} ×${komma(h.comboMult)}` : m > 1.001 ? `×${komma(m)}` : 'Punkte';
+    parts.mult.classList.toggle('on', m > 1.001 || !!h.combo);
+    if (!force && now - lastT < 150) return;
     lastT = now;
-    const q = h.quest, key = [h.mood, h.powers.length, h.wave, h.theme, h.score, h.phase, Math.ceil(h.nextIn), h.left, q && q.have, q && q.done, h.boons.length, h.boons.reduce((s, b) => s + b.n, 0), h.boss && Math.round(h.boss.hp / h.boss.maxHp * 50), h.boss && h.boss.rage].join('|');
-    if (key === lastKey) return;
+    const q = h.quest;
+    const key = [h.mood, h.powers.length, h.wave, h.theme, h.score, h.phase, Math.ceil(h.nextIn), h.left, q && q.have, q && q.done, h.boons.length, h.boons.reduce((s, b) => s + b.n, 0), h.boss && Math.round(h.boss.hp / h.boss.maxHp * 60), h.boss && h.boss.rage, h.curses.length, h.event && h.event.id, Math.ceil(h.treasure), h.ramp].join('|');
+    if (key === lastKey) { fitInset(); return; }
     lastKey = key;
-    parts.wave.innerHTML = h.wave ? `<b>Welle ${h.wave}</b> ${h.theme}${h.mood ? ` <em class="svMood">${h.mood}</em>` : ''}` : '<b>Überleben</b> gleich geht es los';
-    parts.pts.innerHTML = `<b>${fmt(h.score)}</b> Punkte${h.mult > 1 ? ` <em>×${String(h.mult).replace('.', ',')}</em>` : ''}`;
-    parts.next.textContent = h.phase === 'pause' ? (h.choice ? (h.kind === 'kraft' ? 'Wähle eine Kartenkraft' : 'Wähle einen Segen') : `Nächste: ${h.next} in ${Math.ceil(h.nextIn)} s`) : `Noch ${h.left} ${h.left === 1 ? 'Gegner' : 'Gegner'} · danach: ${h.next}`;
-    parts.quest.innerHTML = q ? `<span class="${q.done ? 'ok' : ''}">${q.done ? '✓ ' : ''}${q.name} ${q.done ? '' : `${q.have}/${q.need}`}</span>` : '';
-    parts.quest.title = q ? q.text : '';
-    parts.boss.hidden = !h.boss;
-    if (h.boss) { parts.boss.firstChild.style.width = `${Math.max(0, 100 * h.boss.hp / h.boss.maxHp)}%`; parts.boss.lastChild.textContent = h.boss.rage ? `${h.boss.name} · in Raserei` : h.boss.name; parts.boss.classList.toggle('rage', h.boss.rage); }
-    const shown = h.boons.slice(-5);
-    parts.boons.innerHTML = h.powers.map(p => `<span class="svBoon kk" title="${p.name}">${ICON.karte}</span>`).join('') + shown.map(b => `<span class="svBoon" title="${b.name}">${icon(b.id)}${b.n > 1 ? `<i>${b.n}</i>` : ''}</span>`).join('') + (h.boons.length > shown.length ? `<span class="svMore">+${h.boons.length - shown.length}</span>` : '');
+    // Wellenkopf: Nummer, Etappe als fünf Punkte (der letzte ist der Boss)
+    parts.n.textContent = h.wave || '–';
+    if (h.wave !== lastWave) { lastWave = h.wave; parts.box.classList.remove('bump'); void parts.box.offsetWidth; parts.box.classList.add('bump'); }
+    parts.pips.innerHTML = Array.from({ length: U.STAGE }, (_, i) => `<i class="${i + 1 < h.stagePos ? 'done' : i + 1 === h.stagePos ? (h.phase === 'welle' ? 'now' : 'done') : ''}${i === U.STAGE - 1 ? ' boss' : ''}"></i>`).join('');
+    parts.box.classList.toggle('boss', h.stagePos === U.STAGE);
+    // Mitte: Thema und Fortschritt der Welle – in der Bosswelle Name und Leben des Bosses
+    parts.mid.classList.toggle('wait', h.phase !== 'welle');
+    parts.mid.classList.toggle('bossbar', !!h.boss);
+    parts.mid.classList.toggle('rage', !!(h.boss && h.boss.rage));
+    if (h.boss) {
+      parts.theme.textContent = h.boss.rage ? `${h.boss.name} · Raserei` : h.boss.name;
+      parts.prog.style.transform = `scaleX(${Math.max(0, h.boss.hp / h.boss.maxHp)})`;
+      parts.progT.textContent = `noch ${h.left} Gegner`;
+    } else if (h.phase === 'welle') {
+      parts.theme.textContent = h.theme;
+      parts.prog.style.transform = `scaleX(${h.total ? Math.max(0, Math.min(1, 1 - h.left / h.total)) : 0})`;
+      parts.progT.textContent = h.left ? `noch ${h.left} Gegner` : 'Welle geschafft';
+    } else {
+      parts.theme.textContent = h.choice ? (h.kind === 'kraft' ? 'Kartenkraft wählen' : h.kind === 'fluch' ? 'Fluch wählen' : 'Segen wählen') : `Gleich: ${h.next}`;
+      parts.prog.style.transform = `scaleX(${h.choice ? 1 : Math.max(0, 1 - h.nextIn / 4)})`;
+      parts.progT.textContent = h.choice ? 'Pause' : `in ${Math.ceil(h.nextIn)} s`;
+    }
+    // Punkte
+    parts.score.textContent = fmt(h.score);
+    if (h.score > lastScore && lastScore) { parts.score.classList.remove('tick'); void parts.score.offsetWidth; parts.score.classList.add('tick'); }
+    lastScore = h.score;
+    // Chips: Flüche, Ereignis, Wellenmacht, Feldlaune, Auftrag – eine schmale Zeile
+    const chips = [];
+    for (const c of h.curses) chips.push(chip('curse', ICON.schaedel, c.name, c.text));
+    if (h.event) chips.push(chip('event', ICON.stern, h.event.id === 'schatz' && h.treasure ? `${h.event.name} ${Math.ceil(h.treasure)} s` : h.event.name, h.event.text));
+    if (h.ramp) chips.push(chip('ramp', ICON.schild, `+${h.ramp} %`, `Wellenmacht: Ab Welle 16 hat jede Welle mehr Leben und Schaden – gerade ${h.ramp} % mehr Leben.`));
+    if (h.mood) chips.push(chip('mood', ICON.laune, h.mood, h.moodText));
+    if (q) chips.push(chip(`quest${q.done ? ' ok' : ''}`, ICON.auftrag, q.done ? `${q.name} ✓` : `${q.name} ${q.have}/${q.need}`, q.text));
+    parts.chips.innerHTML = chips.join('');
+    // unten links: Kartenkräfte (mit Kartenbild) und die letzten Segen
+    const shown = h.boons.slice(-4);
+    kit.innerHTML = h.powers.slice(-6).map(p => `<span class="svPow r${p.rar}" title="${p.name} · ${CARDS[p.card].name}" data-card="${p.card}"></span>`).join('') + shown.map(b => `<span class="svBoon" title="${b.name}">${icon(b.id)}${b.n > 1 ? `<i>${b.n}</i>` : ''}</span>`).join('') + (h.boons.length > shown.length ? `<span class="svMore">+${h.boons.length - shown.length}</span>` : '');
+    for (const s of kit.querySelectorAll('.svPow')) s.append(thumb(s.dataset.card, 40, 52));
+    fitInset();
+  }
+  // kleines Kartenbild (aus dem Kartenbild-Speicher von main.js)
+  function thumb(id, w, h) {
+    const c = document.createElement('canvas'); c.width = w * 2; c.height = h * 2;
+    try { const a = ctx.art(id); c.getContext('2d').drawImage(a, 0, 0, c.width, c.height); } catch { /* Bild noch nicht da */ }
+    return c;
+  }
+
+  // große Ansage zu Beginn einer Welle: Nummer, Name, Flüche und Ereignis
+  function waveBanner(ev) {
+    const old = document.querySelector('.svWaveBanner'); if (old) old.remove();
+    const tags = [...(ev.curses || []).map(id => `<span class="curse">${ICON.schaedel}${U.CURSES[id].name}</span>`), ev.event ? `<span class="event">${ICON.stern}${U.EVENTS[ev.event].name}</span>` : '', ev.elite ? `<span class="elite">${ICON.schild}Elite: ${U.ELITES[ev.elite].name}</span>` : ''].join('');
+    const b = el('div', `svWaveBanner${ev.boss ? ' boss' : ''}`, `<small>${ev.boss ? 'Bosswelle' : `Etappe ${Math.ceil(ev.n / U.STAGE)} · Welle`}</small><b>${ev.boss ? ev.name : ev.n}</b>${ev.boss ? '' : `<em>${ev.name}</em>`}${tags ? `<div class="tags">${tags}</div>` : ''}`);
+    wrap.append(b);
+    setTimeout(() => b.remove(), 2200);
   }
 
   // Ereignisse des Laufs: Ansagen, Klänge. Gibt true zurück, wenn das Ereignis hier behandelt ist.
@@ -64,53 +143,83 @@ export function createSurvUi(ctx) {
     if (!bar) return false;
     if (ev.t === 'wave') {
       sfx(ev.boss ? 'horn' : 'wake');
-      ctx.banner(ev.boss ? `Welle ${ev.n} · ${ev.name}` : `Welle ${ev.n} · ${ev.name}`);
+      waveBanner(ev);
       const key = ev.boss ? 'boss' + ev.name : ev.theme;
-      if (ev.boss || !seenThemes.has(key) || ev.elite) { seenThemes.add(key); ctx.toast(`${ev.hint}${ev.elite ? ` Elite: ${U.ELITES[ev.elite].name} – ${U.ELITES[ev.elite].text}.` : ''}`, 3200); }
+      const msg = [];
+      if (ev.event) msg.push(U.EVENTS[ev.event].text);
+      if (ev.boss || !seenThemes.has(key)) { seenThemes.add(key); msg.push(ev.hint); }
+      if (ev.elite) msg.push(`Elite: ${U.ELITES[ev.elite].name} – ${U.ELITES[ev.elite].text}.`);
+      if (msg.length) setTimeout(() => ctx.toast(msg.join(' '), 3600), 1400);
       return true;
     }
     if (ev.t !== 'surv') return ev.t === 'boon';
-    if (ev.k === 'clear') { sfx('coin'); float(`+${fmt(ev.pts)}${ev.fast ? ' · eilig' : ''}${ev.flawless ? ' · makellos' : ''}`); }
-    else if (ev.k === 'auftrag') { sfx('bless'); ctx.banner(`Auftrag „${ev.name}“ erfüllt!`); float(`+${fmt(ev.pts)} · Türme geheilt`); }
-    else if (ev.k === 'boss') { sfx('win'); ctx.banner('Boss besiegt!'); float(`+${fmt(ev.pts)}`); }
-    else if (ev.k === 'zorn') { sfx('horn'); ctx.toast(`${ev.name} gerät in Raserei!`, 2200); }
-    else if (ev.k === 'ruf') sfx('wake');
-    else if (ev.k === 'elite') sfx('shield');
-    else if (ev.k === 'wehr') { sfx('bless'); ctx.banner('Letzte Wehr!'); }
-    else if (ev.k === 'laune') { sfx('horn'); ctx.banner(`Feldlaune: ${ev.name}`); ctx.toast(ev.text, 4200); }
-    else if (ev.k === 'frost') sfx('frostnacht');
-    else if (ev.k === 'bers') sfx('charge');
-    else if (ev.k === 'kraft') sfx('rune');
+    const k = ev.k;
+    if (k === 'clear') { sfx('coin'); float(`+${fmt(ev.pts)}${ev.fast ? ' · eilig' : ''}${ev.flawless ? ' · makellos' : ''}`); }
+    else if (k === 'auftrag') { sfx('bless'); ctx.banner(`Auftrag „${ev.name}“ erfüllt!`); float(`+${fmt(ev.pts)} · Türme geheilt`); }
+    else if (k === 'boss') { sfx('win'); ctx.banner('Boss besiegt!'); float(`+${fmt(ev.pts)}`); }
+    else if (k === 'zorn') { sfx('horn'); ctx.toast(`${ev.name} gerät in Raserei!`, 2200); }
+    else if (k === 'stampf') sfx('charge');
+    else if (k === 'ruf') sfx('wake');
+    else if (k === 'elite') sfx('shield');
+    else if (k === 'wehr') { sfx('bless'); ctx.banner('Letzte Wehr!'); }
+    else if (k === 'laune') { sfx('horn'); ctx.toast(`Feldlaune: ${ev.name} – ${ev.text}`, 4200); }
+    else if (k === 'frost') sfx('frostnacht');
+    else if (k === 'bers') sfx('charge');
+    else if (k === 'kraft') sfx('rune');
+    else if (k === 'fluch') { sfx('horn'); float(`Fluch: ${ev.names.join(' + ')}`, 'curse'); }
+    else if (k === 'kombo') { sfx('coin'); float(`Kombo ${ev.n}!`, 'combo'); }
+    else if (k === 'goldwicht') { sfx('chest'); ctx.banner('Goldwicht!'); }
+    else if (k === 'schatz') { sfx('kasse'); ctx.banner('Goldwicht gefangen!'); float(`+${fmt(ev.pts)} · +3 Kraft · Neu-Würfeln`, 'gold'); }
+    else if (k === 'entkommen') { sfx('flip'); ctx.toast('Der Goldwicht ist entkommen.', 1800); }
+    else if (k === 'kopfgeld') { sfx('kasse'); float(`Kopfgeld: +${fmt(ev.pts)} · +3 Kraft`, 'gold'); }
+    else if (k === 'wut') { sfx('horn'); ctx.toast('Letzte Wut: Die übrigen Gegner rasen!', 1800); }
+    else if (k === 'wieder') sfx('bless');
+    else if (k === 'rueckfluss') { sfx('rune'); float('Rückfluss: +2 Kraft'); }
+    else if (k === 'nachhall') sfx('magie');
     return true;
   }
-  // kleine Punkte-Einblendung an der Punktzahl
-  function float(text) {
+  // kleine Einblendung unter den Punkten
+  function float(text, cls = '') {
     if (!bar) return;
-    const f = el('span', 'svFloat', text);
+    const f = el('span', `svFloat ${cls}`, text);
     bar.append(f);
-    setTimeout(() => f.remove(), 1500);
+    setTimeout(() => f.remove(), 1700);
   }
 
-  // ---- Segen wählen: das Spiel hält an, bis gewählt ist ----
+  // ---- Wählen: das Spiel hält an, bis gewählt ist (Segen, Kartenkraft oder Fluch) ----
   function choose() {
     const g = B.g, u = g.waves.u;
-    if (ctx.auto()) { const o = U.autoPick(g); if (o) ctx.toast(`Segen: ${U.boonName(o)}`, 1200); return; }   // Zeitraffer und Computer-Spieler wählen selbst
+    if (ctx.auto()) { const o = U.autoPick(g); if (o) ctx.toast(`${o.id === 'kk' ? 'Kartenkraft' : o.id === 'fluch' ? 'Fluch' : 'Segen'}: ${U.boonName(o)}`, 1200); return; }   // Zeitraffer und Computer-Spieler wählen selbst
     choosing = true; B.paused = true; B.sel = null; B.ghost = null; B.drag = null;
     const draw = () => {
-      const ch = u.choice, d = el('div', 'boonPick');
-      d.append(el('h3', '', ch.kind === 'kraft' ? 'Kartenkraft' : ch.first ? 'Dein Startsegen' : ch.big ? 'Großer Segen' : 'Wähle einen Segen'));
-      d.append(el('p', 'center small', ch.kind === 'kraft' ? 'Der Boss ist gefallen: Eine deiner Karten bekommt für den Rest des Laufs eine besondere Kraft. Jede Karte kann nur eine tragen.' : ch.first ? 'Jeder Lauf beginnt mit einer Wahl. Segen gelten bis zum Ende des Laufs.' : ch.big ? `Bosswelle ${g.waves.n} überstanden – hier sind seltene Segen häufiger.` : `Welle ${g.waves.n} überstanden. Die nächste: ${U.hud(g).next}.`));
+      const ch = u.choice, kind = ch.kind || 'segen', d = el('div', `boonPick k-${kind}`);
+      const title = kind === 'kraft' ? 'Kartenkraft' : kind === 'fluch' ? 'Wähle deinen Fluch' : ch.first ? 'Dein Startsegen' : ch.big ? 'Großer Segen' : 'Wähle einen Segen';
+      const sub = kind === 'kraft' ? 'Eine deiner Karten bekommt für den Rest des Laufs eine besondere Kraft – jede Karte trägt bis zu zwei.'
+        : kind === 'fluch' ? `Etappe ${Math.ceil((g.waves.n + 1) / U.STAGE)} beginnt. Ein Fluch macht die Gegner gefährlicher, bis ihr Boss fällt – dafür gibt es mehr Punkte. Beide zusammen bringen ×1,6 und sofort einen Großen Segen.`
+        : ch.first ? 'Jeder Lauf beginnt mit einer Wahl. Segen gelten bis zum Ende des Laufs.' : ch.big ? `Bosswelle ${g.waves.n} überstanden – hier sind seltene Segen häufiger.` : `Welle ${g.waves.n} überstanden. Die nächste: ${U.hud(g).next}.`;
+      d.append(el('div', 'bpHead', `<span class="bpIco">${kind === 'kraft' ? ICON.karte : kind === 'fluch' ? ICON.schaedel : ICON.stern}</span><h3>${title}</h3><p>${sub}</p>`));
       const row = el('div', 'boonRow');
       ch.options.forEach((o, k) => {
         const rar = U.boonRar(o), have = u.boons[o.id] || 0;
-        const b = el('button', `boon r${rar}`, `<span class="bIco">${icon(o.id)}</span><span class="bTxt"><b>${U.boonName(o)}${have ? ` <i>${have + 1}. Mal</i>` : ''}</b><small>${U.boonText(g, o)}</small></span><em>${rar === 3 ? 'Wagnis' : U.RAR_NAME[rar]}</em>`);
+        let b;
+        if (o.id === 'kk') {   // Kartenkraft: Kartenbild, Name der Kraft, Wirkung
+          const own = U.powersOf(u, o.card).map(p => U.POWERS[p].name);
+          b = el('button', `boon kk ${RAR_CLASS[rar]}`, `<span class="bArt"></span><span class="bTxt"><b>${U.POWERS[o.power].name}</b><span class="bCard">${CARDS[o.card].name}${own.length ? ` · hat schon ${own.join(', ')}` : ''}</span><small>${U.POWERS[o.power].text[0].toUpperCase() + U.POWERS[o.power].text.slice(1)}.</small></span><em>${U.RAR_NAME[rar]}</em>`);
+          b.querySelector('.bArt').append(thumb(o.card, 58, 76));
+        } else if (o.id === 'fluch') {
+          const both = o.curses.length > 1;
+          b = el('button', `boon curse${both ? ' both' : ''}`, `<span class="bIco">${ICON.schaedel}${both ? ICON.schaedel : ''}</span><span class="bTxt"><b>${U.boonName(o)}</b><small>${o.curses.map(c => U.CURSES[c].text).join(' ')}</small></span><em>Punkte ×${komma(U.CURSE_MULT[o.curses.length])}${both ? ' + Segen' : ''}</em>`);
+        } else {
+          b = el('button', `boon ${RAR_CLASS[rar]}`, `<span class="bIco">${icon(o.id)}</span><span class="bTxt"><b>${U.boonName(o)}${have ? ` <i>${have + 1}. Mal</i>` : ''}</b><small>${U.boonText(g, o)}</small></span><em>${rar === 3 ? 'Wagnis' : U.RAR_NAME[rar]}</em>`);
+        }
+        b.style.animationDelay = `${k * 0.08}s`;
         b.dataset.k = k;
-        b.addEventListener('click', () => { sfx(rar >= 2 ? 'rune' : 'buy'); const got = U.pick(g, k); if (!got) return; if (u.choice) draw(); else done(); });
+        b.addEventListener('click', () => { sfx(o.id === 'fluch' ? 'horn' : rar >= 2 ? 'rune' : 'buy'); b.classList.add('chosen'); setTimeout(() => { if (u.choice === ch) U.pick(g, k); if (u.choice) draw(); else done(); }, 220); });   // kurz aufleuchten lassen, dann wählen
         row.append(b);
       });
       d.append(row);
-      if (u.rerolls > 0 && ch.kind !== 'kraft') { const r = el('button', 'btn rerollBtn', `Neu würfeln <em>${u.rerolls}</em>`); r.addEventListener('click', () => { if (U.reroll(g)) { sfx('flip'); draw(); } }); d.append(r); }
-      if (u.order.length) d.append(el('p', 'center small boonHave', `Deine Segen: ${listBoons(u)}`));
+      if (u.rerolls > 0 && kind === 'segen') { const r = el('button', 'btn rerollBtn', `Neu würfeln <em>${u.rerolls}</em>`); r.addEventListener('click', () => { if (U.reroll(g)) { sfx('flip'); draw(); } }); d.append(r); }
+      if (u.order.length || u.powerList.length) d.append(el('p', 'center small boonHave', [u.order.length ? `Segen: ${listBoons(u)}` : '', u.powerList.length ? `Kräfte: ${u.powerList.map(p => `${U.POWERS[p.power].name} (${CARDS[p.card].name})`).join(', ')}` : ''].filter(Boolean).join(' · ')));
       ctx.setDismiss(null);
       ctx.openSheet(d, true);
     };
@@ -127,7 +236,8 @@ export function createSurvUi(ctx) {
     d.append(el('div', 'svScore', `<b>${fmt(sum.score)}</b><span>Punkte${sum.mult > 1 ? ` · ×${String(sum.mult).replace('.', ',')} durch Gefahr` : ''}</span>`));
     if (book.high) d.append(el('div', 'notice', 'Neue Bestmarke bei den Punkten!'));
     else if (book.place) d.append(el('p', 'center small', `Platz ${book.place} in deiner Bestenliste.`));
-    d.append(el('div', 'svStats', [['Besiegt', sum.kills], ['Bosse', sum.bosses], ['Elite', sum.elites], ['Aufträge', sum.quests], ['Makellos', sum.flawless], ['Eilig', sum.fast]].map(([k, v]) => `<span><b>${v}</b>${k}</span>`).join('')));
+    d.append(el('div', 'svStats', [['Besiegt', sum.kills], ['Bosse', sum.bosses], ['Elite', sum.elites], ['Beste Kombo', sum.combo || 0], ['Flüche', sum.curses || 0], ['Aufträge', sum.quests], ['Makellos', sum.flawless], ['Goldwichte', sum.treasures || 0]].map(([k, v]) => `<span><b>${v}</b>${k}</span>`).join('')));
+    if (sum.powers && sum.powers.length) d.append(el('p', 'center small', `Kartenkräfte: ${sum.powers.map(p => `${U.POWERS[p.power].name} (${CARDS[p.card].name})`).join(', ')}`));
     if (sum.boons.length) { const n = {}; for (const id of sum.boons) n[id] = (n[id] || 0) + 1; d.append(el('p', 'center small', `Segen: ${Object.entries(n).map(([id, k]) => `${U.BOONS[id].name}${k > 1 ? ` ×${k}` : ''}`).join(', ')}`)); }
     if (book.dangerUp) d.append(el('div', 'notice', `Gefahrenstufe ${book.dangerUp} gemeistert – ${book.dangerUp < U.DANGER.length ? `Stufe ${book.dangerUp + 1} ist jetzt wählbar. ` : ''}Die Belohnung wartet unter „Modi“.`));
     if (book.daily) d.append(el('div', 'notice', book.daily.can ? 'Tagesherausforderung geschafft – die Belohnung wartet unter „Modi“.' : `Tagesherausforderung: beste Welle heute ${book.daily.wave}${book.daily.wave < U.DAILY_GOAL ? ` · Belohnung ab Welle ${U.DAILY_GOAL}` : ''}.`));
@@ -142,7 +252,7 @@ export function createSurvUi(ctx) {
     let danger = Math.min(s.pick || 0, open);
     const d = el('div', 'survSheet');
     d.append(el('h3', '', 'Überleben'));
-    d.append(el('p', 'center small', 'Wellen ohne Ende in Etappen zu fünf: Themen, Elite-Gegner, am Ende ein Boss. Nach jeder zweiten Welle wählst du einen Segen. Schluss ist, wenn dein Hauptturm fällt.'));
+    d.append(el('p', 'center small', 'Wellen ohne Ende in Etappen zu fünf, am Ende jeder Etappe ein Boss. Die Risse wehren sich wie Türme gegen jeden, der ihnen zu nahe kommt. Nach jeder Welle wählst du: Kartenkräfte für deine Karten, Segen für den ganzen Lauf – und zu jeder neuen Etappe einen Fluch für die Gegner, der mehr Punkte bringt. Dazwischen Ereignisse wie Goldwicht und Sternschnuppen. Schluss ist, wenn dein Hauptturm fällt.'));
     d.append(el('div', 'svBest', `<span><b>${s.best}</b>beste Welle</span><span><b>${fmt(s.high || 0)}</b>beste Punkte</span><span><b>${s.runs}</b>Läufe</span>`));
     // Gefahrenstufe
     d.append(el('div', 'sub', '<b>Gefahrenstufe</b><span>mehr Gefahr, mehr Punkte</span>'));

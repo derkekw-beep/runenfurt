@@ -61,7 +61,7 @@ function spawn(g, type, side, x, y, extra, lvl = STD_LEVEL) {
     shield: Math.round((d.shield || 0) * m), maxShield: Math.round((d.shield || 0) * m), rampT: 0, rampId: 0, revealT: 0, cloakT: 0, cloakRate: 1, hidden: false, iceT: 0,
     kraftT: d.kraft ? d.kraft.every : 0, ammo: d.ammo ? d.ammo.max : 0, ammoT: 0, blessed: false,
     cd2: d.second ? d.second.atk : 0, hookT: 0, hookCd: 0, hookId: 0, curseT: 0, curseSide: 0, curseUnit: '', curseLvl: 1, ampT: 0, wardT: 0, wardF: 1,
-    hatchT: d.hatch ? d.hatch.after : 0, ench: null, enchT: 0, comboN: 0, buried: false, upT: 0, ford: !!d.ford, clone: false,
+    hatchT: d.hatch ? d.hatch.after : 0, ench: null, enchT: 0, comboN: d.combo && d.combo.first ? d.combo.every - 1 : 0, buried: false, upT: 0, ford: !!d.ford, clone: false,
     snareT: 0, snareF: 1, groundT: 0, hotN: 0, hotT: 0, hotAmt: 0, hotEvery: 0, souls: 0, summonN: 0, summonT: 0, idleT: 0, snipeN: d.snipe ? d.snipe.n : 0,
     face: side === 0 ? -1 : 1, anim: 0, vx: 0, vy: 0,
     ...extra,
@@ -523,6 +523,7 @@ function stun(e, t) {
 }
 
 function die(g, e) {
+  if (g.dieHook && g.dieHook(g, e)) return;   // Überleben: wer wieder aufsteht (Kartenkraft „Wiedergeburt“), fällt nicht
   e.hp = 0;
   emit(g, { t: 'die', kind: e.kind, type: e.type, model: e.model, side: e.side, x: e.x, y: e.y, air: e.air, main: e.main, rune: !!e.rune, hero: !!e.hero });
   if (e.formId) formDeath(FORM_API, g, e);
@@ -547,6 +548,8 @@ function damage(g, e, amount, bySide, src) {
   if (e.wardT > 0) amount *= e.wardF;
   if (e.ampT > 0) amount *= e.ampF || 1;
   if (e.formMode) amount = formHurt(e, amount);
+  if (src) e.lastBy = src.id;   // wer zuletzt traf (Überleben: Kräfte, die beim Fällen wirken)
+  if (g.hitHook && src) { amount = g.hitHook(g, src, e, amount); if (g.over || e.hp <= 0) return; }   // Überleben: Kartenkräfte und Flüche, die an Treffern hängen
   if (e.shield > 0) { // der Schild fängt den Treffer ganz ab, auch wenn er dabei bricht
     e.shield -= amount;
     if (e.shield <= 0) {
@@ -629,9 +632,12 @@ function healOver(e, total, pulses = 1, every = 0) {
   e.hotN = pulses; e.hotAmt = total; e.hotEvery = every; e.hotT = 0;   // hotAmt: was noch aussteht
 }
 
-// Heilerin: alle eigenen Truppen ringsum bekommen die Heilung in Schüben – sie selbst und andere Heilerinnen nicht
+// Heilerin: alle eigenen Truppen ringsum bekommen die Heilung in Schüben – sie selbst und andere Heilerinnen nicht (Vorbild seit der
+// Änderung 2026: „No longer heals herself … not able to heal other Battle Healers“). Der Heilkreis ist zu sehen (Ereignis healaura),
+// jeder Schub an einer verletzten Figur ebenso (heal).
 function healAround(g, u, h) {
   const amt = Math.round(h.amt * cardMult(u.lvl));
+  emit(g, { t: 'healaura', x: u.x, y: u.y, r: h.r, side: u.side });
   for (const e of g.ents) if (e !== u && !e.d.healHit && e.side === u.side && e.kind === 'unit' && e.hp > 0 && dist(u, e) <= h.r + e.r) healOver(e, amt, h.pulses, h.every);
 }
 
@@ -700,6 +706,23 @@ function areaDamage(g, side, x, y, radius, dmg, hitsAir, towerFactor = 1, slow =
     damage(g, e, e.kind === 'tower' ? dmg * towerFactor : e.kind === 'building' && o && o.buildF ? dmg * o.buildF : dmg, side, o ? o.src : undefined);
   }
 }
+
+// Aufwärtshaken: das Ziel fliegt im Bogen davon (FLY_T Sekunden) und kann in der Luft nichts tun; Schaden nimmt es weiter.
+// Würde es mitten im Fluss landen, trägt der Schwung es bis ans andere Ufer.
+export const FLY_T = 0.6;
+function launch(g, e, dx, dy, k) {
+  const L = Math.hypot(dx, dy) || 1;
+  const x = clamp(e.x + (dx / L) * k, 0.4, W - 0.4);
+  let y = clamp(e.y + (dy / L) * k, 0.4, H - 0.4);
+  if (!e.air && waterTile(Math.floor(x), Math.floor(y))) y = dy < 0 ? RIVER_TOP - 0.1 : RIVER_BOT + 0.1;
+  e.fly = { x0: e.x, y0: e.y, x1: x, y1: y, t: 0, d: FLY_T, h: 2.4 };
+  e.inRange = false; e.runT = 0; e.charging = false; e.rt = null;
+  if (e.d.frenzy && e.d.frenzy.reset) e.stacks = 0;
+  emit(g, { t: 'launch', x: e.x, y: e.y, side: e.side });
+}
+export const flyLift = e => (e.fly ? Math.sin(Math.min(1, e.fly.t / e.fly.d) * Math.PI) * e.fly.h : 0);
+// für den Zeichner: Anteil des Flugs an der (zwischen zwei Takten weich gerechneten) Stelle x, y – 0 am Boden
+export const flyPart = (e, x, y) => { const f = e.fly; if (!f) return 0; const L = Math.hypot(f.x1 - f.x0, f.y1 - f.y0) || 1; return Math.max(0, Math.min(1, Math.hypot(x - f.x0, y - f.y0) / L)); };
 
 // Einheit ein Stück in eine Richtung stoßen; ihr Angriff oder Anlauf ist damit unterbrochen
 function push(e, dx, dy, k) {
@@ -777,7 +800,8 @@ function strike(g, u, t) {
   u.anim = 0.3;
   if (u.formMode && formShot(FORM_API, g, u, t)) return;    // Standwurf
   const cloaked = !!d.stealth && u.revealT <= 0;            // schlägt aus der Unsichtbarkeit zu
-  let dmg = u.dmg, knock = 0;
+  let dmg = u.dmg, knock = 0, hook = false;   // hook: dieser Hieb ist der besondere Schlag der Folge (combo)
+  const jumped = u.charging;
   if (u.formMode && t.kind === 'tower') dmg = Math.round(dmg * formTowerF(u));
   const melee = !!d.melee && !t.air && edgeDist(u, t) <= d.melee.range;   // Schützenbund: aus der Nähe wird mit dem Bajonett zugestochen
   if (melee) dmg = Math.round(d.melee.dmg * cardMult(u.lvl));
@@ -787,7 +811,7 @@ function strike(g, u, t) {
   u.runT = 0;
   if (d.stealth) u.revealT = d.stealth;
   if (d.ramp) { for (const [after, f] of d.ramp) if (u.rampT >= after) dmg = u.dmg * f; }
-  if (d.combo && ++u.comboN >= d.combo.every) { u.comboN = 0; dmg *= d.combo.f; knock = d.combo.knock; emit(g, { t: 'impact', x: t.x, y: t.y }); }
+  if (d.combo && !jumped && ++u.comboN >= d.combo.every) { u.comboN = 0; dmg *= d.combo.f; knock = d.combo.knock; hook = true; if (!d.combo.toTower) emit(g, { t: 'impact', x: t.x, y: t.y }); }   // ein Sprung zählt nicht mit
   if (u.ench) { // Zeichen eines Runenhünen: jeder dritte Treffer schlägt mit Zusatzschaden ein
     const by = g.byId.get(u.ench.by);
     if (u.ench.until !== undefined ? g.time > u.ench.until : !by || by.hp <= 0) u.ench = null;   // until: der Hüne ist gefallen, das Zeichen hält noch einen Augenblick
@@ -832,12 +856,17 @@ function strike(g, u, t) {
     }
   } else {
     if (d.spin) areaDamage(g, u.side, u.x, u.y, d.spin + u.r, dmg, false, 1, 0, { src: u });
-    else if (u.splash && !melee) { areaDamage(g, u.side, t.x, t.y, u.splash, dmg, u.hitsAir, 1, 0, { src: u, knock: d.combo ? 0 : knock }); if (!d.combo) knock = 0; }
+    else if (u.splash && !melee) { areaDamage(g, u.side, t.x, t.y, u.splash, dmg, u.hitsAir, 1, 0, { src: u, knock: hook ? 0 : knock }); if (!hook) knock = 0; }
     else {
       damage(g, t, t.kind === 'tower' && d.towerDmg ? dmg * d.towerDmg : dmg, u.side, u);
       if (d.killHeal && t.hp <= 0 && t.kind !== 'tower') overheal(g, u, (d.killHeal.tiers.find(([hp]) => t.maxHp < hp) || d.killHeal.tiers[d.killHeal.tiers.length - 1])[1], d.killHeal.over);   // Evolution: jeder Gefällte heilt
     }
-    if (knock && t.hp > 0 && (canKnock(t) || (d.combo && d.combo.all && t.kind === 'unit'))) { const fwd = d.combo && d.combo.fwd; push(t, fwd ? 0 : t.x - u.x, fwd ? (u.side === 0 ? -1 : 1) : t.y - u.y, knock); }   // fwd: immer in Richtung der gegnerischen Türme
+    if (knock && t.hp > 0 && (canKnock(t) || (hook && d.combo.all && t.kind === 'unit'))) {
+      if (hook && d.combo.toTower) { // Aufwärtshaken: Richtung des nächsten Turms der getroffenen Seite, auch wenn der Schläger dazwischen steht
+        const tw = towersOf(g, t.side).sort((a, b) => dist(a, t) - dist(b, t))[0];
+        launch(g, t, tw ? tw.x - t.x : 0, tw ? tw.y - t.y : (u.side === 0 ? -1 : 1), knock);
+      } else { const fwd = hook && d.combo.fwd; push(t, fwd ? 0 : t.x - u.x, fwd ? (u.side === 0 ? -1 : 1) : t.y - u.y, knock); }   // fwd: immer in Richtung der gegnerischen Türme
+    }
     if (d.ramp && !d.rampMelee) emit(g, { t: 'beam', x: u.x, y: u.y, tx: t.x, ty: t.y, from: u.model, air: u.air, tair: t.air, hot: dmg / u.dmg });
     else emit(g, { t: 'hit', from: u.model, x: d.spin ? u.x : t.x, y: d.spin ? u.y : t.y, heavy: dmg >= 300, spin: d.spin ? d.spin + u.r : 0, ...(u.rune && { rune: true }) });   // rune: der Zeichner setzt violette Akzente
   }
@@ -1055,8 +1084,15 @@ function updateEnt(g, u, dt) {
       groundPulse(g, u, d.deployDmg);
     }
     if (u.deployT <= 0 && d.deployDmg && d.surfaceDmg) u.pulseCd = 1;   // der Stoß beim Aufstellen gilt auch für das erste Auftauchen gleich danach
-    if (u.deployT <= 0 && d.deployHeal) { emit(g, { t: 'heal', x: u.x, y: u.y }); healAround(g, u, d.deployHeal); }   // Heilung bei der Landung
+    if (u.deployT <= 0 && d.deployHeal) healAround(g, u, d.deployHeal);   // Heilung bei der Landung
     if (u.deployT <= 0 && d.snipe) u.cd = d.first || 0;
+    return;
+  }
+  if (u.fly) { // fliegt nach einem Aufwärtshaken: landet nach FLY_T Sekunden mit einem Stoß im Staub
+    const f = u.fly; f.t += dt;
+    const p = Math.min(1, f.t / f.d);
+    u.x = f.x0 + (f.x1 - f.x0) * p; u.y = f.y0 + (f.y1 - f.y0) * p;
+    if (p >= 1) { u.fly = null; u.cd = Math.max(u.cd || 0, 0.3); emit(g, { t: 'impact', x: u.x, y: u.y, r: Math.max(0.8, u.r * 1.6) }); }
     return;
   }
   if (u.formId) formTick(FORM_API, g, u, dt);
@@ -1349,7 +1385,7 @@ function avoid(g, u, dx, dy) {
 // und der Sturm auf ein Ziel (leap) und der Satz über den Fluss (ford).
 const PUSH_OVER = 0.3, PUSH_MAX = 0.15, PUSH_K = DT / 0.05;
 export const staticMass = r => { const R = Math.round(r * 1000); return Math.max(1, Math.min(20, Math.floor((Math.floor((R * R) / 250) * R) / 62500))); };
-export const noContact = e => e.kind === 'unit' && ((e.charging && !!e.d.leap) || (e.ford && !e.air && e.y > RIVER_TOP && e.y < RIVER_BOT && waterTile(Math.floor(e.x), Math.floor(e.y))) || (e.clone && e.deployT > 0));
+export const noContact = e => e.kind === 'unit' && (!!e.fly || (e.charging && !!e.d.leap) || (e.ford && !e.air && e.y > RIVER_TOP && e.y < RIVER_BOT && waterTile(Math.floor(e.x), Math.floor(e.y))) || (e.clone && e.deployT > 0));
 function separate(g) {
   const E = g.ents;
   for (let i = 0; i < E.length; i++) {

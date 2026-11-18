@@ -1,7 +1,7 @@
 // 2D-Figuren: lädt die in Blender gerenderten Bildfolgen und zeigt sie als Tafeln, die zur Kamera stehen.
 // Teamfarbe kommt aus einer Maske (ein Sammelbild für beide Seiten), der Schatten ist dasselbe Bild flach auf den
 // Boden gelegt. Die Bewegung folgt allein dem Zustand der Spielregeln (laufen, ausholen, zuschlagen, stehen).
-import { THREE, TEAM, ASSETS, RIVER_TOP, RIVER_BOT, UNITS } from './deps.js';
+import { THREE, TEAM, ASSETS, RIVER_TOP, RIVER_BOT, UNITS, flyPart } from './deps.js';
 import { anchor } from './halten.js';
 import { PITCH, SUN } from './look.js';
 
@@ -261,6 +261,8 @@ export function createSprites(look, hooks = {}) {
     let hop = 0;
     if (e.ford && !inst.fly) { const k = (e._y - RIVER_TOP + 0.45) / (RIVER_BOT - RIVER_TOP + 0.9); if (k > 0 && k < 1) hop = Math.sin(Math.PI * k) * 1.05; }
     if (hop > 0.03 && moving) { anim = 'walk'; f = Math.floor(A.walk.n / 4); }   // im Sprung: Schrittbild mit weit gespreizten Beinen
+    const fp = e.fly ? flyPart(e, e._x, e._y) : 0;   // vom Aufwärtshaken getroffen: fliegt im Bogen, gestreckt, und staucht bei der Landung
+    if (fp > 0) { anim = 'idle'; f = 0; }
     setFrame(inst, frameOf(info, inst.dir, anim, f));
     if (hop > 0.03 && !inst.hopping) { inst.hopping = true; inst.sqv += 3.2; }   // Absprung: streckt sich
     else if (hop <= 0.03 && inst.hopping) { inst.hopping = false; inst.sqv -= 4.5; if (hooks.onLand) hooks.onLand(e, inst); }   // Landung: staucht, Staub
@@ -282,12 +284,15 @@ export function createSprites(look, hooks = {}) {
     const drop0 = y;
     const q = Math.min(1, inst.age / 0.26);
     y += hop;
+    if (fp > 0) { y += Math.sin(fp * Math.PI) * e.fly.h; inst.flying = true; }
+    else if (inst.flying) { inst.flying = false; inst.sqv -= 6; if (hooks.onLand) hooks.onLand(e, inst); }
     if (q < 1) { y += (1 - q) * (1 - q) * 5.5; sx = 0.88; sy = 1.14; }
     else if (!inst.landed) { inst.landed = true; if (!inst.fly) { inst.sqv -= 5.2; if (hooks.onLand) hooks.onLand(e, inst); } }
     for (let i = 0; i < 2; i++) { const h = dt / 2; inst.sqv += (-inst.sq * 300 - inst.sqv * 17) * h; inst.sq += inst.sqv * h; }   // Feder: Stauchen und Nachschwingen
     inst.sq = Math.max(-0.4, Math.min(0.4, inst.sq));
     sy *= 1 + inst.sq; sx *= 1 - inst.sq * 0.55;
     if (e.stunT > 0) sx *= 1 + Math.sin(time * 34) * 0.025;
+    if (fp > 0) { const k = Math.cos(fp * Math.PI); sy *= 1 + 0.22 * k; sx *= 1 - 0.12 * k; }
     u.uScale.value.set(sx, sy);
     const lx = Math.sin(inst.yaw) * inst.lunge, lz = Math.cos(inst.yaw) * inst.lunge;
     inst.mesh.position.set(e._x + inst.kx + lx, y, e._y + inst.kz + lz);
